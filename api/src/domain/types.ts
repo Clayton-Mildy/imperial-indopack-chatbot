@@ -404,6 +404,12 @@ export interface AIResponse {
    * by both call paths. Empty when the tool did not run.
    */
   toolFigures?: number[];
+  /**
+   * A hitung_harga call ran this turn, whatever it returned. DI_BAWAH_MINIMUM, DI_ATAS_TINGKAT_TERATAS
+   * and TIDAK_ADA_DI_KATALOG return no figures, so `toolFigures` alone cannot tell "the tool priced
+   * nothing" from "the tool was not called" - and after the former no price may be quoted at all.
+   */
+  priceToolRan?: boolean;
 }
 
 export interface ApiEnvelope<T> {

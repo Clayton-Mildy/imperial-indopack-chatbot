@@ -52,10 +52,38 @@ describe('verifyReplyTieredPrices - which figures fail, and what the model is to
     expect(reason).not.toContain('seperti tertulis di hasilnya');
   });
 
-  it('a tool call that returned no figures falls back to the catalog rule', () => {
-    // Not in catalog / below the minimum: the tool ran but priced nothing.
+  it('no figures and no tool call is the catalog rule', () => {
     expect(verifyReplyTieredPrices('mulai 10 rim Rp 1.800/pcs', BLOCK, []).ok).toBe(true);
+    expect(verifyReplyTieredPrices('mulai 10 rim Rp 1.800/pcs', BLOCK, [], false).ok).toBe(true);
     expect(verifyReplyTieredPrices('Total Rp 8.000.000', BLOCK, []).ok).toBe(false);
+  });
+
+  // Final review I1 (spec 7.5: once the tool ran, only its figures). DI_ATAS_TINGKAT_TERATAS,
+  // DI_BAWAH_MINIMUM and TIDAK_ADA_DI_KATALOG return no figures, and the check used to fall back to
+  // "any catalog tier": the top tier went out for 200 rim, the 5-rim price for 3 rim.
+  describe('a tool call that returned no figures', () => {
+    const SUPREME_BLOCK = formatProducts([SUPREME]); // 185.000 / 165.000 / 160.000 per rim
+
+    it('allows no price at all: the top tier above the top tier, the lowest below the minimum', () => {
+      expect(verifyReplyTieredPrices('Untuk 200 rim harganya Rp 160.000/rim kak', SUPREME_BLOCK, [], true).ok).toBe(false);
+      expect(verifyReplyTieredPrices('3 rim harganya Rp 185.000/rim ya kak', SUPREME_BLOCK, [], true).ok).toBe(false);
+      expect(verifyReplyTieredPrices('mulai 10 rim Rp 1.800/pcs', BLOCK, [], true).ok).toBe(false);
+    });
+
+    it('tells the model to give the minimum or hand to the team, with no price', () => {
+      const v = verifyReplyTieredPrices('3 rim harganya Rp 185.000/rim ya kak', SUPREME_BLOCK, [], true);
+      expect(v.invented).toEqual([185000]);
+      expect(v.reason).toContain('Rp 185.000');
+      expect(v.reason).toMatch(/tidak memberi harga/);
+      expect(v.reason).toMatch(/minimal/);
+      expect(v.reason).toMatch(/confidence "low"/);
+    });
+
+    it('a reply with no price passes', () =>
+      expect(verifyReplyTieredPrices('Minimal pemesanannya 5 rim ya kak, untuk 3 rim belum bisa.', SUPREME_BLOCK, [], true).ok).toBe(true));
+
+    it('with figures from another item the tool priced, the tool rule holds as before', () =>
+      expect(verifyReplyTieredPrices('8 rim: Rp 2.000/pcs', BLOCK, [2000, 8000000, 1800], true).ok).toBe(true));
   });
 
   it('with no tool call, a catalog price on a line that adds up is a total too', () => {
@@ -177,7 +205,7 @@ describe('verifyReplyTieredPrices keeps withoutInventedTotals working', () => {
 // price does not depend on who buys (spec 7.3), so a figure is never held back for an unknown type.
 describe('verifyFit - the strict price check in the pipeline', () => {
   const PROMPT = `## Identity\nKamu adalah CS Imperial Indopack.\n\n--- KATALOG PRODUK ---\n${formatProducts([IVORY_FIXTURE, SUPREME])}--- AKHIR KATALOG ---`;
-  const draft = (message: string, toolFigures?: number[]): AIResponse => ({ message, confidence: 'high', toolFigures });
+  const draft = (message: string, toolFigures?: number[], priceToolRan?: boolean): AIResponse => ({ message, confidence: 'high', toolFigures, priceToolRan });
   const OK: FitVerdict = { ok: true, reason: '' };
   const okJudge = () => {
     const calls: string[] = [];
@@ -223,6 +251,18 @@ describe('verifyFit - the strict price check in the pipeline', () => {
     expect(out.confidence).toBe('high');
     expect(out.totalForTeam).toBe(true);
     expect(out.message).toBe('Box Ivory 270 gsm cetak full color 8 rim harganya Rp 2.000/pcs kak.');
+  });
+
+  // Final review I1: hitung_harga said DI_ATAS_TINGKAT_TERATAS (no figures), and the draft quoted the
+  // top tier anyway.
+  it('repairs a catalog tier quoted after the tool priced nothing, and the repair keeps that the tool ran', async () => {
+    const topTier = draft('Box Ivory 270 gsm cetak full color 200 rim: Rp 1.500/pcs kak.', [], true);
+    const regenerate = vi.fn(async () => draft('Untuk 200 rim tim kami yang hitung ya kak.', [], true));
+    const out = await verifyFit(topTier, PROMPT, 'box ivory 200 rim berapa', { judge: okJudge().judge, regenerate });
+    expect(regenerate).toHaveBeenCalledTimes(1);
+    expect(regenerate.mock.calls[0]![0]).toContain('Rp 1.500');
+    expect(regenerate.mock.calls[0]![0]).toMatch(/tidak memberi harga/);
+    expect(out.message).toBe('Untuk 200 rim tim kami yang hitung ya kak.');
   });
 
   it('the judge gets the customer situation as is - no buyer-type line', async () => {

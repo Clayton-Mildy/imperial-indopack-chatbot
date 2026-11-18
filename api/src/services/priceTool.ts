@@ -3,7 +3,8 @@
  *
  * The model only ever repeats what this returns. The figures a call returns are also the only
  * figures the strict price check accepts in that turn (AIResponse.toolFigures), so a quote's
- * figures are exactly the Rp amounts its text prints, and every other outcome prints none.
+ * figures are exactly the Rp amounts its text prints, and every other outcome prints none - after
+ * which no price is accepted at all (AIResponse.priceToolRan).
  *
  * Every result starts with one of four prefixes the prompt keys on:
  *   HARGA:                    a quote

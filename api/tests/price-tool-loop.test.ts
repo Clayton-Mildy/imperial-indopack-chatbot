@@ -109,7 +109,37 @@ describe('API path', () => {
 
   it('a turn with no price call has no tool figures', async () => {
     mockCreate.mockResolvedValueOnce(respondTurn());
-    expect((await callAIWithHistory(HISTORY, 'halo')).toolFigures).toEqual([]);
+    const result = await callAIWithHistory(HISTORY, 'halo');
+    expect(result.toolFigures).toEqual([]);
+    expect(result.priceToolRan).toBe(false);
+  });
+
+  // Final review I1: a call that priced nothing (here above the top tier) still ran - the strict check
+  // then allows no price at all, instead of falling back to the catalog's tiers.
+  it('says the price tool ran when its only call priced nothing', async () => {
+    mockCreate
+      .mockResolvedValueOnce(toolTurn(priceCall('t1', { ...SUPREME_INPUT, qty: 200 })))
+      .mockResolvedValueOnce(respondTurn());
+    const result = await callAIWithHistory(HISTORY, ASK);
+    expect(toolResults(mockCreate.mock.calls[1]![0])[0]!.content).toMatch(/^DI_ATAS_TINGKAT_TERATAS:/);
+    expect(result.toolFigures).toEqual([]);
+    expect(result.priceToolRan).toBe(true);
+  });
+
+  it('says so when the only price call came from the failsafe', async () => {
+    mockCreate
+      .mockResolvedValueOnce(textTurn('Untuk 3 rim ...'))
+      .mockResolvedValueOnce(toolTurn(priceCall('t1', { ...SUPREME_INPUT, qty: 3 })))
+      .mockResolvedValueOnce(respondTurn());
+    const result = await callAIWithHistory(HISTORY, ASK);
+    expect(result).toMatchObject({ toolFigures: [], priceToolRan: true });
+  });
+
+  it('a malformed call that never ran the tool is not a price call', async () => {
+    mockCreate
+      .mockResolvedValueOnce(toolTurn(priceCall('t1', { ...SUPREME_INPUT, qty: '12' })))
+      .mockResolvedValueOnce(respondTurn());
+    expect((await callAIWithHistory(HISTORY, ASK)).priceToolRan).toBe(false);
   });
 
   it('keeps the figures when the reply only comes from the failsafe call, which offers the same tools', async () => {
@@ -247,6 +277,7 @@ describe('API path', () => {
     expect(main).toHaveLength(0);
     expect(judge).toHaveLength(0);
     expect(result.toolFigures).toEqual(SUPREME_FIGURES);
+    expect(result.priceToolRan).toBe(true);
   });
 });
 
@@ -293,5 +324,21 @@ describe('Agent SDK path', () => {
 
     expect(mockAgentQuery).toHaveBeenCalledTimes(2);
     expect(result.toolFigures).toEqual(SUPREME_FIGURES);
+    expect(result.priceToolRan).toBe(true);
+  });
+
+  it('says the price tool ran when its only call priced nothing, and not when there was none', async () => {
+    mockAgentQuery
+      .mockImplementationOnce(async (opts: { tools: Tool[] }) => {
+        await call(opts, 'hitung_harga', { ...SUPREME_INPUT, qty: 3 });
+        await call(opts, 'respond_to_customer', REPLY);
+        return '';
+      })
+      .mockImplementationOnce(async (opts: { tools: Tool[] }) => {
+        await call(opts, 'respond_to_customer', REPLY);
+        return '';
+      });
+    expect(await callAIWithHistory(HISTORY, ASK)).toMatchObject({ toolFigures: [], priceToolRan: true });
+    expect((await callAIWithHistory(HISTORY, 'halo')).priceToolRan).toBe(false);
   });
 });

@@ -239,8 +239,10 @@ const noToolTotalLine = (line: string): boolean => {
  * tolerant matcher (multiples, divisors) would pass exactly the wrong quotes this catalog invites - a
  * lower tier's price, or 500 x a per-pcs price posing as a per-rim one. So there is no arithmetic
  * tolerance at all:
- * - hitung_harga returned figures this turn (`toolFigures`, every call's): every Rp figure in the
- *   reply is one of them. A catalog tier the tool did not return fails - it is the wrong tier.
+ * - hitung_harga ran this turn (`priceToolRan`, or it returned figures - `toolFigures`, every call's):
+ *   every Rp figure in the reply is one of them. A catalog tier the tool did not return fails - it is
+ *   the wrong tier. A call that priced nothing (below the minimum, above the top tier, not in the
+ *   catalog) leaves no figure allowed at all: the top tier is not the price of 200 rim.
  * - Otherwise: every figure is a tier price printed in the catalog block, and none sits on a line
  *   that adds up - a total without the tool is the model's own arithmetic. That line is one with a
  *   total word (TOTAL_WORDS_RE) or an "=" once the catalog's own "1 rim = 500 pcs" is taken out:
@@ -255,10 +257,11 @@ const noToolTotalLine = (line: string): boolean => {
 export function verifyReplyTieredPrices(
   message: string,
   catalogBlock: string,
-  toolFigures: number[] | undefined
+  toolFigures: number[] | undefined,
+  priceToolRan = false
 ): { ok: boolean; reason: string; invented?: number[]; onlyInvented?: boolean } {
-  const toolRan = (toolFigures?.length ?? 0) > 0;
-  const allowed = new Set(toolRan ? toolFigures : rpFigures(catalogBlock));
+  const toolRan = priceToolRan || (toolFigures?.length ?? 0) > 0;
+  const allowed = new Set(toolRan ? toolFigures ?? [] : rpFigures(catalogBlock));
   const failing = new Set<number>();
   const passing = new Set<number>();
   let offTotalLine = false;
@@ -275,7 +278,12 @@ export function verifyReplyTieredPrices(
   const figures = [...failing].map(rp).join(', ');
   // The repair is written without the tool results in view (verifyFit's regenerate sends only the
   // draft and this text), so it is told to fetch the figures again rather than to copy them.
-  const reason = toolRan
+  const reason = toolRan && allowed.size === 0
+    ? `Harga ${figures} tidak boleh disebut: hitung_harga sudah dipanggil di giliran ini dan tidak memberi harga ` +
+      '(di bawah minimal pemesanan, di atas tingkat harga teratas, atau tidak ada di katalog), jadi JANGAN sebut harga apa pun - ' +
+      'juga bukan harga tingkat dari katalog. Kalau jumlahnya di bawah minimal, sampaikan minimal pemesanannya tanpa harga; ' +
+      'kalau di atas tingkat teratas atau tidak ada di katalog, sampaikan tim kami yang menghitung harganya dan set confidence "low".'
+    : toolRan
     ? `Harga ${figures} bukan angka dari hitung_harga. Hasil hitung_harga sebelumnya sudah tidak terlihat di sini, jadi ` +
       'panggil hitung_harga LAGI untuk setiap barang yang kamu sebut harganya (jumlahnya sama atau berbeda), termasuk untuk ' +
       'produk lain yang kamu sebut, lalu ulangi angka hasilnya persis (harga satuan, total, harga tingkat berikutnya). ' +

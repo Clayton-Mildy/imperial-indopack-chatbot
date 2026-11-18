@@ -563,7 +563,7 @@ export async function verifyFit(
     // LLM judge. Exact figures only - the tool's this turn, else the catalog's printed tiers - so
     // the whole block is the scope: a real tier figure is never invented, whichever product it is
     // printed under (quoting it against the wrong product is the judge's to catch).
-    const prices = verifyReplyTieredPrices(r.message, catalogBlock, r.toolFigures);
+    const prices = verifyReplyTieredPrices(r.message, catalogBlock, r.toolFigures, r.priceToolRan);
     if (!catalogBlock) {
       return prices.ok ? null : { ok: false, reason: prices.reason, ...(prices.onlyInvented && { invented: prices.invented }) };
     }
@@ -803,7 +803,10 @@ type ChatMessage = { role: 'user' | 'assistant'; content: Anthropic.MessageParam
  * validates against PriceToolInput itself). A malformed call gets an error the model can correct
  * on the next iteration instead of a price.
  */
-async function priceToolResult(block: Anthropic.ToolUseBlock, figures: number[]): Promise<Anthropic.ToolResultBlockParam> {
+/** What hitung_harga did this turn: every figure it returned, and whether it ran at all (AIResponse.priceToolRan). */
+interface PriceTally { figures: number[]; ran: boolean }
+
+async function priceToolResult(block: Anthropic.ToolUseBlock, tally: PriceTally): Promise<Anthropic.ToolResultBlockParam> {
   const parsed = PriceToolInput.safeParse(block.input);
   if (!parsed.success) {
     return {
@@ -814,7 +817,8 @@ async function priceToolResult(block: Anthropic.ToolUseBlock, figures: number[])
     };
   }
   const { text, figures: returned } = await runPriceTool(parsed.data);
-  figures.push(...returned);
+  tally.ran = true;
+  tally.figures.push(...returned);
   return { type: 'tool_result', tool_use_id: block.id, content: text };
 }
 
@@ -829,12 +833,12 @@ const UNSENT_REPLY_RESULT =
   'Balasan ini BELUM terkirim ke pelanggan: kamu menulisnya sebelum hasil hitung_harga keluar. Panggil respond_to_customer lagi dan pakai angka dari hasil hitung_harga di atas, persis seperti tertulis.';
 
 /** A tool_result for EVERY tool_use in the response - the next request is rejected otherwise. */
-async function answerToolCalls(content: Anthropic.ContentBlock[], figures: number[]): Promise<Anthropic.ToolResultBlockParam[]> {
+async function answerToolCalls(content: Anthropic.ContentBlock[], tally: PriceTally): Promise<Anthropic.ToolResultBlockParam[]> {
   const results: Anthropic.ToolResultBlockParam[] = [];
   for (const block of content) {
     if (block.type !== 'tool_use') continue;
     if (block.name === PRICE_TOOL_NAME) {
-      results.push(await priceToolResult(block, figures));
+      results.push(await priceToolResult(block, tally));
     } else if (block.name === RESOLVE_LINK_TOOL_NAME) {
       results.push({ type: 'tool_result', tool_use_id: block.id, content: await resolveLink((block.input as { url: string }).url) });
     } else if (block.name === RESPOND_TOOL_NAME) {
@@ -915,10 +919,11 @@ async function callViaAPI(systemPrompt: string, messages: ChatMessage[]): Promis
   const loopMessages: Anthropic.MessageParam[] = [...messages];
   const tools = API_TOOLS;
   const system = toSystemBlocks(systemPrompt);
-  // Every figure hitung_harga returned this turn - the only figures the price check accepts.
-  const figures: number[] = [];
+  // Every figure hitung_harga returned this turn - the only figures the price check accepts - and
+  // whether it ran at all: a call that priced nothing leaves no figure allowed.
+  const tally: PriceTally = { figures: [], ran: false };
   const respond = (block: Anthropic.ToolUseBlock): AIResponse =>
-    ({ ...extractFromToolInput(block.input as Record<string, unknown>), toolFigures: figures });
+    ({ ...extractFromToolInput(block.input as Record<string, unknown>), toolFigures: tally.figures, priceToolRan: tally.ran });
 
   // Tool-use loop: Claude may call resolve_link or hitung_harga (client) or web_search
   // (server-side), and exits by calling respond_to_customer (our structured
@@ -953,7 +958,7 @@ async function callViaAPI(systemPrompt: string, messages: ChatMessage[]): Promis
     if (respondBlock) return respond(respondBlock);
 
     loopMessages.push({ role: 'assistant', content: response.content });
-    loopMessages.push({ role: 'user', content: await answerToolCalls(response.content, figures) });
+    loopMessages.push({ role: 'user', content: await answerToolCalls(response.content, tally) });
   }
 
   // Failsafe: same tool array as the loop — a different tools list would invalidate the
@@ -979,7 +984,7 @@ async function callViaAPI(systemPrompt: string, messages: ChatMessage[]): Promis
   // their results and exactly one more ask, through the same tools.
   if (forcedResponse.content.some(isToolUse(PRICE_TOOL_NAME))) {
     loopMessages.push({ role: 'assistant', content: forcedResponse.content });
-    loopMessages.push({ role: 'user', content: await answerToolCalls(forcedResponse.content, figures) });
+    loopMessages.push({ role: 'user', content: await answerToolCalls(forcedResponse.content, tally) });
     forcedResponse = await forcedCall('failsafe-resend');
   }
 
@@ -1032,9 +1037,11 @@ async function callViaAgentSDK(systemPrompt: string, messages: ChatMessage[]): P
     ];
 
   let captured: Record<string, unknown> | null = null;
-  // Same as callViaAPI: every figure hitung_harga returned this turn, the retry below included.
-  const figures: number[] = [];
-  const respond = (input: Record<string, unknown>): AIResponse => ({ ...extractFromToolInput(input), toolFigures: figures });
+  // Same as callViaAPI: every figure hitung_harga returned this turn, the retry below included, and
+  // whether it ran at all.
+  const tally: PriceTally = { figures: [], ran: false };
+  const respond = (input: Record<string, unknown>): AIResponse =>
+    ({ ...extractFromToolInput(input), toolFigures: tally.figures, priceToolRan: tally.ran });
   const respondTool = tool(RESPOND_TOOL_NAME, RESPOND_TOOL_DESC, RESPOND_SHAPE, async (input) => {
     captured = input as Record<string, unknown>;
     return { content: [{ type: 'text' as const, text: 'Tersampaikan ke pelanggan.' }] };
@@ -1048,7 +1055,8 @@ async function callViaAgentSDK(systemPrompt: string, messages: ChatMessage[]): P
     ),
     tool(PRICE_TOOL_NAME, PRICE_TOOL_DESC, PriceToolInput.shape, async (input) => {
       const { text, figures: returned } = await runPriceTool(input);
-      figures.push(...returned);
+      tally.ran = true;
+      tally.figures.push(...returned);
       return { content: [{ type: 'text' as const, text }] };
     }),
     respondTool,
@@ -1105,14 +1113,19 @@ async function callClaude(
   // The photo filter sits here for the same reason: whichever draft is sent, its photos are the catalog's.
   const verified = await verifyFit(response, systemPrompt, situationStr, {
     // The repair sees only the draft's text, not the tool results behind it, so the figures
-    // hitung_harga returned earlier in this turn stay accepted for the rewrite.
+    // hitung_harga returned earlier in this turn stay accepted for the rewrite - and a call that
+    // priced nothing still counts as run, so the rewrite cannot fall back to the catalog's tiers.
     regenerate: async (correction) => {
       const repaired = await generate([
         ...messages,
         { role: 'assistant', content: response.message },
         { role: 'user', content: correction },
       ]);
-      return { ...repaired, toolFigures: [...(response.toolFigures ?? []), ...(repaired.toolFigures ?? [])] };
+      return {
+        ...repaired,
+        toolFigures: [...(response.toolFigures ?? []), ...(repaired.toolFigures ?? [])],
+        priceToolRan: Boolean(response.priceToolRan || repaired.priceToolRan),
+      };
     },
     firstReply: !lastBot,
     // Not the first reply: a greeting with no need stated gets "Ada yang bisa saya bantu?" there (client,
