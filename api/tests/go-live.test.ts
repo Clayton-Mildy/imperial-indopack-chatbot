@@ -21,6 +21,7 @@ const { credentialsSet, getWhatsAppStatus, getGoLiveIssues } = await import('../
 const { getConfig } = await import('../src/config.js');
 const { getPoFormUrl, setPoFormUrl } = await import('../src/repositories/appSettings.js');
 const { settingsRoutes } = await import('../src/routes/dashboard/settings.js');
+const { loadDemoCatalog, purgeDemoCatalog } = await import('../src/services/demoCatalog.js');
 const { brandSlugOfName } = await import('../src/domain/brands.js');
 
 const CFG = getConfig();
@@ -47,11 +48,15 @@ describe('brandSlugOfName', () => {
 describe('go-live issues', () => {
   const app = Fastify();
   let savedPo: string;
+  let hadDemo = false;
   const savedUrls = new Map<string, string | null>();
   const DEMO = '__go_live_test__ Box (CONTOH)';
 
   beforeAll(async () => {
     await app.register(settingsRoutes);
+    // Independent of the dev DB: a loaded demo catalog would make catalog_demo true whatever this test does.
+    hadDemo = (await getDb().select().from(products).where(like(products.name, '%(CONTOH)'))).length > 0;
+    await purgeDemoCatalog();
     savedPo = await getPoFormUrl();
     const db = getDb();
     for (const slug of ['Kertas Supreme', 'Imperial Indopack']) {
@@ -73,6 +78,7 @@ describe('go-live issues', () => {
       if (url === 'DELETE') await db.delete(brands).where(eq(brands.id, id));
       else await db.update(brands).set({ catalogFileUrl: url }).where(eq(brands.id, id));
     }
+    if (hadDemo) await loadDemoCatalog();
   });
 
   it('flags the placeholder PO link until a real one is saved', async () => {
@@ -102,6 +108,7 @@ describe('go-live issues', () => {
   it('reports catalog_demo (right after catalog_empty) while a (CONTOH) product is active', async () => {
     const db = getDb();
     const [brand] = await db.select().from(brands).where(eq(brands.name, 'Imperial Indopack'));
+    expect(await codes()).not.toContain('catalog_demo'); // baseline: no demo product at all
     const [p] = await db.insert(products).values({ name: DEMO, brandId: brand!.id }).returning();
     const [v] = await db.insert(productVariants).values({ productId: p!.id, name: '1x1x1' }).returning();
     const noTier = await codes();

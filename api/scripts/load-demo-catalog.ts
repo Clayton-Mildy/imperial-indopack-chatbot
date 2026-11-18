@@ -7,7 +7,6 @@
  */
 import 'dotenv/config';
 import { loadDemoCatalog, purgeDemoCatalog } from '../src/services/demoCatalog.js';
-import { getDb } from '../src/db/client.js';
 
 async function main() {
   const url = process.env['DATABASE_URL'];
@@ -25,6 +24,9 @@ async function main() {
   }
 }
 
-main()
-  .then(async () => { await (getDb() as unknown as { $client?: { end(): Promise<void> } }).$client?.end?.(); process.exit(0); })
-  .catch((err) => { console.error(err instanceof Error ? err.message : err); process.exit(1); });
+// No process.exit on success: the import refreshes embeddings in the background, and the idle
+// pool lets the process end by itself once that is done.
+main().catch((err) => {
+  console.error(err instanceof Error ? err.message : err);
+  process.exitCode = 1;
+});
