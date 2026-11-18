@@ -1,9 +1,9 @@
 import { asc, eq, inArray } from 'drizzle-orm';
 import { getDb, type DbOrTx } from '../db/client.js';
 import { variantPriceTiers } from '../db/schema.js';
-import type { PriceTier, QtyUnit } from '../domain/pricing.js';
+import { toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
 
-/** Tiers per variant id (quotePrice does its own ordering). */
+/** Tiers per variant id, each list sorted by pcs threshold ascending (5 rim before 10 rim, whatever the insert order). */
 export async function listTiersByVariant(variantIds: string[]): Promise<Map<string, PriceTier[]>> {
   const out = new Map<string, PriceTier[]>();
   if (variantIds.length === 0) return out;
@@ -25,6 +25,7 @@ export async function listTiersByVariant(variantIds: string[]): Promise<Map<stri
     arr.push(tier);
     out.set(r.variantId, arr);
   }
+  for (const arr of out.values()) arr.sort((a, b) => toPcs(a.minQty, a.qtyUnit) - toPcs(b.minQty, b.qtyUnit));
   return out;
 }
 
