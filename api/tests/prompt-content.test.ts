@@ -93,6 +93,27 @@ describe('the facts each section must state', () => {
     expect(c).toMatch(/pelanggan lain/i);
   });
 
+  // Review fix (Task 10 I2): TIDAK_ADA_DI_KATALOG has three causes, each with its own step, stated once.
+  it('Pricing: TIDAK_ADA_DI_KATALOG by its cause - several products, an unknown size, nothing to price', () => {
+    const c = section('Pricing');
+    expect(c).toMatch(/\(a\)[^\n]*lebih dari satu produk[^\n]*hitung_harga lagi[^\n]*nama produk persis[^\n]*gsm/);
+    expect(c).toMatch(/\(b\)[^\n]*Ukuran yang ada[^\n]*SEKALI[^\n]*custom[^\n]*confidence "low"/);
+    expect(c).toMatch(/\(c\)[^\n]*(?:stok habis|kosong)[^\n]*belum punya harga[^\n]*confidence "low"/);
+    expect(c).not.toMatch(/(?:atau|dan) TIDAK_ADA_DI_KATALOG: → jangan sebut harga/);
+  });
+
+  it('the custom-job rule lives in Pricing only; other places point to it', () => {
+    expect(section('Escalation')).toContain('lihat Pricing');
+    expect(section('Escalation')).not.toMatch(/TIDAK_ADA_DI_KATALOG/);
+    expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).toMatch(/PESANAN CUSTOM[^]*TIDAK_ADA_DI_KATALOG di Pricing/);
+    expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).not.toMatch(/Sebutkan dulu ukuran yang ada di katalog/);
+    expect(TOOL_USE_SEARCH_INSTRUCTION).not.toMatch(/TIDAK_ADA_DI_KATALOG: → tanpa harga, confidence "low"/);
+  });
+
+  // Review fix (Task 10 m3): the strict check takes only tool figures once the tool ran this turn.
+  it('Pricing: once hitung_harga ran this turn, every price in the reply comes from it', () =>
+    expect(section('Pricing')).toMatch(/hitung_harga sudah dipanggil[^\n]*SEMUA harga[^\n]*setiap barang/));
+
   it('Pricing: every price figure is written "Rp N" - no ribu, rb, IDR or ranges', () => {
     const c = section('Pricing');
     expect(c).toContain('"Rp"');
@@ -108,11 +129,30 @@ describe('the facts each section must state', () => {
     expect(c).toMatch(/tim/);
   });
 
+  // Review fix (Task 10 I1): the team is told through the flag; the model does not promise it itself.
+  it('Design: no reference photos sets examples_for_team instead of promising examples itself', () => {
+    const c = section('Design');
+    expect(c).toMatch(/tidak ada baris itu[^\n]*examples_for_team: true/i);
+    expect(c).toMatch(/JANGAN[^\n]*menulis[^\n]*tim[^\n]*contoh/i);
+    expect(c).not.toContain('follow_up_notes');
+  });
+
   it('PO Form: send_po_form only on agreement, and the model never writes the link or the form line', () => {
     const c = section('PO Form');
     expect(c).toContain('send_po_form');
     expect(c).toMatch(/JANGAN[^\n]*link/i);
     expect(c).toMatch(/JANGAN[^\n]*(?:isi|mengisi)[^\n]*form/i);
+    // Review fix (Task 10 m4): the order is repeated back, not "confirmed".
+    expect(c).toContain('ulangi singkat pesanannya');
+    expect(c).not.toContain('konfirmasi singkat pesanannya');
+  });
+
+  // Review fix (Task 10 m4): the close-line names no PO form, and a reply may end without a question.
+  it('Rules: the next step closes a reply when there is one, and a closed answer needs no question', () => {
+    const close = section('Rules').split('\n').find((l) => l.includes('langkah berikutnya'))!;
+    expect(close).not.toMatch(/form PO/);
+    expect(close).toMatch(/tanpa pertanyaan/);
+    expect(close).toMatch(/belum (?:tersedia|ada)/);
   });
 
   it('behavioural rules talk about image_urls, never image_url', () => {

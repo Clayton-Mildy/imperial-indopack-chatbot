@@ -39,6 +39,14 @@ describe('respond_to_customer output', () => {
     expect(extractFromToolInput(BASE).sendPoForm).toBeUndefined();
   });
 
+  // Review fix (Task 10 I1): no design and no reference photos - the team sends examples.
+  it('asks the team for design examples only on a real true', () => {
+    expect(extractFromToolInput({ ...BASE, examples_for_team: true }).examplesForTeam).toBe(true);
+    expect(extractFromToolInput({ ...BASE, examples_for_team: 'true' }).examplesForTeam).toBeUndefined();
+    expect(extractFromToolInput({ ...BASE, examples_for_team: false }).examplesForTeam).toBeUndefined();
+    expect(extractFromToolInput(BASE).examplesForTeam).toBeUndefined();
+  });
+
   it('no longer reads a buyer type or a single image url', () => {
     const r = extractFromToolInput({ ...BASE, customer_type: 'reseller', image_url: '/a.jpg' });
     expect(r).not.toHaveProperty('customerType');
@@ -53,6 +61,7 @@ describe('the respond tool contract', () => {
   it('asks for send_po_form and image_urls, never the buyer type', () => {
     expect(props.properties['send_po_form']).toMatchObject({ type: 'boolean', description: RESPOND_FIELD_DESC.send_po_form });
     expect(props.properties['image_urls']).toMatchObject({ type: 'array', items: { type: 'string' }, maxItems: 3, description: RESPOND_FIELD_DESC.image_urls });
+    expect(props.properties['examples_for_team']).toMatchObject({ type: 'boolean', description: RESPOND_FIELD_DESC.examples_for_team });
     expect(props.properties).not.toHaveProperty('customer_type');
     expect(props.properties).not.toHaveProperty('image_url');
     expect(props.required).toEqual(['message', 'confidence', 'fit_basis']);
@@ -62,11 +71,14 @@ describe('the respond tool contract', () => {
     expect(Object.keys(RESPOND_SHAPE).sort()).toEqual(Object.keys(props.properties).sort());
     expect(RESPOND_SHAPE.image_urls.safeParse(['/a', '/b', '/c', '/d']).success).toBe(false);
     expect(RESPOND_SHAPE.send_po_form.safeParse(undefined).success).toBe(true);
+    expect(RESPOND_SHAPE.examples_for_team.safeParse(true).success).toBe(true);
+    expect(RESPOND_SHAPE.examples_for_team.safeParse(undefined).success).toBe(true);
   });
 
   it('describes the new fields in the plan\'s words', () => {
     expect(RESPOND_FIELD_DESC.send_po_form).toBe('true only on the turn the customer clearly agrees to buy at the quoted price');
-    expect(RESPOND_FIELD_DESC.image_urls).toBe('reference photo urls of the product you recommend, copied from the catalog block');
+    expect(RESPOND_FIELD_DESC.image_urls).toBe('reference photo urls of the product you recommend, copied exactly from the product\'s [FOTO REFERENSI TERSEDIA] line, at most 3');
+    expect(RESPOND_FIELD_DESC.examples_for_team).toBe('true when the customer has no design and the product has no reference photos, so the team sends examples');
   });
 
   it('no field asks for the buyer type or for arithmetic the price tool does', () => {

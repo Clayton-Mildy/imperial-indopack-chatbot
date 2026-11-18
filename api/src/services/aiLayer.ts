@@ -43,8 +43,9 @@ export const RESPOND_FIELD_DESC = {
     'Set this true ONLY when hitung_harga cannot price the order (e.g. mixed catalog and custom items): the team calculates the total. Never add up a total yourself. Give the prices hitung_harga returned for the items it can price, leave the total out of message, and do not write that someone will calculate it - the system adds that line and tells the team, who calculate it. Never promise to calculate it yourself later. Keep confidence "high".',
   topics_detected: 'Key topics detected in the customer message.',
   catalog_url: 'Set it (any text) when the customer wants our price list and the KATALOG line in INFORMASI PELANGGAN does not already cover it - including the turn they answer what they want to pack after asking for prices. Which brand\'s file goes out, if any, is decided by the system; never write a link or path in message.',
-  image_urls: 'reference photo urls of the product you recommend, copied from the catalog block',
+  image_urls: 'reference photo urls of the product you recommend, copied exactly from the product\'s [FOTO REFERENSI TERSEDIA] line, at most 3',
   send_po_form: 'true only on the turn the customer clearly agrees to buy at the quoted price',
+  examples_for_team: 'true when the customer has no design and the product has no reference photos, so the team sends examples',
   profile_update:
     'CATAT: customer profile fields learned in this turn, only from what the customer wrote. Customer: name, business_name (their shop, restaurant, catering or brand), business_type (what they sell or pack). Order: brands (array of "imperial_indopack" for boxes, "kertas_supreme" for wrapping paper, greaseproof, paper bags, sleeves and envelopes), items (array of { product, size, gsm, print, qty, qty_unit ("rim" or "pcs"), has_design }). Send only the items that changed this turn, never the whole list. To update an item already noted (a new qty, has_design), resend it with the same product and size as before plus only the changed fields - a product or size written differently is saved as a second item. Write qty on the turn the customer states how many they need - if your message says you noted it, it must be here. Upsell/cross-sell tracking: upsell_offered (boolean, set true when you offered an upsell this turn), upsell_accepted (boolean, set when customer responded to upsell offer), crosssell_offered (boolean, set true when you offered cross-sell this turn), crosssell_accepted (boolean, set when customer responded to cross-sell offer). Only set upsell/crosssell fields when relevant — do not set them on every turn. Lead tracking (these three go on the sales report, not the customer profile): "lead_temperature" ("hot" when this person shows real buying intent for something we can supply — asked a price, named a quantity, gave a deadline, or asked how to order; "cold" when they are only browsing, have gone quiet, or what they want is not something we sell or have, and they have not taken up an alternative you offered). "order_confirmed" (true ONLY on the single turn the customer first commits to a concrete order — a product plus a quantity, e.g. "oke kak saya ambil 10 rim". Never repeat it on later turns about the same order, it is counted each time). "order_value_idr" (integer rupiah total for THAT order only, not a running total: the total hitung_harga returned for it. Omit it entirely when hitung_harga gave no total — a missing number is fine, a guessed one is not). Only include fields learned in THIS turn.',
   follow_up_notes:
@@ -102,6 +103,7 @@ export const RESPOND_TOOL: Anthropic.Tool = {
       catalog_url: { type: 'string', description: RESPOND_FIELD_DESC.catalog_url },
       image_urls: { type: 'array', items: { type: 'string' }, maxItems: MAX_IMAGE_URLS, description: RESPOND_FIELD_DESC.image_urls },
       send_po_form: { type: 'boolean', description: RESPOND_FIELD_DESC.send_po_form },
+      examples_for_team: { type: 'boolean', description: RESPOND_FIELD_DESC.examples_for_team },
       profile_update: {
         type: 'object',
         description: RESPOND_FIELD_DESC.profile_update,
@@ -125,6 +127,7 @@ export const RESPOND_SHAPE = {
   catalog_url: z.string().optional().describe(RESPOND_FIELD_DESC.catalog_url),
   image_urls: z.array(z.string()).max(MAX_IMAGE_URLS).optional().describe(RESPOND_FIELD_DESC.image_urls),
   send_po_form: z.boolean().optional().describe(RESPOND_FIELD_DESC.send_po_form),
+  examples_for_team: z.boolean().optional().describe(RESPOND_FIELD_DESC.examples_for_team),
   profile_update: z.record(z.string(), z.unknown()).optional().describe(RESPOND_FIELD_DESC.profile_update),
   follow_up_notes: z.string().optional().describe(RESPOND_FIELD_DESC.follow_up_notes),
   fit_basis: z.array(z.string()).describe(RESPOND_FIELD_DESC.fit_basis),
@@ -210,6 +213,7 @@ export function extractFromToolInput(rawInput: Record<string, unknown>): AIRespo
     catalogUrl: typeof input.catalog_url === 'string' ? input.catalog_url : undefined,
     imageUrls: photoUrls(input.image_urls),
     sendPoForm: input.send_po_form === true || undefined,
+    examplesForTeam: input.examples_for_team === true || undefined,
     profileUpdate: input.profile_update && typeof input.profile_update === 'object' && !Array.isArray(input.profile_update)
       ? input.profile_update as Record<string, unknown>
       : undefined,
@@ -674,7 +678,7 @@ PEMBUKA TAUTAN (resolve_link):
 Jika pelanggan MENGIRIM tautan (link Google Maps, marketplace, Instagram, atau website — mis. akun usahanya atau contoh kemasan yang dia mau), kamu WAJIB membukanya dengan tool resolve_link SEBELUM membalas. Satu panggilan cukup: tool ini mengikuti redirect sendiri dan mengembalikan URL akhir plus nama tempat/judul halamannya (field "nama_tempat" / "judul_halaman"). Pakai nama dari hasil itu — JANGAN menanyakan lagi informasi yang sudah ada di dalam tautannya, dan JANGAN PERNAH mengaku sudah "melihat" isi tautan tanpa benar-benar memanggil resolve_link. Jika hasilnya menyatakan tautan tidak bisa dibuka atau tidak ada nama yang terbaca, katakan jujur lalu tanyakan langsung yang kamu perlukan. resolve_link hanya untuk tautan yang pelanggan kirim — bukan untuk mencari produk, harga, ukuran, atau stok.
 
 KALKULATOR HARGA (hitung_harga):
-Setiap harga untuk jumlah tertentu, setiap total, dan pilihan tingkat harga WAJIB berasal dari hitung_harga. Panggil dengan product (nama produk persis seperti di KATALOG PRODUK), size (ukuran variannya), qty (angka biasa: "2.500 pcs" = 2500, "10 rim" = 10), dan unit ("rim" atau "pcs"); satu panggilan per barang, dua barang = dua panggilan di giliran yang sama. Panggil hitung_harga dulu dan tunggu hasilnya sebelum respond_to_customer, lalu ulangi angkanya persis seperti tertulis, dengan "Rp" di depan setiap harga. HARGA: → sebutkan; DI_BAWAH_MINIMUM: → jelaskan minimumnya tanpa harga; DI_ATAS_TINGKAT_TERATAS: atau TIDAK_ADA_DI_KATALOG: → tanpa harga, confidence "low" (tim yang menghitung).`;
+Setiap harga untuk jumlah tertentu, setiap total, dan pilihan tingkat harga WAJIB berasal dari hitung_harga. Panggil dengan product (nama produk persis seperti di KATALOG PRODUK), size (ukuran variannya), qty (angka biasa: "2.500 pcs" = 2500, "10 rim" = 10), dan unit ("rim" atau "pcs"); satu panggilan per barang, dua barang = dua panggilan di giliran yang sama. Panggil hitung_harga dulu dan tunggu hasilnya sebelum respond_to_customer, lalu ulangi angkanya persis seperti tertulis, dengan "Rp" di depan setiap harga. HARGA: → sebutkan; DI_BAWAH_MINIMUM: → jelaskan minimumnya tanpa harga; DI_ATAS_TINGKAT_TERATAS: → tanpa harga, confidence "low" (tim yang menghitung); TIDAK_ADA_DI_KATALOG: → ikuti alasannya seperti di Pricing (nama produk yang lebih tepat, ukuran yang ada, atau tim yang menghitung).`;
 
 function buildSystemPromptFromSections(sections: PromptSection[]): string {
   return sections.map((s) => `## ${s.name}\n${s.content}`).join('\n\n');
@@ -1240,7 +1244,7 @@ async function maybeSummarizeConversation(conversationId: string): Promise<void>
 // What the customer's photo is decides the reply (spec 7.7): a logo to print, or the packaging they want.
 const IMAGE_MESSAGE_INSTRUCTION = `[Pelanggan mengirim foto. Tentukan dulu jenisnya:
 - LOGO, DESAIN, atau ARTWORK yang mau dicetak → catat has_design: true di item pesanannya, ucapkan terima kasih, dan sampaikan desainnya akan diteruskan ke tim bersama pesanannya. Lanjutkan dengan detail pesanan yang belum diketahui (Order Details). Jangan menilai desainnya.
-- FOTO BOX, KERTAS, atau KEMASAN yang dia inginkan → cek blok KATALOG PRODUK: tawarkan produk yang jenis, bahan, dan ukurannya paling dekat dengan yang di foto, dengan nama produknya. Jangan bilang sama persis kalau belum pasti; sebut bedanya yang terlihat. Kalau tidak ada produk yang cocok (model, ukuran, atau cetakan khusus), sampaikan jujur dan set confidence "low" supaya tim yang mengecek.
+- FOTO BOX, KERTAS, atau KEMASAN yang dia inginkan → cek blok KATALOG PRODUK: tawarkan produk yang jenis, bahan, dan ukurannya paling dekat dengan yang di foto, dengan nama produknya. Jangan bilang sama persis kalau belum pasti; sebut bedanya yang terlihat. Kalau yang dia mau model, ukuran, atau cetakan khusus, itu pesanan custom (lihat Pricing, TIDAK_ADA_DI_KATALOG).
 - Foto yang belum jelas maksudnya → tanyakan dengan natural, mis. "Ini contoh kemasannya atau logo yang mau dicetak kak?"
 Patuhi ATURAN KATALOG TERTUTUP: jangan mengarang produk, ukuran, atau harga.]`;
 

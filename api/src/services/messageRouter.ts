@@ -6,7 +6,7 @@ import { getContactProfile, deleteContactProfile } from '../repositories/contact
 import { resetLeadsForContact, tagNonSalesLead } from '../repositories/leads.js';
 import { getFirstPhoneNumber, findPhoneNumberByProviderId } from '../repositories/phoneNumbers.js';
 import { getAiEnabledDefault, getPoFormUrl } from '../repositories/appSettings.js';
-import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormMessage, PO_FORM_PLACEHOLDER_URL, CANNED_PO_FORM_FROM_TEAM } from '../domain/constants.js';
+import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormMessage, PO_FORM_PLACEHOLDER_URL, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM } from '../domain/constants.js';
 import { buildContextAndCallAI } from './aiLayer.js';
 import { resolveCatalogDelivery, isPriceRequest, asksForPriceList, forgetSentPriceLists } from './catalogDelivery.js';
 import { extractCatalogKeywordsFromImage, visionExtractToKeywords, type VisionExtract } from './visionKeywords.js';
@@ -257,20 +257,31 @@ function nextAck(recent: { body: string; metadata?: Record<string, unknown> | nu
 const TEAM_CALCULATES_RE = /\btim\b[^.\n]{0,40}\bhitung/i;
 
 /**
- * What the reply leaves to the team: a total over several items (the model's totalForTeam), and a size
+ * What the reply leaves to the team: a total over several items (the model's totalForTeam), a size
  * the customer asked for that the reply does not give (unansweredSizeQuestion - the catalog has no size
- * for most products). Each is a fixed line under the reply and a reason on the hand-off.
+ * for most products), and design examples for a product with no reference photos (examplesForTeam).
+ * Each is a fixed line (under the reply, or after it for the examples) and a reason on the hand-off.
  */
 interface TeamFollowUp {
   total: boolean;
   size: boolean;
   /** The PO form the team sends by hand (poFormToSend's reason), or null. */
   poForm?: string | null;
+  /** The team sends design examples: CANNED_DESIGN_EXAMPLES_FROM_TEAM follows the reply and its photos. */
+  examples?: boolean;
 }
 
 function teamFollowUp(r: AIResponse, customerText: string, po?: { teamReason: string | null } | null): TeamFollowUp {
-  return { total: Boolean(r.totalForTeam), size: unansweredSizeQuestion(customerText, r.message), poForm: po?.teamReason ?? null };
+  return {
+    total: Boolean(r.totalForTeam), size: unansweredSizeQuestion(customerText, r.message),
+    poForm: po?.teamReason ?? null, examples: Boolean(r.examplesForTeam),
+  };
 }
+
+const DESIGN_EXAMPLES_REASON = 'Contoh desain diminta - pelanggan belum punya desain dan produknya belum punya foto contoh, mohon kirimkan contoh desain';
+
+/** Anything in the follow-up the team has to act on. */
+const needsTeam = (f: TeamFollowUp): boolean => f.total || f.size || Boolean(f.poForm) || Boolean(f.examples);
 
 /** The reply as sent: the model's answer, plus the team's promise for each thing it left to them. */
 function replyText(r: AIResponse, f: TeamFollowUp = { total: Boolean(r.totalForTeam), size: false }): string {
@@ -291,6 +302,7 @@ async function handToTeam(conv: { id: string; status: string; contactId: string 
     f.total ? 'Pelanggan minta total harga - harga per item sudah dikirim, total keseluruhan mohon dihitung tim' : '',
     f.size ? 'Pelanggan menanyakan ukuran/panjang yang tidak ada di data katalog - mohon diinfokan tim' : '',
     f.poForm ?? '',
+    f.examples ? DESIGN_EXAMPLES_REASON : '',
   ].filter(Boolean).join('; ');
   await updateConversationStatus(conv.id, 'escalated', reason)
     .catch((err) => console.warn('[messageRouter] team hand-off status failed:', err instanceof Error ? err.message : err));
@@ -524,14 +536,16 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     if (supersedeStaleTurn(entry, filesSent)) return;
     const poForm = aiResponse.sendPoForm ? await poFormToSend() : null;
     const followUp = teamFollowUp(aiResponse, combinedText, poForm);
-    if (followUp.total || followUp.size || followUp.poForm) await handToTeam(conv, combinedText, followUp);
+    if (needsTeam(followUp)) await handToTeam(conv, combinedText, followUp);
     else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conversationId, combinedText);
     const reply = replyText(aiResponse, followUp);
     let sentId: string | null = null;
     try { sentId = await entry.sendReply(reply); } catch { /* ignore */ }
-    // After the text: the reference photos in order, then the PO form link (or the team's promise).
+    // After the text: the reference photos in order, the team's design-examples promise, then the PO
+    // form link (or the team's promise).
     const photos = await sendReferencePhotos(aiResponse.imageUrls, async (url) => (await entry.sendImage?.(url)) ?? null);
-    const poSent = poForm ? await sendPoForm(poForm.body, (text) => entry.sendReply(text)) : null;
+    const examplesSent = followUp.examples ? await sendFixedLine(CANNED_DESIGN_EXAMPLES_FROM_TEAM, 'design_examples', (text) => entry.sendReply(text)) : null;
+    const poSent = poForm ? await sendFixedLine(poForm.body, 'po_form', (text) => entry.sendReply(text)) : null;
     if (aiResponse.catalogUrl) {
       // The model spotted a price-list request the keywords missed (say, the answer to "barang apa
       // yang mau dikemas?"), or learned this turn the brand the keyword path did not know yet. Send
@@ -550,7 +564,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     }
     // Rows in send order, so the thread reads as the customer saw it.
     await insertMessage({ conversationId, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved' });
-    await recordAfterReply(conversationId, photos, poSent);
+    await recordAfterReply(conversationId, photos, [examplesSent, poSent]);
     saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
   } finally {
     inFlightConversations.delete(conversationId);
@@ -732,14 +746,16 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
 
   const poForm = aiResponse.sendPoForm ? await poFormToSend() : null;
   const followUp = teamFollowUp(aiResponse, body, poForm);
-  if (followUp.total || followUp.size || followUp.poForm) await handToTeam(conv, body, followUp);
+  if (needsTeam(followUp)) await handToTeam(conv, body, followUp);
   else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conv.id, body);
   const reply = replyText(aiResponse, followUp);
   let sentId: string | null = null;
   try { sentId = await sendTextMessage(phoneNumber.phoneNumberId, replyJid, reply); } catch { /* ignore */ }
-  // After the text: the reference photos in order, then the PO form link (or the team's promise) - as on the text path.
+  // After the text: the reference photos, the design-examples promise, then the PO form - as on the text path.
   const photos = await sendReferencePhotos(aiResponse.imageUrls, (url) => sendImageMessage(phoneNumber.phoneNumberId, replyJid, url, ''));
-  const poSent = poForm ? await sendPoForm(poForm.body, (text) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text)) : null;
+  const sendLine = (text: string) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text);
+  const examplesSent = followUp.examples ? await sendFixedLine(CANNED_DESIGN_EXAMPLES_FROM_TEAM, 'design_examples', sendLine) : null;
+  const poSent = poForm ? await sendFixedLine(poForm.body, 'po_form', sendLine) : null;
   if (aiResponse.catalogUrl) {
     // Price list asked for via the photo's caption. No keyword trigger runs on this path,
     // so without this the model says "katalognya sudah dikirim" and nothing is sent. Nothing was
@@ -754,7 +770,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     }
   }
   await insertMessage({ conversationId: conv.id, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved', metadata: { source: 'vision_recommend' } as Record<string, unknown> });
-  await recordAfterReply(conv.id, photos, poSent);
+  await recordAfterReply(conv.id, photos, [examplesSent, poSent]);
   saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
 }
 
@@ -799,27 +815,30 @@ async function poFormToSend(): Promise<{ body: string; teamReason: string | null
   }
 }
 
-/** Sends the PO message; a failed send is still stored, as 'saved'. */
-async function sendPoForm(body: string, send: (text: string) => Promise<string | null>): Promise<{ body: string; wamid: string | null }> {
+interface FixedLineSent { body: string; source: string; wamid: string | null }
+
+/** Sends a fixed line after the reply (the PO form, the design-examples promise); a failed send is still stored, as 'saved'. */
+async function sendFixedLine(body: string, source: string, send: (text: string) => Promise<string | null>): Promise<FixedLineSent> {
   let wamid: string | null = null;
   try { wamid = await send(body); } catch { /* recorded as 'saved' */ }
-  return { body, wamid };
+  return { body, source, wamid };
 }
 
 /** The rows for what followed the reply, after the reply's own row and in the same order. */
 async function recordAfterReply(
   conversationId: string,
   photos: { url: string; wamid: string }[],
-  poForm: { body: string; wamid: string | null } | null
+  lines: (FixedLineSent | null)[]
 ): Promise<void> {
   for (const p of photos) {
     await recordOutboundMedia({ conversationId, kind: 'image', link: p.url, wamid: p.wamid, source: 'bot_media' });
   }
-  if (poForm) {
+  for (const line of lines) {
+    if (!line) continue;
     await insertMessage({
-      conversationId, role: 'assistant', body: poForm.body,
-      waMessageId: poForm.wamid || undefined, status: poForm.wamid ? 'sent' : 'saved',
-      metadata: { source: 'po_form' } as Record<string, unknown>,
+      conversationId, role: 'assistant', body: line.body,
+      waMessageId: line.wamid || undefined, status: line.wamid ? 'sent' : 'saved',
+      metadata: { source: line.source } as Record<string, unknown>,
     });
   }
 }

@@ -357,8 +357,9 @@ export function verifyReplyTier(
 // the open question is what the client asked for (2026-11-02).
 const OPEN_QUESTION_RE = /\bada\s+yang\s+bisa\s+(?:saya|aku|kami|kita)\s+bantu/i;
 // "Boleh tahu nama kakak siapa?" is a name question too (live 2026-11-08, asked right after "Dengan
-// Jovi ka") - the old pattern knew only "dengan siapa" / "siapa nama".
-export const ASKS_NAME_RE = /dengan\s+siapa|siapa\s+nama|\bnama\s+(?:kakak|kak|bapak|ibu|anda|mas|mbak)\s+siapa|\b(?:boleh|bisa)\s+(?:saya\s+|aku\s+)?(?:tahu|tau|kenal)\s+(?:dengan\s+)?nama/i;
+// Jovi ka") - the old pattern knew only "dengan siapa" / "siapa nama". So is the hand-off's own
+// "dengan kakak siapa saya bicara?". "Boleh tahu nama usahanya?" is not: that is the business name.
+export const ASKS_NAME_RE = /dengan\s+(?:(?:kakak|kak|bapak|ibu|mas|mbak)\s+)?siapa|siapa\s+nama(?!\s+(?:usaha|toko)\w*)|\bnama\s+(?:kakak|kak|bapak|ibu|anda|mas|mbak)\s+siapa|\b(?:boleh|bisa)\s+(?:saya\s+|aku\s+)?(?:tahu|tau|kenal)\s+(?:dengan\s+)?nama(?!\s+(?:usaha|toko)\w*)/i;
 // The first order question (Order Details): what they pack or sell.
 const ASKS_WHAT_TO_PACK_RE = /\bdikemas\b|\bkemasan(?:nya)?\s+(?:untuk|buat)\b|\b(?:bungkus|membungkus)\s+apa\b|\bjualan(?:nya)?\s+apa\b/i;
 
@@ -397,10 +398,10 @@ export function verifyReplyFirstGreeting(message: string): { ok: boolean; reason
 // "Saya perlu menulis ulang balasan saya" (live 2026-10-14) is the repair instruction read back.
 const META_WORDS_RE = /\b(?:menulis|tulis)\s+ulang\s+balasan\b|\bprompt\b|\bkonfigurasi\b|\binstruksi\s+(?:sistem|internal)\b|\bsistem\s+(?:saya|kami|normal|internal|legacy)\b|\b(?:saya|aku)\s+(?:adalah\s+)?(?:bot|robot|ai)\b/i;
 
-// Internal vocabulary the prompt bans (Kebijakan Reseller/Agen, "Hindari") and a replay still
-// produced: "Tidak ada kewajiban kontrak atau syarat administratif yang rumit" (UAT Run 2 C-06).
-// SOP in capitals only - "sop" is also soup.
-const INTERNAL_TERM_RES = [/\bkontrak\b/i, /\bSOP\b/];
+// Internal vocabulary a customer must never read. A replay once produced "Tidak ada kewajiban kontrak
+// atau syarat administratif yang rumit" (UAT Run 2 C-06); the price tool and the calculator are machinery
+// the prompt calls internal (CARA MENYAMPAIKANNYA). SOP in capitals only - "sop" is also soup.
+const INTERNAL_TERM_RES = [/\bkontrak\b/i, /\bSOP\b/, /\bhitung_harga\b/i, /\bkalkulator\b/i];
 
 export function verifyReplyMeta(message: string): { ok: boolean; reason: string } {
   const term = INTERNAL_TERM_RES.map((re) => re.exec(message)?.[0]).find(Boolean);

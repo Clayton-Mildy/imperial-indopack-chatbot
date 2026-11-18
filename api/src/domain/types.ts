@@ -379,6 +379,8 @@ export interface AIResponse {
   imageUrls?: string[];
   /** The customer just agreed to buy at the quoted price: the PO form link from settings follows the reply. */
   sendPoForm?: boolean;
+  /** No design and no reference photos for the product: the team sends design examples (a fixed line follows the reply). */
+  examplesForTeam?: boolean;
   profileUpdate?: Record<string, unknown>;
   followUpNotes?: string;
   /** Verbatim quotes from the catalog block backing each product named in `message`. */

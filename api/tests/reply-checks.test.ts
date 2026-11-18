@@ -539,6 +539,15 @@ describe('verifyReplyMeta - internal terms', () => {
   });
 
   // Live 2026-10-14: a repaired reply opened with the repair instruction read back to the customer.
+  // Review fix (Task 10 m6): the price tool is internal machinery too.
+  it('rejects the price tool and the calculator named to the customer', () => {
+    const out = verifyReplyMeta('Saya cek dulu di hitung_harga ya kak.');
+    expect(out.ok).toBe(false);
+    expect(out.reason).toContain('"hitung_harga"');
+    expect(verifyReplyMeta('Sebentar kak, saya hitung pakai kalkulator dulu.').ok).toBe(false);
+    expect(verifyReplyMeta('Untuk 10 rim harganya Rp 1.900/pcs kak, sudah saya hitungkan.').ok).toBe(true);
+  });
+
   it('rejects the repair instruction read back, not an ordinary "tulis ulang"', () => {
     expect(verifyReplyMeta('Saya perlu menulis ulang balasan saya dengan informasi yang benar, Kak Budi 🙏').ok).toBe(false);
     expect(verifyReplyMeta('Boleh tulis ulang alamat lengkapnya kak?').ok).toBe(true);
@@ -679,6 +688,15 @@ describe('the name the customer already gave', () => {
   it('recognises "Boleh tahu nama kakak siapa?" as a name question', () => {
     expect(ASKS_NAME_RE.test('Baik kak, di Malang ya 😊 Boleh tahu nama kakak siapa?')).toBe(true);
     expect(ASKS_NAME_RE.test('Boleh saya tahu nama kakak siapa?')).toBe(true);
+  });
+
+  // Review fix (Task 10 m1): the hand-off's own wording is a name question; a business-name question is not.
+  it('reads the hand-off\'s "dengan kakak siapa" as a name question, and the business name as not one', () => {
+    expect(ASKS_NAME_RE.test('Sambil menunggu, dengan kakak siapa saya bicara?')).toBe(true);
+    expect(ASKS_NAME_RE.test('Dengan bapak siapa saya bicara?')).toBe(true);
+    for (const q of ['Sambil menunggu, boleh tahu nama usahanya kak?', 'Boleh tahu nama usaha kakak?', 'Boleh tau nama tokonya kak?', 'Siapa nama usahanya kak?']) {
+      expect(ASKS_NAME_RE.test(q), q).toBe(false);
+    }
   });
 
   it('repairs a reply that asks it again', () => {

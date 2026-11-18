@@ -115,6 +115,11 @@ describe('pickProfileGapQuestion', () => {
     expect(pickProfileGapQuestion(P({ items: [{ product: 'box' }] }), [])).toBe(ESCALATION_ASK_SIZE);
   });
 
+  // Review fix (Task 10 m5): no minimum in the question - each item's minimum is its own lowest tier.
+  it('asks the quantity in rim or pcs, with no fixed minimum', () => {
+    expect(ESCALATION_ASK_QUANTITY).toBe('Sambil menunggu, kira-kira mau pesan berapa banyak kak? (dalam rim atau pcs)');
+  });
+
   it('walks size, qty, design, business, name', () => {
     const item = { product: 'box' };
     expect(pickProfileGapQuestion(P({ items: [item] }), [])).toBe(ESCALATION_ASK_SIZE);
@@ -320,6 +325,14 @@ describe('pickProfileGapQuestion — each question at most once (UAT F-06)', () 
     expect(pickProfileGapQuestion(P(full), [customer('halo')])).toBe(ESCALATION_ASK_NAME);
     for (const asked of ['Halo kak 😊 Sebelumnya, dengan siapa saya terhubung?', 'Boleh tahu nama kakak siapa?', 'Siapa nama kakak?']) {
       expect(pickProfileGapQuestion(P(full), [bot(asked), customer('berapa harganya?')]), asked).toBeNull();
+    }
+  });
+
+  // Review fix (Task 10 m1): the business-name question is not the name question.
+  it('does not count a business-name question as the name asked', () => {
+    const full = { items: [{ product: 'box', size: '1x1', qty: 1, has_design: true }], business_name: 'RM Siang' };
+    for (const asked of [ESCALATION_ASK_BUSINESS_NAME, 'Boleh tahu nama usahanya kak?', 'Boleh tahu nama tokonya kak?']) {
+      expect(pickProfileGapQuestion(P(full), [bot(asked), customer('RM Siang')]), asked).toBe(ESCALATION_ASK_NAME);
     }
   });
 

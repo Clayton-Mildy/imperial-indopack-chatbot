@@ -1650,6 +1650,57 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: poFormMessage(PO_URL), metadata: expect.objectContaining({ source: 'po_form' }) }));
   });
 
+  // Review fix (Task 10 I1): no design and no reference photos - the team sends examples, and is told to.
+  it('examplesForTeam: the reply goes out, then the fixed examples line, and the team takes the chat', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { CANNED_DESIGN_EXAMPLES_FROM_TEAM } = await import('../src/domain/constants.js');
+    mockGetContactProfile.mockResolvedValue({ customerType: null, profile: { name: 'Budi', items: [{ product: 'Kertas Supreme 64 gsm', size: '30x30', has_design: false }] } });
+    mockSendTextMessage.mockResolvedValueOnce('wa-reply').mockResolvedValueOnce('wa-ex');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Siap kak, belum ada desain ya.', examplesForTeam: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-EX1', 'belum ada desain kak'));
+    await vi.runAllTimersAsync();
+
+    expect(CANNED_DESIGN_EXAMPLES_FROM_TEAM).toBe('Untuk contoh desainnya, tim kami kirimkan sebentar lagi ya kak 🙏');
+    expect(sentTexts()).toEqual(['Siap kak, belum ada desain ya.', CANNED_DESIGN_EXAMPLES_FROM_TEAM]);
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Contoh desain diminta'));
+    const body = (mockNotifyStaff.mock.calls[0]![0] as { body: string }).body;
+    expect(body).toContain('Contoh desain diminta');
+    expect(body).toContain('Nama: Budi');
+    const rows = mockInsertMessage.mock.calls.map((c) => c[0]).filter((r) => r.role === 'assistant');
+    expect(rows.map((r) => [r.body, r.waMessageId])).toEqual([['Siap kak, belum ada desain ya.', 'wa-reply'], [CANNED_DESIGN_EXAMPLES_FROM_TEAM, 'wa-ex']]);
+    expect(rows[1].metadata).toMatchObject({ source: 'design_examples' });
+    // A reply, not a hand-off message: the customer is not sent the canned escalation.
+    expect(mockEscalateConversation).not.toHaveBeenCalled();
+  });
+
+  it('no examples line, and no hand-off, without the flag', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { CANNED_DESIGN_EXAMPLES_FROM_TEAM } = await import('../src/domain/constants.js');
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-EX2', 'belum ada desain kak'));
+    await vi.runAllTimersAsync();
+
+    expect(sentTexts()).not.toContain(CANNED_DESIGN_EXAMPLES_FROM_TEAM);
+    expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
+  });
+
+  it('photo path: the examples line follows the reply and any photos, and the team takes the chat', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { CANNED_DESIGN_EXAMPLES_FROM_TEAM } = await import('../src/domain/constants.js');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, imageUrls: ['/r/1.jpg'], examplesForTeam: true });
+
+    await routeInboundBaileysMessage(makeImagePayload('wamid-EX3', 'box seperti ini kak, belum ada desain'));
+    await vi.runAllTimersAsync();
+
+    expect(sentTexts()).toEqual(['AI reply', CANNED_DESIGN_EXAMPLES_FROM_TEAM]);
+    expect(mockSendImageMessage.mock.invocationCallOrder[0]).toBeLessThan(mockSendTextMessage.mock.invocationCallOrder[1]!);
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Contoh desain diminta'));
+    expect(mockNotifyStaff).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining('Contoh desain diminta') }));
+    expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: CANNED_DESIGN_EXAMPLES_FROM_TEAM, metadata: expect.objectContaining({ source: 'design_examples' }) }));
+    expect(mockEscalateConversation).not.toHaveBeenCalled();
+  });
+
   // Live 2026-09-21: two numbers were configured and getFirstPhoneNumber() picked the older
   // one, so every reply was sent AS a number the Chakra plugin does not own. Chakra answered
   // 400, the send threw, and each send site swallows that into a console.warn - so inbound kept
