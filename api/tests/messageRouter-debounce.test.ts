@@ -1335,6 +1335,18 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'AI reply', status: 'saved' }));
       expect(mockNotifyStaff).toHaveBeenCalledWith(expect.objectContaining({ title: 'Balasan bot gagal terkirim', path: '/conversations/conv-uuid-1' }));
     });
+
+    // chakraClient returns '' for an HTTP 200 without a message id: the customer got the reply.
+    it.each([['text', false], ['photo', true]] as const)('does not tell staff the %s reply failed when it was sent without a message id', async (_path, photo) => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      mockSendTextMessage.mockResolvedValue('');
+
+      await routeInboundBaileysMessage(photo ? makeImagePayload('wamid-M3q') : makeTextPayload('wamid-M3u', 'ada box nasi?'));
+      await vi.runAllTimersAsync();
+
+      expect(mockSendTextMessage).toHaveBeenCalled();
+      expect(mockNotifyStaff).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Balasan bot gagal terkirim' }));
+    });
   });
 
   // ─── Final review M4: supersede no longer stops after a price list went out ───

@@ -674,7 +674,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     let sentId: string | null = null;
     if (reply) {
       try { sentId = await entry.sendReply(reply); } catch { /* ignore */ }
-      if (!sentId) notifyReplyNotSent(conversationId, reply);
+      if (sentId === null) notifyReplyNotSent(conversationId, reply);
     }
     // After the text: the reference photos in order, the team's design-examples promise, then the PO
     // form link (or the team's promise).
@@ -879,7 +879,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   let sentId: string | null = null;
   if (reply) {
     try { sentId = await sendTextMessage(phoneNumber.phoneNumberId, replyJid, reply); } catch { /* ignore */ }
-    if (!sentId) notifyReplyNotSent(conv.id, reply);
+    if (sentId === null) notifyReplyNotSent(conv.id, reply);
   }
   // After the text: the reference photos, the design-examples promise, then the PO form - as on the text path.
   const photos = await sendReferencePhotos(aiResponse.imageUrls, (url) => sendImageMessage(phoneNumber.phoneNumberId, replyJid, url, ''));
