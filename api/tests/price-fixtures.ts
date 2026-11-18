@@ -19,7 +19,7 @@ const tier = (minQty: number, priceIdr: number, priceUnit: QtyUnit, includesDeli
 export const SUPREME_TIERS: PriceTier[] = [tier(5, 185_000, 'rim', false), tier(10, 165_000, 'rim', false), tier(20, 160_000, 'rim', false)];
 export const IVORY_TIERS: PriceTier[] = [tier(5, 2000, 'pcs', true), tier(10, 1800, 'pcs', true), tier(20, 1500, 'pcs', true)];
 
-const brand = (id: string, name: string): Brand => ({ id, name, description: null, catalogFileUrl: null, brandType: 'own', createdAt: TS });
+const brand = (id: string, name: string): Brand => ({ id, name, description: null, catalogFileUrl: null, catalogFileName: null, catalogFileUploadedAt: null, brandType: 'own', createdAt: TS });
 
 function variant(over: Partial<ProductVariant> & Pick<ProductVariant, 'id' | 'productId' | 'name'>): ProductVariant {
   return {

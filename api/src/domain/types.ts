@@ -16,6 +16,9 @@ export type Brand = {
   name: string;
   description: string | null;
   catalogFileUrl: string | null;
+  /** The price-list file's own name, sent as the document's name; null = the brand default. */
+  catalogFileName: string | null;
+  catalogFileUploadedAt: string | null;
   brandType: string;
   createdAt: string;
 };

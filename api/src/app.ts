@@ -11,7 +11,8 @@ import { contactRoutes } from './routes/dashboard/contacts.js';
 import { escalationRoutes } from './routes/dashboard/escalations.js';
 import { numberRoutes } from './routes/dashboard/numbers.js';
 import { catalogRoutes } from './routes/dashboard/catalog.js';
-import { catalogProductRoutes } from './routes/dashboard/catalogProducts.js';
+import { catalogPreviewRoutes, catalogProductRoutes } from './routes/dashboard/catalogProducts.js';
+import { brandPriceListRoutes } from './routes/dashboard/brandPriceLists.js';
 import { sendRoutes } from './routes/dashboard/send.js';
 import { testPromptRoutes } from './routes/dashboard/testPrompt.js';
 import { authRoutes } from './routes/dashboard/auth.js';
@@ -138,6 +139,8 @@ export function buildApp() {
   void app.register(numberRoutes);
   void app.register(catalogRoutes);
   void app.register(catalogProductRoutes);
+  void app.register(catalogPreviewRoutes);
+  void app.register(brandPriceListRoutes);
   void app.register(sendRoutes);
   void app.register(testPromptRoutes);
   void app.register(authRoutes);

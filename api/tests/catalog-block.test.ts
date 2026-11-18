@@ -11,7 +11,7 @@ function product(over: Partial<Product>, variants: unknown[]): Product {
     fungsi: 'bungkus nasi, kebab, burger', usp: null, kataKunci: null, kelengkapan: null,
     bahan: null, ketebalan: null, imageUrl: null, tier: null, relatedProductIds: null,
     upsellProductId: null, createdAt: TS, updatedAt: TS,
-    brand: { id: 'b1', name: 'Kertas Supreme', description: null, catalogFileUrl: null, brandType: 'own', createdAt: TS },
+    brand: { id: 'b1', name: 'Kertas Supreme', description: null, catalogFileUrl: null, catalogFileName: null, catalogFileUploadedAt: null, brandType: 'own', createdAt: TS },
     category: null,
     variants: variants as Product['variants'],
     ...over,

@@ -53,6 +53,17 @@ describe('the price list goes to a price question, by brand', () => {
     expect(d.note).toContain('Daftar harga Kertas Supreme sudah dikirim');
   });
 
+  it('sends the uploaded file under its own name, and the brand default when it has none', async () => {
+    const { resolveCatalogDelivery } = await load();
+    mockListBrands.mockResolvedValue([
+      { ...BRANDS[1], catalogFileName: 'Daftar Harga Supreme Nov 2026.pdf' },
+      { ...BRANDS[0], catalogFileName: null },
+    ]);
+    withFacts({ brands: ['kertas_supreme', 'imperial_indopack'] });
+    const d = await resolveCatalogDelivery(C, 'minta pricelist nya dong kak');
+    expect(d.files.map((f) => f.filename)).toEqual(['Daftar Harga Supreme Nov 2026.pdf', 'Daftar Harga Imperial Indopack.pdf']);
+  });
+
   it('both brands in the profile send both files', async () => {
     const { resolveCatalogDelivery } = await load();
     withFacts({ brands: ['kertas_supreme', 'imperial_indopack'] });

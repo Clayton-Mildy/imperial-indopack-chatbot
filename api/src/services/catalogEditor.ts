@@ -15,10 +15,12 @@ import { BRAND_NAME, brandSlugOfName } from '../domain/brands.js';
 import { normalizeSize, type BrandSlug } from '../domain/orderProfile.js';
 import { lowestTier, toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
 import { formatProductSpec, parseProductSpec } from '../domain/productSpec.js';
+import type { Product, ProductVariant } from '../domain/types.js';
 import { listTiersByVariant, replaceVariantTiers } from '../repositories/priceTiers.js';
+import { MAX_REFERENCE_IMAGES_PER_PRODUCT } from '../repositories/referenceImages.js';
 import { recordCatalogChange } from '../repositories/catalogAudit.js';
 import { refreshEmbeddingAsync } from './embeddings.js';
-import { invalidateCatalogCache } from './ragQuery.js';
+import { formatProducts, invalidateCatalogCache } from './ragQuery.js';
 
 // ─── Draft and validation (pure) ─────────────────────────────────────────────
 
@@ -260,6 +262,71 @@ export function diffProduct(before: ProductInput, after: ProductInput): CatalogC
     if (b) out.push(...diffTiers(b.tiers, s.tiers, s.size));
   });
   return out;
+}
+
+// ─── Preview (pure) ──────────────────────────────────────────────────────────
+
+/** The form's "what the bot reads" panel. */
+export interface ProductPreview {
+  botText: string;
+  /** Sizes left out of botText because the validator has something against them, as typed. */
+  hiddenSizes: string[];
+  errors: ProductInputError[];
+  /** What saving this draft over the stored product would record; [] for a new product or an invalid draft. */
+  changes: CatalogChange[];
+}
+
+/**
+ * How the bot would read the draft once saved: the catalog block's own lines (formatProducts) over
+ * every size no validation error names. Over a stored product it shows what the save keeps that the
+ * form does not carry - each re-sent tier's Excel note (matched as writeSizes matches it) and the
+ * reference photos - and the changes the save would record.
+ */
+export function previewProduct(draft: ProductDraft, stored: CatalogProduct | null): ProductPreview {
+  const checked = validateProductDraft(draft);
+  const errors = checked.ok ? [] : checked.errors;
+  const flagged = new Set(errors.flatMap((e) => (e.sizeIndex === undefined ? [] : [e.sizeIndex])));
+  const match = stored
+    ? matchSizes(stored.sizes, draft.sizes.map((s) => ({ ...(s.id ? { id: s.id } : {}), size: s.size.trim() })))
+    : draft.sizes.map(() => -1);
+  const now = new Date().toISOString();
+
+  const hiddenSizes: string[] = [];
+  const variants: ProductVariant[] = [];
+  draft.sizes.forEach((s, i) => {
+    // A size with no tiers is no_tiers, so every size shown here has whole, in-range numbers throughout.
+    if (flagged.has(i)) {
+      hiddenSizes.push(s.size);
+      return;
+    }
+    const notes = new Map((stored?.sizes[match[i]!]?.tiers ?? []).map((t) => [tierKey(t), t.note ?? null]));
+    const priceTiers: PriceTier[] = s.tiers.map((t) => {
+      const tier = { minQty: t.minQty!, qtyUnit: t.qtyUnit, priceIdr: t.priceIdr!, priceUnit: t.priceUnit, includesDelivery: t.includesDelivery };
+      return { ...tier, note: notes.get(tierKey(tier)) ?? null };
+    });
+    variants.push({
+      id: s.id ?? `preview-${i}`, productId: stored?.id ?? 'preview', name: s.size.trim(), sku: null, priceIdr: lowestTier(priceTiers)!.priceIdr,
+      mpPriceIdr: null, isiCtn: null, isiBox: null, uomPriceId: null, mpUomId: null, uomCtnId: null, uomBoxId: null, minOrderQty: null,
+      minOrderUomId: null, priceTiers, imageUrl: null, stockStatus: 'normal', isActive: true, description: null, sourceUrl: null,
+      scrapedAt: null, sourceHash: null, createdAt: now, updatedAt: now,
+    });
+  });
+
+  const product: Product = {
+    id: stored?.id ?? 'preview', brandId: '', categoryId: null, name: draft.name.trim(),
+    description: formatProductSpec(draft), fungsi: draft.use.trim() || null, usp: null, kataKunci: null, kelengkapan: null,
+    bahan: null, ketebalan: null, imageUrl: null, isActive: draft.isActive, createdAt: now, updatedAt: now,
+    brand: { id: '', name: BRAND_NAME[draft.brand], description: null, catalogFileUrl: null, catalogFileName: null, catalogFileUploadedAt: null, brandType: 'own', createdAt: now },
+    category: null,
+    variants,
+    referenceImageUrls: (stored?.referenceImages ?? []).slice(0, MAX_REFERENCE_IMAGES_PER_PRODUCT).map((r) => r.imageUrl),
+  };
+  return {
+    botText: formatProducts([product]),
+    hiddenSizes,
+    errors,
+    changes: stored && checked.ok ? diffProduct(stored, checked.input) : [],
+  };
 }
 
 // ─── Reading ─────────────────────────────────────────────────────────────────

@@ -10,11 +10,13 @@ import {
   getCatalogProduct,
   getProductUsage,
   listCatalogProducts,
+  previewProduct,
   setCatalogProductActive,
   updateCatalogProduct,
   validateProductDraft,
   type Actor,
 } from '../../services/catalogEditor.js';
+import { PriceToolInput, runPriceTool } from '../../services/priceTool.js';
 import { invalidateCatalogOnWrite } from './catalogCache.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -27,6 +29,7 @@ const ActorFields = {
 const SaveBodySchema = z.object({ draft: ProductDraftSchema, ...ActorFields });
 const ActiveBodySchema = z.object({ isActive: z.boolean(), ...ActorFields });
 const DeleteQuerySchema = z.object(ActorFields);
+const PreviewBodySchema = z.object({ productId: z.string().uuid().optional(), draft: ProductDraftSchema });
 const ListQuerySchema = z.object({
   brand: z.enum(['kertas_supreme', 'imperial_indopack']).optional(),
   search: z.string().optional(),
@@ -116,5 +119,31 @@ export async function catalogProductRoutes(app: FastifyInstance): Promise<void> 
     const result = await deleteCatalogProduct(id, actorOf(query.data));
     if (!result) return reply.code(404).send(NOT_FOUND);
     return reply.send({ data: result, error: null });
+  });
+}
+
+/**
+ * The form's read-only helpers: how the bot reads a draft, and what it answers a price question. POST
+ * only because they take a body; nothing here writes, so they are kept out of catalogProductRoutes'
+ * invalidateCatalogOnWrite scope - a preview on every edit must not throw away the bot's cached catalog.
+ */
+export async function catalogPreviewRoutes(app: FastifyInstance): Promise<void> {
+  // POST /api/v1/catalog/products/preview  { productId?, draft } - an unknown productId is a 404.
+  app.post('/api/v1/catalog/products/preview', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const body = PreviewBodySchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
+    const { productId, draft } = body.data;
+    const stored = productId ? await getCatalogProduct(productId) : null;
+    if (productId && !stored) return reply.code(404).send(NOT_FOUND);
+    return reply.send({ data: previewProduct(draft, stored), error: null });
+  });
+
+  // POST /api/v1/catalog/price-check  { product, size, qty, unit } - hitung_harga itself, over the
+  // bot's live (active-only, cached) catalog, so staff see exactly what a customer would be told.
+  app.post('/api/v1/catalog/price-check', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const body = PriceToolInput.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
+    const { text, call } = await runPriceTool(body.data);
+    return reply.send({ data: { text, call }, error: null });
   });
 }

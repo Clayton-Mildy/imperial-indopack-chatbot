@@ -25,7 +25,7 @@ function productWith(priceTiers: PriceTier[]): Product {
     name: 'Kertas Supreme 64 gsm cetak 1 warna', description: null, fungsi: 'bungkus nasi',
     usp: null, kataKunci: null, kelengkapan: null, bahan: null, ketebalan: null, imageUrl: null,
     tier: null, relatedProductIds: null, upsellProductId: null, createdAt: TS, updatedAt: TS,
-    brand: { id: 'b1', name: 'Kertas Supreme', description: null, catalogFileUrl: null, brandType: 'own', createdAt: TS },
+    brand: { id: 'b1', name: 'Kertas Supreme', description: null, catalogFileUrl: null, catalogFileName: null, catalogFileUploadedAt: null, brandType: 'own', createdAt: TS },
     category: null,
     variants: [
       { id: 'v1', productId: 'p1', name: '30 x 30 cm', isActive: true, stockStatus: 'normal', priceTiers },

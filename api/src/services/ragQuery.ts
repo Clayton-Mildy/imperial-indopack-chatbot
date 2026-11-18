@@ -184,7 +184,7 @@ async function fetchCompanionProducts(mainItems: Product[]): Promise<Product[]> 
         isActive: p.isActive,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
-        brand: brand ? { id: brand.id, name: brand.name, description: brand.description, catalogFileUrl: brand.catalogFileUrl, brandType: brand.brandType, createdAt: brand.createdAt.toISOString() } : undefined,
+        brand: brand ? { id: brand.id, name: brand.name, description: brand.description, catalogFileUrl: brand.catalogFileUrl, catalogFileName: brand.catalogFileName, catalogFileUploadedAt: brand.catalogFileUploadedAt?.toISOString() ?? null, brandType: brand.brandType, createdAt: brand.createdAt.toISOString() } : undefined,
         category: category ? { id: category.id, name: category.name, description: category.description, createdAt: category.createdAt.toISOString() } : null,
         variants,
       } as Product;

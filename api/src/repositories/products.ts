@@ -1,4 +1,4 @@
-import { brandSlugOfName } from '../domain/brands.js';
+import { BRAND_NAME, BRAND_SLUGS, brandSlugOfName } from '../domain/brands.js';
 import type { BrandSlug } from '../domain/orderProfile.js';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import { listTiersByVariant } from './priceTiers.js';
@@ -15,6 +15,8 @@ function mapBrand(row: typeof brands.$inferSelect): Brand {
     name: row.name,
     description: row.description,
     catalogFileUrl: row.catalogFileUrl,
+    catalogFileName: row.catalogFileName,
+    catalogFileUploadedAt: row.catalogFileUploadedAt?.toISOString() ?? null,
     brandType: row.brandType,
     createdAt: row.createdAt.toISOString(),
   };
@@ -178,6 +180,53 @@ export async function getBrandRowsBySlug(): Promise<Record<BrandSlug, Brand | nu
     if (slug && !out[slug]) out[slug] = b;
   }
   return out;
+}
+
+// ─── Brand price lists ─────────────────────────────────────────────────────
+
+/** A brand's price-list file, the PDF the bot sends when a customer asks for the price list. */
+export interface BrandPriceList {
+  brand: BrandSlug;
+  url: string | null;
+  fileName: string | null;
+  uploadedAt: string | null;
+}
+
+const priceListOf = (brand: BrandSlug, b: Brand | null): BrandPriceList => ({
+  brand,
+  url: b?.catalogFileUrl ?? null,
+  fileName: b?.catalogFileName ?? null,
+  uploadedAt: b?.catalogFileUploadedAt ?? null,
+});
+
+/** Both brands, in BRAND_SLUGS order, from the rows getBrandRowsBySlug picks; no row reads as no file. */
+export async function listBrandPriceLists(): Promise<BrandPriceList[]> {
+  const rows = await getBrandRowsBySlug();
+  return BRAND_SLUGS.map((slug) => priceListOf(slug, rows[slug]));
+}
+
+/**
+ * Points the brand at a new price-list file (named, stamped now), or at none. The row is the one
+ * getBrandRowsBySlug picks - the one the bot reads - and is created when a file arrives for a brand
+ * with no row yet. Only the columns: the stored file itself is the caller's.
+ */
+export async function setBrandPriceList(slug: BrandSlug, file: { url: string; fileName: string } | null): Promise<BrandPriceList> {
+  const db = getDb();
+  const values = file
+    ? { catalogFileUrl: file.url, catalogFileName: file.fileName, catalogFileUploadedAt: new Date() }
+    : { catalogFileUrl: null, catalogFileName: null, catalogFileUploadedAt: null };
+  const existing = (await getBrandRowsBySlug())[slug];
+  if (existing) {
+    const [row] = await db.update(brands).set(values).where(eq(brands.id, existing.id)).returning();
+    return priceListOf(slug, row ? mapBrand(row) : null);
+  }
+  if (!file) return priceListOf(slug, null);
+  const [row] = await db
+    .insert(brands)
+    .values({ name: BRAND_NAME[slug], ...values })
+    .onConflictDoUpdate({ target: brands.name, set: values })
+    .returning();
+  return priceListOf(slug, mapBrand(row!));
 }
 
 export async function createBrand(name: string, description?: string): Promise<Brand> {

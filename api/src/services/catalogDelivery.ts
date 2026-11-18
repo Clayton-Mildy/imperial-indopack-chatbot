@@ -1,6 +1,6 @@
 /**
  * Which price-list files, if any, this message earns (spec 7.3). Each brand has one price list
- * (brands.catalog_file_url, uploaded in the dashboard). The rule:
+ * (brands.catalog_file_url, uploaded on the Katalog page and sent under its own name). The rule:
  *   - Trigger: the customer asks for a price or the price list (messageRouter: isPriceRequest or a
  *     catalog request, or the model's catalog_url flag) while the profile holds no item with
  *     product, size and quantity yet. Once it does, hitung_harga prices that item instead - unless
@@ -27,6 +27,7 @@ import { getContactProfile } from '../repositories/contactProfiles.js';
 import { listBrands } from '../repositories/products.js';
 import { CATALOG_SENT_MARKER } from '../domain/constants.js';
 import { BRAND_NAMES, type BrandSlug } from '../domain/orderProfile.js';
+import { BRAND_NAME } from '../domain/brands.js';
 
 export interface CatalogDelivery {
   files: { url: string; filename: string; brand: string }[];
@@ -140,8 +141,9 @@ export async function resolveCatalogDelivery(
   const noFile: string[] = [];
   for (const slug of wanted) {
     const name = BRAND_NAMES[slug];
-    const url = rows.find((b) => sameName(b.name, name))?.catalogFileUrl;
-    if (!url) {
+    const row = rows.find((b) => sameName(b.name, name));
+    const url = row?.catalogFileUrl;
+    if (!row || !url) {
       noFile.push(name);
       continue;
     }
@@ -151,7 +153,8 @@ export async function resolveCatalogDelivery(
       continue;
     }
     if (contactId && !preview) sentPriceLists.add(key);
-    files.push({ url, filename: `Daftar Harga ${name}.pdf`, brand: name });
+    // The uploaded file's own name (Katalog page); a file set any other way goes as the brand's list.
+    files.push({ url, filename: row.catalogFileName ?? `Daftar Harga ${BRAND_NAME[slug]}.pdf`, brand: name });
     sentNow.push(name);
   }
 
