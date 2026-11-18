@@ -25,7 +25,7 @@ import { leadRoutes } from './routes/dashboard/leads.js';
 
 // @fastify/reply-from overwrites the outgoing Host with the upstream's (its index.js:
 // `headers.host = url.host`) and sets no x-forwarded-host. Next then synthesises one from that
-// rewritten Host, so it sees 127.0.0.1:40050 while the browser's Origin says the public
+// rewritten Host, so it sees 127.0.0.1:40070 while the browser's Origin says the public
 // hostname - and Next 16 aborts EVERY Server Action on that mismatch with "Invalid Server
 // Actions request", a 500 the proxy faithfully relays. GETs are unaffected, so the whole
 // dashboard reads fine and only mutations fail: creating a staff account died here on
@@ -79,13 +79,13 @@ export function buildApp() {
   // lives on one hostname. That is deliberate rather than forced: push subscriptions are scoped
   // to an origin, so a second hostname for the dashboard would split them from the API that
   // sends them, and it would be one more name to keep in sync with the Chakra webhook. So the
-  // dashboard rides through here: browser -> tunnel -> this API -> 127.0.0.1:40050.
+  // dashboard rides through here: browser -> tunnel -> this API -> 127.0.0.1:40070.
   //
   // The dashboard stays bound to loopback; nothing about install.ps1 changes. It sets
   // basePath: '/app' so its own asset and router URLs line up with this prefix.
   //
   // Set DASHBOARD_UPSTREAM='' to turn the proxy off and go back to a purely local dashboard.
-  const dashboardUpstream = process.env['DASHBOARD_UPSTREAM'] ?? 'http://127.0.0.1:40050';
+  const dashboardUpstream = process.env['DASHBOARD_UPSTREAM'] ?? 'http://127.0.0.1:40070';
   if (dashboardUpstream) {
     // The only browser-facing surface on this host, so it is the only one that needs a brute
     // force gate: the login page and NextAuth's credentials callback now both sit behind it.

@@ -2,14 +2,18 @@ import { z } from 'zod';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().int().positive().default(50050),
+  PORT: z.coerce.number().int().positive().default(50070),
   DATABASE_URL: z.string().url(),
   API_SECRET_KEY: z.string().min(1),
   ANTHROPIC_API_KEY: z.string().min(1),
-  PUBLIC_BASE_URL: z.string().default('http://localhost:50050'),
+  PUBLIC_BASE_URL: z.string().default('http://localhost:50070'),
   // WhatsApp transport: 'chakra' = ChakraHQ (BSP pass-through over Meta's Cloud API),
   // 'meta' = Meta Cloud API direct.
-  WHATSAPP_TRANSPORT: z.enum(['meta', 'chakra']).default('chakra'),
+  WHATSAPP_TRANSPORT: z.enum(['meta', 'chakra', 'capture']).default('chakra'),
+  // 'capture' (local testing only): sends are appended to CAPTURE_LOG_PATH, inbound media is read
+  // from CAPTURE_MEDIA_DIR.
+  CAPTURE_LOG_PATH: z.string().default('logs/whatsapp-capture.jsonl'),
+  CAPTURE_MEDIA_DIR: z.string().default('scripts/qa/fixtures/files'),
   // Meta WhatsApp Cloud API (empty defaults so chakra-only deploys still boot;
   // the webhook rejects requests when the relevant value is empty)
   META_WEBHOOK_VERIFY_TOKEN: z.string().default(''),

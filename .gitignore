@@ -28,3 +28,6 @@ api/scripts/data/*
 
 # Customer-named quote titles; local only
 docs/client/starter-catalog-skipped.md
+
+api/logs/
+api/scripts/qa/fixtures/files/

@@ -1,12 +1,18 @@
 import * as meta from './metaClient.js';
 import * as chakra from './chakraClient.js';
+import * as capture from './captureClient.js';
 import { getConfig } from '../config.js';
 import { LEAKED_TOOL_MARKUP_RE } from '../domain/constants.js';
 
 // Single dispatch point for outbound WhatsApp. Resolves the configured transport per call
 // (no import-time side effects). Both clients share the same positional signatures.
 function sender() {
-  return getConfig().WHATSAPP_TRANSPORT === 'meta' ? meta : chakra;
+  const transport = getConfig().WHATSAPP_TRANSPORT;
+  if (transport === 'capture') {
+    if (getConfig().NODE_ENV === 'production') throw new Error('WHATSAPP_TRANSPORT=capture is for local testing only');
+    return capture;
+  }
+  return transport === 'meta' ? meta : chakra;
 }
 
 // Every caller wraps its send in `catch { /* ignore */ }` so a failed send can't kill the
