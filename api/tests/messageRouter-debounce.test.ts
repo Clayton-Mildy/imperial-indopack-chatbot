@@ -51,7 +51,6 @@ const mockDeleteContactProfile = vi.fn();
 const mockResetLeadsForContact = vi.fn();
 const mockExtractCatalogKeywords = vi.fn();
 const mockVisionExtractToKeywords = vi.fn();
-const mockOtherBrands = vi.fn((): string[] => []);
 const mockWriteFile = vi.fn();
 const mockMkdir = vi.fn();
 
@@ -131,7 +130,6 @@ vi.mock('../src/services/conversationInsights.js', () => ({
 vi.mock('../src/services/visionKeywords.js', () => ({
   extractCatalogKeywordsFromImage: mockExtractCatalogKeywords,
   visionExtractToKeywords: mockVisionExtractToKeywords,
-  otherBrands: mockOtherBrands,
 }));
 // The comparison with catalog photos talks to the DB and the model; tests/photo-match.test.ts covers
 // it. Here it resolves at once to "nothing to compare", which is a catalog with no photos yet.
@@ -251,7 +249,6 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     mockSaveConversationInsights.mockResolvedValue(undefined);
     mockExtractCatalogKeywords.mockResolvedValue({});
     mockVisionExtractToKeywords.mockReturnValue([]);
-    mockOtherBrands.mockReturnValue([]);
     mockWriteFile.mockResolvedValue(undefined);
     mockMkdir.mockResolvedValue(undefined);
   });
@@ -2178,29 +2175,6 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
     expect(mockBuildContextAndCallAI).not.toHaveBeenCalled();
     expect(mockEscalateConversation.mock.calls[0]![1]).toMatch(/foto 1: tidak ada hasil perbandingan foto; foto 2: tidak sama/);
-  });
-
-  // Live 2026-10-22: a SOLID padlock pack became "gembok 60mm solid yang kokoh". The brand printed on
-  // the photo reaches the reply as a brand we do not carry, and stays on the message for later turns.
-  it('tells the reply a brand printed on the photo is not ours', async () => {
-    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    mockOtherBrands.mockReturnValue(['SOLID']);
-    mockVisionExtractToKeywords.mockReturnValue(['gembok']);
-    // As in production: the comparison waits for the vision step before it answers.
-    mockMatchCustomerPhoto.mockImplementationOnce(async (...args: unknown[]) => {
-      await args[1];
-      return { certainty: 'same', product: { name: 'GEMBOK BESI JACKET', brand: 'Blossom', imageUrl: '/j.jpg' }, compared: ['GEMBOK BESI JACKET'], reason: 'identik' };
-    });
-
-    await routeInboundBaileysMessage(makeImagePayload('wamid-BR1'));
-    await vi.runAllTimersAsync();
-
-    const turn = mockBuildContextAndCallAI.mock.calls[0][6] as { photoNote?: string };
-    expect(turn.photoNote).toMatch(/PERBANDINGAN FOTO/);
-    expect(turn.photoNote).toMatch(/MEREK DI FOTO: .*merek SOLID - itu NAMA MEREK lain, bukan merek kami/);
-    expect(mockMergeMessageMetadata).toHaveBeenCalledWith('msg-uuid', {
-      photoContext: 'merek SOLID (bukan merek kami); produk kami GEMBOK BESI JACKET (foto sama)',
-    });
   });
 
   // Only this turn sees the image; what it found is kept on the message for later turns.

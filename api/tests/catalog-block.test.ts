@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatProducts, formatTierLine, REFERENCE_PHOTOS_MARKER } from '../src/services/ragQuery.js';
+import { detectBrand, formatProducts, formatTierLine, REFERENCE_PHOTOS_MARKER } from '../src/services/ragQuery.js';
 import type { Product } from '../src/domain/types.js';
 
 const TS = '2026-01-01T00:00:00.000Z';
@@ -55,4 +55,20 @@ describe('catalog block', () => {
 
   it('a variant with no tiers says the team prices it', () =>
     expect(formatProducts([FIXTURE_NO_TIERS])).toContain('  • harga: dihitung tim'));
+});
+
+// The catalog search narrows to one brand by the customer's words (catalogDelivery.brandsInText), never
+// by Legacy's brand aliases.
+describe('detectBrand', () => {
+  it('returns the one brand a message names', () => {
+    expect(detectBrand('berapa harga kertas supreme?')).toBe('kertas_supreme');
+    expect(detectBrand('kertas nasi 30x30 ada?')).toBe('kertas_supreme');
+    expect(detectBrand('dus makanan ukuran 20x20')).toBe('imperial_indopack');
+  });
+
+  it('returns null for no brand, or both', () => {
+    expect(detectBrand('halo kak')).toBeNull();
+    expect(detectBrand('handle aomori slim vintage')).toBeNull();
+    expect(detectBrand('box dan kertas nasi')).toBeNull();
+  });
 });

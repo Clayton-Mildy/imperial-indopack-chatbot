@@ -54,7 +54,6 @@ vi.mock('../src/services/replyChecks.js', () => ({
   verifyReplyFirstGreeting: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyNameRepeat: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyNotCarriedCloses: vi.fn(() => ({ ok: true, reason: '' })),
-  verifyReplyNoService: vi.fn(() => ({ ok: true, reason: '' })),
   nameGivenIn: vi.fn(() => null),
   ASKS_NAME_RE: /dengan\s+siapa/i,
 }));

@@ -3,8 +3,14 @@
  * items. Stored in contact_profiles.profile (`brands`, `items`) and on leads.
  */
 
-/** The two brands, as stored. Display names (brands.name): 'Imperial Indopack', 'Kertas Supreme'. */
+/** The two brands, as stored. */
 export type BrandSlug = 'imperial_indopack' | 'kertas_supreme';
+
+/** brands.name of each slug - the rows migration 0026 seeds. */
+export const BRAND_NAMES: Record<BrandSlug, string> = {
+  imperial_indopack: 'Imperial Indopack',
+  kertas_supreme: 'Kertas Supreme',
+};
 
 /** '30 x 30 cm', '30*30', '30×30' and '30 X 30' are all '30x30'; '7,5' and '7.5' are the same. */
 export function normalizeSize(s: string): string {

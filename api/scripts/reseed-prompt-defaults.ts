@@ -6,6 +6,7 @@
 // update.ps1 runs this on every deploy, so a prompt change ships with the build. A section staff
 // edited in the dashboard since the last sync is kept and reported, not overwritten - see
 // promptSync.syncPromptSections. --force overwrites those too.
+// Retired sections (promptSync.SECTIONS_RETIRED, Legacy's) are removed from both.
 // Idempotent; leaves all other DB content untouched.
 // Run: tsx scripts/reseed-prompt-defaults.ts [--force]
 import 'dotenv/config';
@@ -35,6 +36,7 @@ function patch(live: PromptSection[], label: string): { patched: PromptSection[]
   for (const [name, action] of Object.entries(actions)) {
     if (action === 'updated') { console.log(`~ [${label}] updated "${name}" in place.`); changed++; }
     else if (action === 'inserted') { console.log(`+ [${label}] inserted "${name}".`); changed++; }
+    else if (action === 'removed') { console.log(`- [${label}] removed retired "${name}".`); changed++; }
     else if (action === 'kept-edited') {
       console.warn(`! [${label}] "${name}" was edited in the dashboard - kept. Run with --force to replace it with the shipped text.`);
       kept++;

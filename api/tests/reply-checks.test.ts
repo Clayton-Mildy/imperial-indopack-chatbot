@@ -5,8 +5,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { withoutInventedTotals, verifyReplyPrices, verifyReplyPacks, verifyReplyDiscount, verifyReplyShowroomLink, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, verifyReplyTier, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, verifyReplyNoService, nameGivenIn, ASKS_NAME_RE } from '../src/services/replyChecks.js';
-import { END_USER_CATALOG_URL, SHOWROOM_MAPS_URL, SYSTEM_PROMPT_BEHAVIORAL_RULES } from '../src/domain/constants.js';
+import { withoutInventedTotals, verifyReplyPrices, verifyReplyPacks, verifyReplyDiscount, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, verifyReplyTier, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, nameGivenIn, ASKS_NAME_RE } from '../src/services/replyChecks.js';
+import { SYSTEM_PROMPT_BEHAVIORAL_RULES } from '../src/domain/constants.js';
 
 const CATALOG = `
 Produk: DOORPULL PERTH VINTAGE BLUE
@@ -441,19 +441,6 @@ describe('verifyReplyDiscount — the reseller hears the tier, and the next one 
   });
 });
 
-describe('verifyReplyShowroomLink (UAT Run 3 C-03)', () => {
-  it('asks for the maps link when the showroom is mentioned without it', () => {
-    const r = verifyReplyShowroomLink('Itu dekat banget dengan showroom kami di RA-17, Villa Bukit Mas. Mampir ya kak!');
-    expect(r).toMatchObject({ ok: false, soft: true });
-    expect(r.reason).toContain(SHOWROOM_MAPS_URL);
-  });
-
-  it('passes an invite that carries the link, and a reply that never mentions the showroom', () => {
-    expect(verifyReplyShowroomLink(`Mampir ke showroom kami ya kak: Villa Bukit Mas RA-17, ${SHOWROOM_MAPS_URL}`).ok).toBe(true);
-    expect(verifyReplyShowroomLink('Toko Dewi Jaya di Villa Bukit Mas ya kak.').ok).toBe(true);
-  });
-});
-
 describe('verifyReplyTier — which prices a reply may talk about at all', () => {
   // UAT 2026-09-24 A-02: the FIRST reply to "berapa harga handle newton?" quoted both tiers, with
   // labels, to someone who had not said what the handle was for.
@@ -464,18 +451,12 @@ describe('verifyReplyTier — which prices a reply may talk about at all', () =>
     expect(out.ok).toBe(false);
     expect(out.reason).toContain('Tipe pembeli belum diketahui');
     expect(verifyReplyTier('Newton Rp 294.000/Set kak.', undefined).ok).toBe(false);
-    // The flag verifyFit uses to answer with the buyer-type question instead of a hand-off.
-    expect(out.askBuyerType).toBe(true);
   });
 
   // "Rp." is common Indonesian spelling; without the dot allowed it was not a figure at all and
   // walked past the gate - and every other figure check.
   it('reads "Rp." with a dot as a figure too', () => {
     expect(verifyReplyTier('Newton Rp. 294.000/Set kak.', null).ok).toBe(false);
-  });
-
-  it('flags only the unknown-type case for the buyer-type question, not a banned word', () => {
-    expect(verifyReplyTier('Rp 294.000/Set (harga retail)', 'end_user').askBuyerType).toBeUndefined();
   });
 
   it('lets an unknown buyer hear everything except a price', () => {
@@ -506,43 +487,40 @@ describe('verifyReplyTier — which prices a reply may talk about at all', () =>
   });
 });
 
-// UAT Run 2 F-27: nothing may be sent to a customer whose buyer type is unknown, and nothing was -
-// yet the bot said it had, twice, and then sent him looking through his own folders.
+// UAT Run 2 F-27: nothing was sent, yet the bot said it had, twice, and then sent the customer looking
+// through his own folders.
 describe('verifyReplyCatalogClaim — no "sudah dikirim" unless a file went out this turn', () => {
   it.each([
-    'Baik Kak Hendra, katalog semua merek sudah saya kirimkan ya 😊 Setelah lihat-lihat, ada yang menarik?', // F-01
-    'Baik Kak Hendra, katalog semua merek sudah saya kirim ulang ya 😊 Semoga kali ini bisa masuk dengan lancar.', // F-02
-    'Price list Vintage sudah terkirim ya kak.',
+    'Baik Kak Hendra, daftar harga semua merek sudah saya kirimkan ya 😊 Setelah lihat-lihat, ada yang menarik?', // F-01
+    'Baik Kak Hendra, katalognya sudah saya kirim ulang ya 😊 Semoga kali ini bisa masuk dengan lancar.', // F-02
+    'Price list Kertas Supreme sudah terkirim ya kak.',
     'Wah, mungkin belum masuk ya Kak. Coba cek lagi di chat atau folder file.', // F-02, 11.02
   ])('rejects: %s', (m) => {
-    const out = verifyReplyCatalogClaim(m, false, null);
+    const out = verifyReplyCatalogClaim(m, false);
     expect(out.ok).toBe(false);
-    expect(out.reason).toContain('tipe pembeli');
+    // The next step is the order details, never a buyer type.
+    expect(out.reason).toContain('barang apa yang mau dikemas');
+    expect(out.reason).toContain('hitung_harga');
+    expect(out.reason).not.toMatch(/tipe pembeli|dipakai sendiri/);
   });
 
   // Review fix m6: the price list is "daftar harga" in Indonesian.
   it('rejects "daftar harganya sudah saya kirim" when nothing went out', () => {
-    expect(verifyReplyCatalogClaim('Daftar harganya sudah saya kirim ya kak 🙏', false, null).ok).toBe(false);
-    expect(verifyReplyCatalogClaim('Daftar harga Kertas Supreme sudah terkirim kak.', false, null).ok).toBe(false);
-    expect(verifyReplyCatalogClaim('Daftar harganya sudah saya kirim ya kak 🙏', true, null).ok).toBe(true);
+    expect(verifyReplyCatalogClaim('Daftar harganya sudah saya kirim ya kak 🙏', false).ok).toBe(false);
+    expect(verifyReplyCatalogClaim('Daftar harga Kertas Supreme sudah terkirim kak.', false).ok).toBe(false);
+    expect(verifyReplyCatalogClaim('Daftar harganya sudah saya kirim ya kak 🙏', true).ok).toBe(true);
   });
 
   it('allows the claim when the note says the file really went out', () => {
-    expect(verifyReplyCatalogClaim('Price list Vintage sudah saya kirim ya kak 😊', true, 'reseller').ok).toBe(true);
+    expect(verifyReplyCatalogClaim('Daftar harga Imperial Indopack sudah saya kirim ya kak 😊', true).ok).toBe(true);
   });
 
   it('allows a sentence that refers back to an earlier real send', () => {
-    expect(verifyReplyCatalogClaim('Price list yang tadi sudah saya kirim itu harga reseller ya kak.', false, 'reseller').ok).toBe(true);
+    expect(verifyReplyCatalogClaim('Daftar harga yang tadi sudah saya kirim itu sudah termasuk ongkir ya kak.', false).ok).toBe(true);
   });
 
   it('ignores sends that are not about a catalog', () => {
-    expect(verifyReplyCatalogClaim('Pesanannya sudah saya teruskan, nanti dikirim tim ya kak.', false, 'end_user').ok).toBe(true);
-  });
-
-  it('points an end user at the store, never at a file', () => {
-    const out = verifyReplyCatalogClaim('Katalognya sudah saya kirim ya kak.', false, 'end_user');
-    expect(out.ok).toBe(false);
-    expect(out.reason).toContain(END_USER_CATALOG_URL);
+    expect(verifyReplyCatalogClaim('Pesanannya sudah saya teruskan, nanti dikirim tim ya kak.', false).ok).toBe(true);
   });
 });
 
@@ -583,22 +561,25 @@ describe('verifyReplyFirstGreeting - the open question alone, no name question w
   ])('passes: %s', (m) => expect(verifyReplyFirstGreeting(m).ok).toBe(true));
 });
 
-describe('verifyReplyOpener - on an opening turn the next question is the name, then the buyer type', () => {
-  it('rejects the open question that replaces them, flagging the fixed-question fallback', () => {
-    const out = verifyReplyOpener('Salam kenal, Kak Hendra! 😊 Ada yang bisa saya bantu carikan hari ini?', null);
+describe('verifyReplyOpener - on an opening turn the next question is the name, then what they pack', () => {
+  it('rejects the open question that replaces them, and repairs towards the order details', () => {
+    const out = verifyReplyOpener('Salam kenal, Kak Hendra! 😊 Ada yang bisa saya bantu carikan hari ini?');
     expect(out.ok).toBe(false);
-    expect(out.askBuyerType).toBe(true);
-    expect(verifyReplyOpener('Halo! Selamat datang di Legacy 😊 Ada yang bisa saya bantu carikan hari ini?', null).ok).toBe(false);
+    expect(out).not.toHaveProperty('askBuyerType');
+    expect(out.reason).toContain('barang apa yang mau dikemas');
+    expect(out.reason).not.toMatch(/tipe pembeli|dipakai sendiri|dijual lagi/);
+    expect(verifyReplyOpener('Halo! Selamat datang di Kertas Supreme 😊 Ada yang bisa saya bantu carikan hari ini?').ok).toBe(false);
   });
 
-  it('allows it next to the name or buyer-type question (Run 2 A-01 passed like this)', () => {
-    expect(verifyReplyOpener('Halo! 😊 Ada yang bisa saya bantu carikan hari ini? Sebelumnya, dengan siapa saya terhubung ya?', null).ok).toBe(true);
-    expect(verifyReplyOpener('Ada yang bisa saya bantu? Rencananya untuk dipakai sendiri, untuk proyek, atau dijual lagi?', null).ok).toBe(true);
+  it('allows it next to the name question or the question of what they pack (Run 2 A-01 passed like this)', () => {
+    expect(verifyReplyOpener('Halo! 😊 Ada yang bisa saya bantu carikan hari ini? Sebelumnya, dengan siapa saya terhubung ya?').ok).toBe(true);
+    expect(verifyReplyOpener('Salam kenal, Kak Hendra 😊 Ada yang bisa saya bantu? Kemasannya untuk makanan apa kak?').ok).toBe(true);
+    expect(verifyReplyOpener('Ada yang bisa saya bantu kak? Mau dikemas untuk apa?').ok).toBe(true);
   });
 
-  it('leaves it alone once the buyer type is known, and other questions always', () => {
-    expect(verifyReplyOpener('Halo Pak Budi! Ada yang bisa saya bantu carikan?', 'end_user').ok).toBe(true);
-    expect(verifyReplyOpener('Wah, itu nggak bisa aku bagikan ya kak 🙏 Ada produk yang lagi dicari?', null).ok).toBe(true);
+  it('leaves other questions alone', () => {
+    expect(verifyReplyOpener('Wah, itu nggak bisa aku bagikan ya kak 🙏 Ada kemasan yang lagi dicari?').ok).toBe(true);
+    expect(verifyReplyOpener('Salam kenal, Kak Hendra 😊 Kertasnya untuk membungkus apa kak?').ok).toBe(true);
   });
 });
 
@@ -702,54 +683,31 @@ describe('the name the customer already gave', () => {
 
   it('repairs a reply that asks it again', () => {
     expect(verifyReplyNameRepeat('Baik kak, di Malang ya 😊 Boleh tahu nama kakak siapa?', 'Jovi')).toMatchObject({ ok: false, soft: true });
-    expect(verifyReplyNameRepeat('Salam kenal, Kak Jovi 😊 Untuk dipakai sendiri, proyek, atau dijual lagi?', 'Jovi').ok).toBe(true);
+    expect(verifyReplyNameRepeat('Salam kenal, Kak Jovi 😊 Kemasannya untuk jualan apa kak?', 'Jovi').ok).toBe(true);
     expect(verifyReplyNameRepeat('Boleh tahu nama kakak siapa?', null).ok).toBe(true);
   });
 });
 
-// Team, 2026-11-09: "rel pintu 6 daun 4 meter belum ada" was followed by the name, the buyer type and
-// "membutuhkan hardware apa saja?" - "langsung ditutup aja".
+// Team, 2026-11-09: an item we do not sell was followed by the name question and "membutuhkan apa
+// saja?" - "langsung ditutup aja".
 describe('a not-carried reply closes the chat', () => {
   it.each([
-    'Mohon maaf, rel pintu 6 daun 4 meter belum ada di kami ya 🙏. Kalau ada produk hardware lain yang sedang dicari, dengan senang hati saya bantu. Sebelumnya, dengan siapa saya terhubung ya?',
-    'Mohon maaf kak, rel itu belum ada di kami ya. Rencananya untuk dipakai sendiri, untuk proyek, atau dijual lagi?',
-    'Mohon maaf kak, rel itu belum ada di kami ya. Kakak membutuhkan hardware apa saja?',
+    'Mohon maaf, gelas plastik belum ada di kami ya 🙏. Kalau ada kemasan lain yang sedang dicari, dengan senang hati saya bantu. Sebelumnya, dengan siapa saya terhubung ya?',
+    'Mohon maaf kak, gelas plastik belum ada di kami ya. Kakak membutuhkan kemasan apa saja?',
   ])('repairs a question after "belum ada di kami": %s', (m) => {
     expect(verifyReplyNotCarriedCloses(m, false)).toMatchObject({ ok: false, soft: true });
   });
 
   it('lets the closing line through', () => {
-    expect(verifyReplyNotCarriedCloses('Mohon maaf kak, rel pintu 6 daun 4 meter belum ada di kami ya 🙏 Kalau ke depannya ada kebutuhan produk lain, jangan sungkan hubungi kami kembali ya kak.', false).ok).toBe(true);
+    expect(verifyReplyNotCarriedCloses('Mohon maaf kak, gelas plastik belum ada di kami ya 🙏 Kalau ke depannya ada kebutuhan kemasan kertas atau box, jangan sungkan hubungi kami kembali ya kak.', false).ok).toBe(true);
   });
 
   it('leaves a reply that offers one of our products alone', () => {
-    expect(verifyReplyNotCarriedCloses('Gembok merek Solid belum ada di kami ya kak, di kami ada GEMBOK 60MM. Sebelumnya, dengan siapa saya terhubung ya?', true).ok).toBe(true);
+    expect(verifyReplyNotCarriedCloses('Gelas plastik belum ada di kami ya kak, untuk takeaway di kami ada paper bag. Sebelumnya, dengan siapa saya terhubung ya?', true).ok).toBe(true);
   });
 
   it('is in the prompt', () => {
     expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).toMatch(/TIDAK ada pertanyaan sama sekali/);
     expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).not.toMatch(/Di balasan pertama, tambahkan pertanyaan nama/);
-  });
-});
-
-// Team, 2026-11-08/09: "untuk jasa pemasangan kami tidak menyediakan", "utk produksi atau pembuatan
-// pintu atau kusen pintu, kami tidak menyediakan".
-describe('no installation or fabrication service', () => {
-  it.each([
-    'Soal jasa pemasangan, kami bisa bantu konsultasi atau kerjasama dengan tukang terdekat sesuai kebutuhan kakak.',
-    'Untuk pemasangannya nanti kami bisa pasangkan juga kak.',
-    'Kasa nyamuk dan pintu ekspanda bisa custom kak sesuai ukuran.',
-    'Kami bisa buatkan kusen aluminium sesuai ukuran kak.',
-  ])('repairs %s', (m) => expect(verifyReplyNoService(m)).toMatchObject({ ok: false, soft: true }));
-
-  it.each([
-    'Mohon maaf kak, untuk jasa pemasangan kami tidak menyediakan ya 🙏',
-    'Untuk pembuatan kusen aluminium dan pintu ekspanda kami belum menerima ya kak. Di kami adanya hardware-nya, seperti handle dan engsel.',
-    'Ada PENSIL TUKANG juga kak.',
-    'Handle ini cara pemasangannya dibaut dari sisi dalam pintu.',
-  ])('lets %s through', (m) => expect(verifyReplyNoService(m).ok).toBe(true));
-
-  it('is in the prompt', () => {
-    expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).toMatch(/TIDAK menyediakan jasa pemasangan/);
   });
 });

@@ -9,7 +9,7 @@ import { getAiEnabledDefault, getPoFormUrl } from '../repositories/appSettings.j
 import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormMessage, PO_FORM_PLACEHOLDER_URL, CANNED_PO_FORM_FROM_TEAM } from '../domain/constants.js';
 import { buildContextAndCallAI } from './aiLayer.js';
 import { resolveCatalogDelivery, isPriceRequest, asksForPriceList, forgetSentPriceLists } from './catalogDelivery.js';
-import { extractCatalogKeywordsFromImage, visionExtractToKeywords, otherBrands, type VisionExtract } from './visionKeywords.js';
+import { extractCatalogKeywordsFromImage, visionExtractToKeywords, type VisionExtract } from './visionKeywords.js';
 import { matchCustomerPhoto, photoBatchNote, photoHistoryNote, photoLine, captionOf, type PhotoMatch } from './photoMatch.js';
 import { escalateConversation, detectComplaint, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, isNonSalesHandoff, isNonSalesReason, pickProfileGapQuestion, unansweredSizeQuestion, replyPromisesTeamCheck } from './escalationHandler.js';
 import { sendTextMessage, sendDocumentMessage, sendImageMessage } from './whatsappSender.js';
@@ -101,7 +101,7 @@ interface PhotoItem {
   keywords: Promise<string[]>;
   match: Promise<PhotoMatch | null>;
   /** Filled when the vision step returns, never waited for (see the arrival code). */
-  seen: { brands: string[]; chatText: string };
+  seen: { chatText: string };
 }
 
 interface PhotoBatch {
@@ -417,10 +417,6 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // request for the list itself (which also resends one already sent, and goes even for a priced
     // item). The sends are fire-and-forget - resolving them BEFORE the call is what lets the reply
     // and the attachments agree, via `catalogNote`. Which brand's file, if any, is catalogDelivery's rule.
-    // customerType still feeds the prompt's buyer-type line (CUSTOMER_TYPE_LINE); no check reads it.
-    const customerType = await getContactProfile(conv.contactId)
-      .then((p) => p?.customerType ?? null)
-      .catch(() => null);
 
     let catalogNote: string | null = null;
     let filesSent = false;
@@ -447,7 +443,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
         ? { message: '', confidence: 'low', escalationReason: `${nonSales} - bukan pertanyaan produk` }
         : await buildContextAndCallAI(
           conversationId, combinedText, entry.promptSections, [], null, quotedBody,
-          { catalogNote, customerType }
+          { catalogNote }
         );
     } catch (err) {
       if (silentWithoutClaude(conversationId, combinedText)) return;
@@ -633,15 +629,9 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   let aiResponse: AIResponse;
   let matches: (PhotoMatch | null)[] = items.map(() => null);
   try {
-    const [imgCustomerType, ...found] = await Promise.all([
-      getContactProfile(conv.contactId).then((p) => p?.customerType ?? null).catch(() => null),
-      ...items.map((i) => i.match),
-    ]);
-    matches = found as (PhotoMatch | null)[];
-    items.forEach((it, i) => {
+    matches = await Promise.all(items.map((i) => i.match));
+    matches.forEach((m, i) => {
       const tag = items.length > 1 ? ` (FOTO ${i + 1}/${items.length})` : '';
-      if (it.seen.brands.length) console.log(`[messageRouter] photo for ${conv.id}${tag} shows another brand: ${it.seen.brands.join(', ')}`);
-      const m = matches[i];
       if (m) {
         console.log(`[messageRouter] photo match for ${conv.id}${tag}: ${m.certainty}${m.product ? ` ${m.product.name}` : ''} (compared ${m.compared.length}: ${m.compared.join('; ')}) - ${m.reason}${m.searched ? ` [searched: ${m.searched.join(', ')}]` : ''}`);
       }
@@ -656,7 +646,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
       : await buildContextAndCallAI(
         conv.id, body, phoneNumber.promptSections,
         Promise.all(items.map((i) => i.keywords)).then((kws) => [...new Set(kws.flat())]), images, quotedBody,
-        { customerType: imgCustomerType, photoNote: photoBatchNote(items.map((it, i) => ({ match: matches[i] ?? null, brands: it.seen.brands }))) }
+        { photoNote: photoBatchNote(items.map((_, i) => ({ match: matches[i] ?? null }))) }
       );
   } catch (err) {
     if (silentWithoutClaude(conv.id, body)) return;
@@ -675,7 +665,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   // knows what each photo was from the note stored on its message (aiLayer.historyBody).
   const waiting = textDebounceMap.get(conv.id);
   if (waiting && !waiting.superseded) {
-    const lines = await Promise.all(items.map(async (it, i) => photoLine(it.body, photoHistoryNote(matches[i] ?? null, await it.keywords, it.seen.brands))));
+    const lines = await Promise.all(items.map(async (it, i) => photoLine(it.body, photoHistoryNote(matches[i] ?? null, await it.keywords))));
     waiting.texts = [...lines, ...waiting.texts];
     waiting.sentAt = [...items.map((i) => i.sentAt), ...waiting.sentAt];
     waiting.quotedWaMessageId ??= quotedWaMessageId;
@@ -1091,13 +1081,10 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
         return null;
       });
     const imageKeywordsPromise: Promise<string[]> = visionPromise.then((v) => (v ? visionExtractToKeywords(v) : []));
-    // A brand printed on the photo that is not ours ("SOLID" on a padlock pack) - said as a brand -
-    // and the messages written in a chat screenshot, for the tax gate. Read when the reply starts,
-    // never waited for: a catalog with no photos keeps the vision head start. With photos they are
-    // always set by then - the comparison waits for the vision step.
-    const seen = { brands: [] as string[], chatText: '' };
-    const photoBrandsPromise: Promise<string[]> = visionPromise.then((v) => (v ? otherBrands(v) : [])).catch(() => []);
-    void photoBrandsPromise.then((b) => { seen.brands = b; });
+    // The messages written in a chat screenshot, for the tax gate. Read when the reply starts, never
+    // waited for: a catalog with no photos keeps the vision head start. With photos it is always set
+    // by then - the comparison waits for the vision step.
+    const seen = { chatText: '' };
     void visionPromise.then((v) => { seen.chatText = (v?.chat_text ?? []).join('\n'); }).catch(() => { });
     // The photo against our own product photos (services/photoMatch.ts), awaited BEFORE the reply is
     // written: the verdict is what the reply is about. Never rejects; null when no candidate product
@@ -1108,9 +1095,9 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
       : matchCustomerPhoto(imageData, imageKeywordsPromise, body, visionPromise.then((v) => v && { box: v.product_box, category: v.primary_category }));
     // Kept on the message so a later turn knows what the photo was (aiLayer.historyBody) - only
     // this turn ever sees the image itself.
-    void Promise.all([photoMatchPromise, imageKeywordsPromise, photoBrandsPromise])
-      .then(([m, kw, brands]) => {
-        const note = photoHistoryNote(m, kw, brands);
+    void Promise.all([photoMatchPromise, imageKeywordsPromise])
+      .then(([m, kw]) => {
+        const note = photoHistoryNote(m, kw);
         return note ? mergeMessageMetadata(saved.id, { photoContext: note }) : undefined;
       })
       .catch((err) => console.warn('[messageRouter] photo note not saved:', err instanceof Error ? err.message : err));

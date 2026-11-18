@@ -2,7 +2,9 @@ import { eq, inArray, and, ne } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { products, productVariants, brands, categories, uomTable } from '../db/schema.js';
 import { hybridSearchProducts, listProducts, mapUom, mapVariant } from '../repositories/products.js';
-import { MAX_CATALOG_RAG_RESULTS, LEGACY_BRANDS, REFERENCE_PHOTOS_MARKER } from '../domain/constants.js';
+import { MAX_CATALOG_RAG_RESULTS, REFERENCE_PHOTOS_MARKER } from '../domain/constants.js';
+import { BRAND_NAMES, type BrandSlug } from '../domain/orderProfile.js';
+import { brandsInText } from './catalogDelivery.js';
 import type { Product } from '../domain/types.js';
 import { toPcs, type PriceTier } from '../domain/pricing.js';
 
@@ -52,32 +54,20 @@ const STOPWORDS = new Set([
   'price', 'do', 'you', 'have',
 ]);
 
-// ─── Brand name map for detection ────────────────────────────────────────────
-// IMPORTANT: longer/more-specific aliases must come FIRST so they take priority
-// over shorter aliases that are substrings (e.g. "aomori slim" before "aomori",
-// "d-xplore" before "explore"). "slim" is intentionally removed — it appears in
-// product names generically (e.g. "HANDLE PINTU SLIM") and would cause false
-// brand matches.
-const BRAND_ALIASES: [string, string][] = [
-  ['aomori slim', 'Aomori Slim'],
-  ['aomori',      'Aomori'],
-  ['blossom',     'Blossom'],
-  ['vintage',     'Vintage'],
-  ['d-xplore',    'D-Xplore'],
-  ['dxplore',     'D-Xplore'],
-  ['dxp',         'D-Xplore'],
-  ['shind',       'Shind'],
-];
-
 interface ParsedQuery {
   keywords: string[];
+  /** brands.name to search within (ILIKE), when the message names exactly one brand. */
   brandFilter: string | null;
 }
 
-/** The brand a message names, or null. Exported so the catalog-PDF resolver reuses this table
- *  instead of keeping a second, drifting copy of the aliases. */
-export function detectBrand(message: string): string | null {
-  return parseQuery(message).brandFilter;
+/**
+ * The brand a message names, by the words customers use for it (catalogDelivery.brandsInText: "kertas
+ * nasi" is Kertas Supreme, "dus" is Imperial Indopack). Null for none, and for both: a message about
+ * boxes and paper must search both brands.
+ */
+export function detectBrand(message: string): BrandSlug | null {
+  const named = brandsInText(message);
+  return named.length === 1 ? named[0]! : null;
 }
 
 function parseQuery(message: string): ParsedQuery {
@@ -86,25 +76,8 @@ function parseQuery(message: string): ParsedQuery {
   const lower = message.toLowerCase().replace(/[?!.,;:+\-]/g, ' ');
   const words = lower.split(/\s+/).filter(Boolean);
 
-  // Detect brand — BRAND_ALIASES is ordered longest/most-specific first so the
-  // first match wins. The LEGACY_BRANDS fallback only runs if no alias matched,
-  // preventing a shorter official name from overriding a more-specific alias match.
-  let brandFilter: string | null = null;
-  const text = lower.replace(/\s+/g, ' ');
-  for (const [alias, brand] of BRAND_ALIASES) {
-    if (text.includes(alias)) {
-      brandFilter = brand;
-      break;
-    }
-  }
-  if (brandFilter === null) {
-    for (const brand of LEGACY_BRANDS) {
-      if (text.includes(brand.toLowerCase())) {
-        brandFilter = brand;
-        break;
-      }
-    }
-  }
+  const brand = detectBrand(message);
+  const brandFilter = brand ? BRAND_NAMES[brand] : null;
 
   // Strip common Indonesian possessive/pronoun suffixes before stopword check
   const stripSuffixes = (w: string): string =>

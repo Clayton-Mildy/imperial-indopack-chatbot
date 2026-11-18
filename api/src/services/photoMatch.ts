@@ -6,7 +6,6 @@ import { getDb } from '../db/client.js';
 import { getClient, isDevMode, agentQuery, logUsageLine, CLAUDE_MODEL } from './claude.js';
 import { searchActiveProducts } from '../repositories/products.js';
 import type { Product } from '../domain/types.js';
-import { otherBrandNote } from './otherBrands.js';
 import type { ProductBox } from './visionKeywords.js';
 
 /**
@@ -357,33 +356,25 @@ export function photoMatchNote(m: PhotoMatch | null, scope = LATEST_PHOTO): stri
     return `PERBANDINGAN FOTO: foto pelanggan SAMA dengan foto produk kami ${m.product.name}. Konfirmasikan dengan percaya diri bahwa itu produk kami, lalu lanjutkan seperti biasa.${scope}`;
   }
   if (m.certainty === 'similar' && m.product) {
-    return `PERBANDINGAN FOTO: foto pelanggan MIRIP foto produk kami ${m.product.name}, tapi belum pasti model yang sama. Tanyakan ke pelanggan apakah yang dimaksud ${m.product.name}, dan isi image_url dengan ${m.product.imageUrl} supaya foto produk kami ikut terkirim untuk dicocokkan. Jangan menyatakannya pasti sama.${scope}`;
+    return `PERBANDINGAN FOTO: foto pelanggan MIRIP foto produk kami ${m.product.name}, tapi belum pasti model yang sama. Tanyakan ke pelanggan apakah yang dimaksud ${m.product.name}; kalau produk itu punya baris [FOTO REFERENSI TERSEDIA], salin url-nya ke image_urls supaya fotonya ikut terkirim untuk dicocokkan. Jangan menyatakannya pasti sama.${scope}`;
   }
   return `PERBANDINGAN FOTO: foto pelanggan sudah dibandingkan dengan foto produk ${compared} dan TIDAK ada yang sama. Jangan klaim barang di foto adalah salah satu produk itu. Produk lain belum punya foto pembanding - nilai dari data katalog seperti biasa.${scope}`;
 }
 
-/**
- * A brand printed on the photo that is not one of ours (visionKeywords.otherBrands). Said as a brand,
- * so it is never read as a description: "SOLID" on a padlock pack became "gembok solid yang kokoh".
- */
-export function photoBrandNote(brands: string[]): string | null {
-  return otherBrandNote('foto', brands);
-}
-
 /** Everything the reply should know about the photo, for the customer block. */
-export function photoTurnNote(m: PhotoMatch | null, brands: string[], scope = LATEST_PHOTO): string | null {
-  return [photoMatchNote(m, scope), photoBrandNote(brands)].filter(Boolean).join(' ') || null;
+export function photoTurnNote(m: PhotoMatch | null, scope = LATEST_PHOTO): string | null {
+  return photoMatchNote(m, scope);
 }
 
 /**
  * Photos sent together, answered in one turn (messageRouter): each verdict numbered by its photo - the
  * FOTO 1..N labels aiLayer puts on the images - and scoped once to the latest message.
  */
-export function photoBatchNote(photos: { match: PhotoMatch | null; brands: string[] }[]): string | null {
-  if (photos.length === 1) return photoTurnNote(photos[0]!.match, photos[0]!.brands);
+export function photoBatchNote(photos: { match: PhotoMatch | null }[]): string | null {
+  if (photos.length === 1) return photoTurnNote(photos[0]!.match);
   const notes = photos
     .map((ph, i) => {
-      const note = photoTurnNote(ph.match, ph.brands, '');
+      const note = photoTurnNote(ph.match, '');
       return note ? `FOTO ${i + 1}: ${note}` : null;
     })
     .filter(Boolean);
@@ -395,13 +386,7 @@ export function photoBatchNote(photos: { match: PhotoMatch | null; brands: strin
  * What a later turn may know about this photo - stored on the message, rendered by
  * aiLayer.historyBody. The verdict when there is one, else the vision keywords.
  */
-export function photoHistoryNote(m: PhotoMatch | null, keywords: string[], brands: string[] = []): string {
-  const brand = brands.length ? `merek ${brands.join(', ')} (bukan merek kami)` : '';
-  const note = historyVerdict(m, keywords);
-  return [brand, note].filter(Boolean).join('; ');
-}
-
-function historyVerdict(m: PhotoMatch | null, keywords: string[]): string {
+export function photoHistoryNote(m: PhotoMatch | null, keywords: string[]): string {
   if (m?.product && m.certainty === 'same') return `produk kami ${m.product.name} (foto sama)`;
   const seen = keywords.slice(0, 6).join(', ');
   // A "mirip" is a question to ask, never an answer either way. Unnamed it read as "not carried" and the

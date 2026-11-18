@@ -1,12 +1,9 @@
 import { z } from 'zod';
 import { getClient, isDevMode, agentQuery, CLAUDE_MODEL } from './claude.js';
-import { notOurBrands } from './otherBrands.js';
 
 // IMPORTANT: Haiku's output is fed into RAG plumbing ONLY (extraKeywords →
 // buildCatalogContext). It MUST NEVER be injected into Sonnet's system prompt,
 // otherwise the closed-catalog rule from task-legacy-007 weakens.
-// The one exception is otherBrands(): it can only ever say "this is NOT ours", which narrows the
-// catalog rather than widening it.
 
 /** Where the product sits in the photo: [left, top, right, bottom], percent of width and height. */
 export type ProductBox = [number, number, number, number];
@@ -124,12 +121,4 @@ export function visionExtractToKeywords(extract: VisionExtract): string[] {
     .map((k) => k.toLowerCase().trim())
     .filter((k) => k.length >= 3);
   return Array.from(new Set(tokens));
-}
-
-/**
- * Brands printed on the photo that are not ours (services/otherBrands.ts). Kept out of
- * visionExtractToKeywords: "solid" as a search word would rank every zinc-alloy cylinder above the padlocks.
- */
-export function otherBrands(extract: Pick<VisionExtract, 'brand_names'>): string[] {
-  return notOurBrands(extract.brand_names ?? []);
 }

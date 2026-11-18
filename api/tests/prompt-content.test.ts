@@ -1,0 +1,150 @@
+/**
+ * prompt-content.test.ts
+ * The shipped prompt speaks as Imperial Indopack / Kertas Supreme (spec 7.4) and states the rules
+ * the code enforces: prices only from hitung_harga with "Rp" in front (the strict price check reads
+ * only "Rp N" figures), the PO link and photos attached by code, and no Legacy business.
+ * Reads only committed files - no DATABASE_URL, no API key.
+ */
+
+import { describe, it, expect } from 'vitest';
+import {
+  SYSTEM_PROMPT_SECTIONS,
+  SYSTEM_PROMPT_BEHAVIORAL_RULES,
+  KAMUS_ISTILAH,
+  ASK_NAME_REPLY,
+  CANNED_COMPLAINT_REPLY,
+  CANNED_NON_SALES_REPLY,
+  CANNED_STILL_CHECKING_REPLY,
+  CANNED_UNSUPPORTED_MEDIA_REPLY,
+} from '../src/domain/constants.js';
+import { RESPOND_FIELD_DESC, JUDGE_SYSTEM_PROMPT, TOOL_USE_SEARCH_INSTRUCTION } from '../src/services/aiLayer.js';
+
+const all = SYSTEM_PROMPT_SECTIONS.map((s) => s.content).join('\n') + SYSTEM_PROMPT_BEHAVIORAL_RULES;
+const section = (name: string): string => {
+  const found = SYSTEM_PROMPT_SECTIONS.find((s) => s.name === name);
+  expect(found, `prompt section "${name}" is missing`).toBeDefined();
+  return found!.content;
+};
+const LEGACY_RE = /legacy|reseller|showroom|PRICELIST|engsel|handle pintu|dipakai sendiri/i;
+
+describe('Imperial Indopack prompt', () => {
+  it('has the Imperial Indopack sections in order', () =>
+    expect(SYSTEM_PROMPT_SECTIONS.map((s) => s.name)).toEqual(['Identity', 'Mission', 'Tone', 'Brands', 'Order Details', 'Recommendations', 'Pricing', 'Design', 'PO Form', 'Rules', 'Escalation']));
+
+  it('names both brands and the price tool', () => {
+    expect(all).toContain('Imperial Indopack');
+    expect(all).toContain('Kertas Supreme');
+    expect(all).toContain('hitung_harga');
+  });
+
+  it('carries no Legacy business', () => expect(all).not.toMatch(LEGACY_RE));
+
+  it('carries no buyer type, MP price or discount tiers', () =>
+    expect(all).not.toMatch(/tipe pembeli|dijual lagi|untuk proyek|harga MP|\bMP:|diskon reseller|pengguna akhir/i));
+
+  it('canned replies carry no Legacy business', () =>
+    expect([CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY].join(' ')).not.toMatch(/legacy|hardware/i));
+
+  it('the term list is about paper and boxes', () => {
+    expect(KAMUS_ISTILAH).toContain('rim');
+    expect(KAMUS_ISTILAH).toContain('gsm');
+    expect(KAMUS_ISTILAH).not.toMatch(LEGACY_RE);
+    expect(KAMUS_ISTILAH).not.toMatch(/PELOR|TANGGUNG|SALON|DATA KATALOG RESMI/);
+  });
+});
+
+describe('the facts each section must state', () => {
+  it('Identity: the bot is "Admin" until the client names it', () => {
+    expect(section('Identity')).toContain('Admin');
+    expect(section('Identity')).not.toContain('Rina');
+  });
+
+  it('Brands: boxes are Imperial Indopack, wrapping paper and the extra paper items Kertas Supreme', () => {
+    const c = section('Brands');
+    expect(c).toMatch(/Imperial Indopack[^\n]*box/i);
+    expect(c).toMatch(/Kertas Supreme[^\n]*kertas/i);
+    for (const item of ['greaseproof', 'paper bag', 'paper sleeve', 'amplop']) expect(c.toLowerCase()).toContain(item);
+  });
+
+  it('Order Details: the six details, one or two questions at a time, never re-asked', () => {
+    const c = section('Order Details');
+    for (const detail of ['nama', 'nama usaha', 'model', 'desain', 'jumlah', 'ukuran']) expect(c.toLowerCase()).toContain(detail);
+    expect(c).toMatch(/satu atau dua pertanyaan/i);
+    expect(c).toMatch(/jangan[^\n]*(?:tanya|menanyakan)[^\n]*(?:lagi|ulang)/i);
+  });
+
+  it('Order Details: an item already mentioned is resent with the same product and size', () =>
+    expect(section('Order Details')).toMatch(/product[^\n]*size[^\n]*SAMA|SAMA[^\n]*product[^\n]*size/));
+
+  it('Recommendations: wrap -> Kertas Supreme or greaseproof, catering/lunch/cookie -> box, takeaway -> paper bag', () => {
+    const c = section('Recommendations');
+    expect(c).toMatch(/nasi padang[^\n]*Kertas Supreme/i);
+    expect(c).toMatch(/kebab|burger/i);
+    expect(c).toMatch(/greaseproof/i);
+    expect(c).toMatch(/katering[^\n]*Imperial Indopack/i);
+    expect(c).toMatch(/takeaway[^\n]*paper bag/i);
+  });
+
+  it('Pricing: hitung_harga for every quantity, its four answers, units, delivery, next tier', () => {
+    const c = section('Pricing');
+    for (const word of ['hitung_harga', 'DI_BAWAH_MINIMUM', 'DI_ATAS_TINGKAT_TERATAS', 'TIDAK_ADA_DI_KATALOG', 'per pcs', 'per rim', 'ongkir']) expect(c).toContain(word);
+    expect(c).toMatch(/DI_ATAS_TINGKAT_TERATAS[^\n]*confidence "low"|confidence "low"[^\n]*DI_ATAS_TINGKAT_TERATAS/);
+    expect(c).toMatch(/tingkat berikutnya/i);
+    expect(c).toMatch(/pelanggan lain/i);
+  });
+
+  it('Pricing: every price figure is written "Rp N" - no ribu, rb, IDR or ranges', () => {
+    const c = section('Pricing');
+    expect(c).toContain('"Rp"');
+    for (const banned of ['ribu', 'rb', 'IDR']) expect(c).toContain(`"${banned}"`);
+    expect(c).toMatch(/rentang/i);
+  });
+
+  it('Design: a logo sets has_design; no design gets image_urls from the reference photos, else the team', () => {
+    const c = section('Design');
+    expect(c).toContain('has_design');
+    expect(c).toContain('image_urls');
+    expect(c).toContain('[FOTO REFERENSI TERSEDIA]');
+    expect(c).toMatch(/tim/);
+  });
+
+  it('PO Form: send_po_form only on agreement, and the model never writes the link or the form line', () => {
+    const c = section('PO Form');
+    expect(c).toContain('send_po_form');
+    expect(c).toMatch(/JANGAN[^\n]*link/i);
+    expect(c).toMatch(/JANGAN[^\n]*(?:isi|mengisi)[^\n]*form/i);
+  });
+
+  it('behavioural rules talk about image_urls, never image_url', () => {
+    expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).toContain('image_urls');
+    expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).not.toMatch(/image_url\b/);
+    expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).not.toMatch(/DATA KATALOG RESMI|Kategori \(petunjuk pencarian\)|Playbook/);
+  });
+
+  it('the name question has no buyer-type wording', () => {
+    expect(ASK_NAME_REPLY).toMatch(/dengan siapa/);
+    expect(ASK_NAME_REPLY).not.toMatch(LEGACY_RE);
+  });
+});
+
+describe('tool and field text', () => {
+  it('search instruction keeps web_search and resolve_link, drops the website tool and the reseller check, and adds the price tool', () => {
+    expect(TOOL_USE_SEARCH_INSTRUCTION).toContain('web_search');
+    expect(TOOL_USE_SEARCH_INSTRUCTION).toContain('resolve_link');
+    expect(TOOL_USE_SEARCH_INSTRUCTION).toContain('KALKULATOR HARGA (hitung_harga)');
+    expect(TOOL_USE_SEARCH_INSTRUCTION).not.toMatch(/search_legacy_website|reseller|legacy/i);
+  });
+
+  it('the judge checks for a paper and box seller', () => {
+    expect(JUDGE_SYSTEM_PROMPT).toContain('customer service penjual kemasan kertas dan box karton');
+    expect(JUDGE_SYSTEM_PROMPT).not.toMatch(/toko hardware|pricelist|BNSN|Lusin/i);
+  });
+
+  it('no respond_to_customer field mentions Legacy, the buyer type or the old catalog fields', () => {
+    const fields = Object.values(RESPOND_FIELD_DESC).join('\n');
+    expect(fields).not.toMatch(/legacy|reseller|end-user|project fields|DATA KATALOG RESMI|Kategori \(petunjuk pencarian\)|Playbook|Scope line/i);
+    expect(RESPOND_FIELD_DESC.profile_update).toMatch(/business_name/);
+    expect(RESPOND_FIELD_DESC.profile_update).toMatch(/same product and size/i);
+    expect(RESPOND_FIELD_DESC.fit_basis).toMatch(/Kegunaan/);
+  });
+});

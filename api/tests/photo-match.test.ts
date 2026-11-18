@@ -308,12 +308,15 @@ describe('the note the reply model reads', () => {
     const { photoMatchNote } = await load();
     expect(photoMatchNote({ ...base, certainty: 'same', product: { name: 'A', brand: null, imageUrl: '/a.jpg' } })).toMatch(/SAMA dengan foto produk kami A\. Konfirmasikan/);
   });
-  it('similar: ask, and send our photo along', async () => {
+  // Only the catalog block's reference photos are sent (aiLayer.withCatalogPhotosOnly), so the note
+  // points there, never at the product's own comparison photo.
+  it('similar: ask, and send the reference photo along when there is one', async () => {
     const { photoMatchNote } = await load();
     const n = photoMatchNote({ ...base, certainty: 'similar', product: { name: 'A', brand: null, imageUrl: '/a.jpg' } })!;
     expect(n).toMatch(/MIRIP/);
     expect(n).toMatch(/Tanyakan ke pelanggan apakah yang dimaksud A/);
-    expect(n).toContain('image_url dengan /a.jpg');
+    expect(n).toMatch(/\[FOTO REFERENSI TERSEDIA\], salin url-nya ke image_urls/);
+    expect(n).not.toContain('/a.jpg');
   });
   // Live 2026-10-14: an earlier photo's verdict, replayed in the history, beat this one unscoped.
   it('every verdict says it is for the latest photo, not one earlier in the chat', async () => {
@@ -336,14 +339,15 @@ describe('the note for photos sent together', () => {
   const p = (name: string) => ({ compared: [name], reason: '', certainty: 'same' as const, product: { name, brand: null, imageUrl: `/${name}.jpg` } });
   it('numbers each verdict by its photo, and scopes them once to the latest message', async () => {
     const { photoBatchNote } = await load();
-    const n = photoBatchNote([{ match: p('A'), brands: [] }, { match: null, brands: ['AIGO'] }, { match: p('C'), brands: [] }])!;
-    expect(n).toMatch(/FOTO 1: PERBANDINGAN FOTO: [^]*produk kami A\.[^]*FOTO 2: [^]*AIGO[^]*FOTO 3: [^]*produk kami C\./);
+    const n = photoBatchNote([{ match: p('A') }, { match: null }, { match: p('C') }])!;
+    expect(n).toMatch(/FOTO 1: PERBANDINGAN FOTO: [^]*produk kami A\.[^]*FOTO 3: [^]*produk kami C\./);
+    expect(n).not.toContain('FOTO 2:');
     expect(n.match(/pesan TERAKHIR/g)).toHaveLength(1);
   });
   it('is the single-photo note for one photo, and nothing when no photo has a note', async () => {
     const { photoBatchNote, photoTurnNote } = await load();
-    expect(photoBatchNote([{ match: p('A'), brands: [] }])).toBe(photoTurnNote(p('A'), []));
-    expect(photoBatchNote([{ match: null, brands: [] }, { match: null, brands: [] }])).toBeNull();
+    expect(photoBatchNote([{ match: p('A') }])).toBe(photoTurnNote(p('A')));
+    expect(photoBatchNote([{ match: null }, { match: null }])).toBeNull();
   });
 });
 
@@ -365,30 +369,3 @@ describe('what a later turn knows about the photo', () => {
   });
 });
 
-// Live 2026-10-22: a SOLID padlock pack was answered "gembok 60mm solid yang kokoh" - the brand read
-// as the adjective, and never said to be one we do not carry.
-describe('a brand printed on the photo that is not ours', () => {
-  it('otherBrands keeps foreign brands and drops ours, however they are spelled', async () => {
-    const { otherBrands } = await import('../src/services/visionKeywords.js');
-    expect(otherBrands({ brand_names: ['SOLID'] })).toEqual(['SOLID']);
-    expect(otherBrands({ brand_names: ['BLOSSOM', 'dxplore', 'Aomori Slim', 'LEGACY'] })).toEqual([]);
-    expect(otherBrands({ brand_names: ['SOLID', 'Solid', ' '] })).toEqual(['SOLID']);
-    expect(otherBrands({ brand_names: undefined as never })).toEqual([]);
-  });
-  it('the reply is told it is a brand we do not carry, after the comparison verdict', async () => {
-    const { photoTurnNote, photoBrandNote } = await load();
-    const n = photoBrandNote(['SOLID'])!;
-    expect(n).toMatch(/merek SOLID - itu NAMA MEREK lain, bukan merek kami, dan bukan sifat barangnya/);
-    expect(n).toMatch(/BARANG YANG TIDAK KAMI PUNYA/);
-    expect(photoBrandNote([])).toBeNull();
-    const both = photoTurnNote({ compared: ['A'], reason: '', certainty: 'none', product: null }, ['SOLID'])!;
-    expect(both.indexOf('PERBANDINGAN FOTO')).toBeLessThan(both.indexOf('MEREK DI FOTO'));
-    expect(photoTurnNote(null, [])).toBeNull();
-  });
-  it('a later turn still knows the brand', async () => {
-    const { photoHistoryNote } = await load();
-    expect(photoHistoryNote(null, ['gembok', 'silver'], ['SOLID'])).toMatch(/^merek SOLID \(bukan merek kami\); belum bisa dipastikan produk kami[^]*; isi foto: gembok, silver$/);
-    const p = { name: 'GEMBOK BESI JACKET', brand: 'Blossom', imageUrl: '/j.jpg' };
-    expect(photoHistoryNote({ certainty: 'same', product: p, compared: [p.name], reason: '' }, [], ['SOLID'])).toBe('merek SOLID (bukan merek kami); produk kami GEMBOK BESI JACKET (foto sama)');
-  });
-});

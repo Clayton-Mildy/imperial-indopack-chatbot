@@ -24,7 +24,7 @@ vi.mock('../src/services/ragQuery.js', () => ({
   buildCatalogContext: vi.fn(async () => ''),
 }));
 vi.mock('../src/repositories/appSettings.js', () => ({
-  getDefaultPromptSections: vi.fn(async () => [{ name: 'Identitas', content: 'CS Legacy' }]),
+  getDefaultPromptSections: vi.fn(async () => [{ name: 'Identity', content: 'Kamu adalah Admin' }]),
 }));
 vi.mock('../src/repositories/products.js', () => ({
   listBrands: vi.fn(async () => []),

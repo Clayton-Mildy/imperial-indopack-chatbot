@@ -15,6 +15,7 @@ import type { ContactProfile, Conversation, PhoneNumber } from '../domain/types.
 import { findPhoneNumberById } from '../repositories/phoneNumbers.js';
 import { notifyStaff } from './staffNotify.js';
 import { mergeOrderFacts, orderDetailsSummary, type OrderItem } from '../domain/orderProfile.js';
+import { ASKS_NAME_RE } from './replyChecks.js';
 
 /**
  * The one customer fact the team will need next, as a fixed question — or null when the
@@ -35,7 +36,10 @@ export function pickProfileGapQuestion(profile: ContactProfile | null, recent: R
   // it - on the acks after it AND on a later hand-off in the same thread (UAT Run 3 E-06). One place,
   // so both hand-off paths ask the same.
   if (recent.some((m) => m.role === 'user' && isNonSalesHandoff(m.body))) return null;
-  const fresh = (question: string) => !recent.some((m) => m.role === 'assistant' && m.body.includes(question));
+  // The model asks the name in its own words ("dengan siapa saya terhubung?"): that counts too.
+  const asked = (body: string, question: string) =>
+    body.includes(question) || (question === ESCALATION_ASK_NAME && ASKS_NAME_RE.test(body));
+  const fresh = (question: string) => !recent.some((m) => m.role === 'assistant' && asked(m.body, question));
   const facts = mergeOrderFacts({}, profile?.profile ?? {}) as Record<string, unknown>;
   const items = (Array.isArray(facts.items) ? facts.items : []) as OrderItem[];
   const text = (v: unknown) => typeof v === 'string' && v.trim() !== '';
@@ -165,7 +169,7 @@ export async function escalateConversation(
   try { sentId = await sendTextMessage(phoneNumber.phoneNumberId, customerWaId, reply); } catch { /* recorded below as 'saved' */ }
 
   // Persist what the customer actually saw: without this row the next AI turn has no idea the
-  // question above was asked, and "dipakai sendiri" arrives without context.
+  // question above was asked, and the customer's answer ("30x30") arrives without context.
   await insertMessage({
     conversationId: conversation.id,
     role: 'assistant',

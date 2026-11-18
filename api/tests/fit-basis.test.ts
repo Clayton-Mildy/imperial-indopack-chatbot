@@ -39,7 +39,7 @@ Kamu adalah Rina.
 KATALOG PRODUK RELEVAN:
 
 Merek: Vintage
-Kategori (petunjuk pencarian): Door Pull
+Kategori: Door Pull
 Produk: DOORPULL PERTH VINTAGE BLUE
 [DATA KATALOG RESMI - otoritatif untuk kecocokan]
 Fungsi: ${FUNGSI_DOORPULL}
@@ -49,7 +49,7 @@ Varian:
   - SILVER CHROME - 36CM: Rp 105.000/Set
 
 Merek: Vintage
-Kategori (petunjuk pencarian): Engsel
+Kategori: Engsel
 Produk: ENGSEL STAINLESS STEEL SILVER VINTAGE
 [DATA KATALOG RESMI - otoritatif untuk kecocokan]
 Fungsi: Sebagai engsel pintu.
@@ -140,8 +140,16 @@ describe('verifyFit — a fit claim about a product TYPE (UAT Run 3 D-10)', () =
     const block = extractCatalogBlock(SYSTEM_PROMPT);
     expect(productsOfNamedType(block, 'doorpull kami cocok')).toEqual(['DOORPULL PERTH VINTAGE BLUE']);
     expect(productsOfNamedType(block, 'door pull ini pas untuk kantor')).toEqual(['DOORPULL PERTH VINTAGE BLUE']);
-    const wide = Array.from({ length: 13 }, (_, i) => `Merek: Blossom\nKategori (petunjuk pencarian): Gembok\nProduk: GEMBOK ${i}\n`).join('\n');
+    const wide = Array.from({ length: 13 }, (_, i) => `Merek: Blossom\nKategori: Gembok\nProduk: GEMBOK ${i}\n`).join('\n');
     expect(productsOfNamedType(wide, 'gembok kami cocok untuk pesisir')).toEqual([]);
+  });
+
+  // The block formatProducts writes says "Kategori: <name>" (carry from Task 3).
+  it('reads the category line the catalog block really prints', () => {
+    const category = { id: 'c1', name: 'Box Katering', description: null, createdAt: '2026-01-01T00:00:00.000Z' };
+    const block = formatProducts([{ ...IVORY_BOX, category }]);
+    expect(block).toContain('Kategori: Box Katering');
+    expect(productsOfNamedType(block, 'box katering kami cocok untuk nasi kotak')).toEqual([IVORY_BOX.name]);
   });
 });
 
@@ -272,10 +280,10 @@ describe('verifyFit — the judge pipeline', () => {
     expect(await verifyFit(claim, sentPrompt, '', { judge: noRegenerate as never, regenerate: noRegenerate })).toBe(claim);
   });
 
-  // UAT A-05: "saya Hendra" -> "Ada yang bisa saya bantu carikan hari ini?" instead of the buyer type.
-  it('on an opening turn, repairs an open question that skips the buyer type - and only there', async () => {
-    const open = reply({ customerType: null, message: 'Salam kenal, Kak Hendra! 😊 Ada yang bisa saya bantu carikan hari ini?' });
-    const asks = reply({ customerType: null, message: 'Salam kenal, Kak Hendra 😊 Boleh tahu, rencananya untuk dipakai sendiri, untuk proyek, atau dijual lagi?' });
+  // UAT A-05: "saya Hendra" -> "Ada yang bisa saya bantu carikan hari ini?" instead of the next question.
+  it('on an opening turn, repairs an open question that skips the order questions - and only there', async () => {
+    const open = reply({ message: 'Salam kenal, Kak Hendra! 😊 Ada yang bisa saya bantu carikan hari ini?' });
+    const asks = reply({ message: 'Salam kenal, Kak Hendra 😊 Boleh tahu, kemasannya untuk jualan apa kak?' });
     const regenerate = vi.fn(async () => asks);
     const out = await verifyFit(open, SYSTEM_PROMPT, 'saya Hendra', { judge: noRegenerate as never, regenerate, openingTurn: true });
     expect(regenerate).toHaveBeenCalledTimes(1);
@@ -284,10 +292,10 @@ describe('verifyFit — the judge pipeline', () => {
     expect(await verifyFit(open, SYSTEM_PROMPT, 'bodoh banget sih', { judge: noRegenerate as never, regenerate: noRegenerate })).toBe(open);
   });
 
-  // Replayed 2026-10-13: "budi" after "mesin gerinda belum ada di kami" -> the opener repair turned
-  // "ada yang bisa saya bantu?" into "dipakai sendiri, proyek, atau dijual lagi?" - for an item we do not sell.
+  // Replayed 2026-10-13: a name given after "belum ada di kami" -> the opener repair turned "ada yang bisa
+  // saya bantu?" into the funnel question - for an item we do not sell.
   it('lets an open offer of help through after the bot said we do not have the item', async () => {
-    const open = reply({ customerType: null, message: 'Salam kenal, Kak Budi 😊 Ada yang bisa saya bantu carikan selain itu?' });
+    const open = reply({ message: 'Salam kenal, Kak Budi 😊 Ada yang bisa saya bantu carikan selain itu?' });
     const out = await verifyFit(open, SYSTEM_PROMPT, 'budi', { judge: noRegenerate as never, regenerate: noRegenerate, openingTurn: true, afterNotCarried: true });
     expect(out).toBe(open);
   });
@@ -340,14 +348,21 @@ describe('verifyFit — the judge pipeline', () => {
   });
 });
 
-// Run 2 replays: the judge rejected correct drafts for "BNSN" (variant "BNSN SNCP SS"), '4" SN'
-// (variant '4" SN (BLISTER)'), BNSN / SNCP / SS offered as three colours, and "30mm lagi habis, yang
-// ready 25mm" - each a hand-off on an ordinary question once the repairs ran out.
+// Run 2 replays: the judge rejected correct drafts for a shortened variant name and for "30mm lagi
+// habis, yang ready 25mm" - each a hand-off on an ordinary question once the repairs ran out. Here the
+// variant is a size, written many ways, and totals come from the price tool.
 describe('JUDGE_SYSTEM_PROMPT - what is not a contradiction', () => {
-  it('accepts a shortened or split variant name, and an honest out-of-stock alternative', () => {
-    expect(JUDGE_SYSTEM_PROMPT).toContain("mis. 'BNSN SNCP SS', 'BNSN, SNCP'");
+  it('accepts a size written another way, and an honest out-of-stock alternative', () => {
+    expect(JUDGE_SYSTEM_PROMPT).toContain("Menulisnya dengan format lain ('30x30', '30 × 30')");
     expect(JUDGE_SYSTEM_PROMPT).toContain('BUKAN varian karangan');
     expect(JUDGE_SYSTEM_PROMPT).toMatch(/\[STOK HABIS SEMENTARA\] sedang habis\/kosong SELALU benar/);
+  });
+
+  // The strict price check already holds every figure to the tool's or the catalog's; a total is never
+  // printed in the catalog, so a judge that checked it would reject every correct quote.
+  it('leaves totals and the tier choice to the price check', () => {
+    expect(JUDGE_SYSTEM_PROMPT).toContain('angka total yang tidak tertulis di data BUKAN fakta salah');
+    expect(JUDGE_SYSTEM_PROMPT).toContain('1 rim = 500 lembar/pcs');
   });
 });
 

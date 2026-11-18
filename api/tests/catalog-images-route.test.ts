@@ -16,6 +16,7 @@ vi.mock('../src/services/catalogImages.js', () => ({ importCatalogImages: mockIm
 vi.mock('../src/middleware/apiKey.js', () => ({ apiKeyAuth: async () => {} }));
 const mockInvalidate = vi.fn();
 vi.mock('../src/services/ragQuery.js', () => ({ invalidateCatalogCache: mockInvalidate, getFullCatalogBlock: async () => '' }));
+vi.mock('../src/services/catalogExport.js', () => ({ buildCatalogWorkbook: async () => Buffer.from('xlsx') }));
 
 const { catalogRoutes } = await import('../src/routes/dashboard/catalog.js');
 
@@ -63,6 +64,16 @@ describe('POST /api/v1/catalog/images', () => {
     const a = await app();
     const res = await a.inject({ method: 'POST', url: '/api/v1/catalog/images', ...(await multipartBody([])) });
     expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+});
+
+describe('GET /api/v1/catalog/export', () => {
+  it('names the download after Imperial Indopack', async () => {
+    const a = await app();
+    const res = await a.inject({ method: 'GET', url: '/api/v1/catalog/export' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-disposition']).toMatch(/^attachment; filename="katalog-imperial-indopack-\d{4}-\d{2}-\d{2}\.xlsx"$/);
     await a.close();
   });
 });

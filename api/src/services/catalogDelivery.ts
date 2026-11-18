@@ -20,7 +20,7 @@
 import { getContactProfile } from '../repositories/contactProfiles.js';
 import { listBrands } from '../repositories/products.js';
 import { CATALOG_SENT_MARKER } from '../domain/constants.js';
-import type { BrandSlug } from '../domain/orderProfile.js';
+import { BRAND_NAMES, type BrandSlug } from '../domain/orderProfile.js';
 
 export interface CatalogDelivery {
   files: { url: string; filename: string }[];
@@ -28,11 +28,6 @@ export interface CatalogDelivery {
   note: string;
 }
 
-/** brands.name of each slug - the rows Task 1 seeds. */
-const BRAND_NAMES: Record<BrandSlug, string> = {
-  imperial_indopack: 'Imperial Indopack',
-  kertas_supreme: 'Kertas Supreme',
-};
 const isBrandSlug = (v: unknown): v is BrandSlug => typeof v === 'string' && Object.hasOwn(BRAND_NAMES, v);
 
 const KERTAS_SUPREME_RE = /supreme|kertas\s+(nasi|bungkus)|greaseproof/i;

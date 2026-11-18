@@ -23,7 +23,7 @@ import { verifyFit } from '../src/services/aiLayer.js';
 
 const PROMPT = `--- KATALOG PRODUK ---
 Merek: Vintage
-Kategori (petunjuk pencarian): Door Pull
+Kategori: Door Pull
 Produk: DOORPULL 35CM VINTAGE BLUE PERTH
 [DATA KATALOG RESMI - otoritatif untuk kecocokan]
 Fungsi: Sebagai pegangan pintu, khususnya pada pintu kayu.

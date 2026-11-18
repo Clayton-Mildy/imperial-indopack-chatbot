@@ -95,7 +95,7 @@ describe('reseed allowlist — an edited section that never reaches a live numbe
   });
 
   it('syncs the behavioral sections a prompt edit would target', () => {
-    for (const name of ['Tone', 'Mission', 'Scope', 'Conversation Objective', 'Rules']) {
+    for (const name of ['Tone', 'Mission', 'Rules', 'Order Details', 'Pricing']) {
       expect(SECTIONS_TO_SYNC).toContain(name);
     }
   });

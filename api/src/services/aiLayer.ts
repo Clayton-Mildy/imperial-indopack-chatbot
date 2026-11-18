@@ -2,7 +2,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { photoLine } from './photoMatch.js';
-import { brandsNamedInText, otherBrandNote } from './otherBrands.js';
 import {
   SYSTEM_PROMPT_BEHAVIORAL_RULES,
   KAMUS_ISTILAH,
@@ -12,7 +11,7 @@ import {
   REFERENCE_PHOTOS_MARKER,
 } from '../domain/constants.js';
 import { buildCatalogContext, getFullCatalogBlock } from './ragQuery.js';
-import { withoutInventedTotals, verifyReplyTieredPrices, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, saysNotCarried, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, verifyReplyNoService, nameGivenIn, ASKS_NAME_RE } from './replyChecks.js';
+import { withoutInventedTotals, verifyReplyTieredPrices, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, saysNotCarried, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, nameGivenIn, ASKS_NAME_RE } from './replyChecks.js';
 import {
   getLastNMessages,
   getConversationSummary,
@@ -38,7 +37,7 @@ export const RESPOND_FIELD_DESC = {
   no_reply:
     'Set true, with message empty, ONLY when the customer\'s latest message is purely an acknowledgement - "baik kak", "oke siap", "saya tunggu ya kak" - and holds no question, request, new information, or answer to something you asked, and you have nothing to add (including when the team already has the matter and the customer is just waiting). Nothing is sent. One exception: a THANK-YOU that ends the conversation ("ok terima kasih", "baik kak makasih") when nothing is pending - their question was answered, or we do not carry what they wanted - gets one short warm closing line instead, e.g. "Kembali kasih ya kak 🙏 Kalau di lain kesempatan membutuhkan produk-produk kami, jangan sungkan untuk menghubungi kami kembali ya kak." Never send that closing line mid-sale, while the team is handling the chat, or to a plain "oke". Never use no_reply because a question is hard, to dodge an answer, or when the customer asked or told you anything else; then answer, or hand off with confidence "low". Keep confidence "high".',
   confidence:
-    '"high" for normal helpful responses, including honest hedged ones - and for telling the customer plainly that we do not carry what they asked for (no relevant product, or the data rules it out): that is a complete answer, not a hand-off. "low" whenever a human must take over: the customer explicitly asked for one, or insists an item exists after you said we do not have it. A product that exists but is out of stock is still relevant: say it is empty, offer what is ready, keep "high". "Are you a bot?" is not a request for a human - answer it with the Scope line, "high". One relevant supporting field (usually Fungsi) is enough to claim fit with "high" even if other fields are silent. When ALL relevant fields are silent, keep "high" but hedge honestly ("sepertinya cocok, saya pastikan dulu ya") instead of claiming certainty.',
+    '"high" for normal helpful responses, including honest hedged ones - and for telling the customer plainly that we do not carry what they asked for (no relevant product, or the data rules it out): that is a complete answer, not a hand-off. "low" whenever a human must take over: the customer explicitly asked for one, or insists an item exists after you said we do not have it. A product that exists but is out of stock is still relevant: say it is empty, offer what is ready, keep "high". "Are you a bot?" is not a request for a human - answer it with the line in Identity, "high". One relevant supporting line of the product\'s data (usually Kegunaan) is enough to claim fit with "high" even if other lines are silent. When ALL relevant lines are silent, keep "high" but hedge honestly ("sepertinya cocok, saya pastikan dulu ya") instead of claiming certainty.',
   escalation_reason: 'Internal escalation reason. Set only when confidence is "low". When the customer is not a buyer at all - a supplier or factory offering its goods or services to us, a job seeker, a courier - start it with "BUKAN PEMBELI:".',
   total_for_team:
     'Set this true ONLY when hitung_harga cannot price the order (e.g. mixed catalog and custom items): the team calculates the total. Never add up a total yourself. Give the prices hitung_harga returned for the items it can price, leave the total out of message, and do not write that someone will calculate it - the system adds that line and tells the team, who calculate it. Never promise to calculate it yourself later. Keep confidence "high".',
@@ -47,11 +46,11 @@ export const RESPOND_FIELD_DESC = {
   image_urls: 'reference photo urls of the product you recommend, copied from the catalog block',
   send_po_form: 'true only on the turn the customer clearly agrees to buy at the quoted price',
   profile_update:
-    'CATAT: customer profile fields learned in this turn. Order fields: brands (array of "imperial_indopack" for boxes, "kertas_supreme" for food paper), items (array of { product, size, gsm, print, qty, qty_unit ("rim" or "pcs"), has_design }) - send only the items that changed this turn, each with its product and size, never the whole list. Reseller fields: business_name, store_address, city, business_type, target_buyer, pain_points (array), estimated_volume, price_range. End-user fields: name, product_sought, usage_location, object_material, object_condition, style_preference, quantity, budget, deadline, recommended_product. Project fields: name, company_name, project_location, product_sought, quantity, budget, deadline. Write "quantity" on the turn the customer states how many they need, in their own words (e.g. "300 an per ukuran") - if your message says you noted it, it must be here. Upsell/cross-sell tracking: upsell_offered (boolean, set true when you offered an upsell this turn), upsell_accepted (boolean, set when customer responded to upsell offer), crosssell_offered (boolean, set true when you offered cross-sell this turn), crosssell_accepted (boolean, set when customer responded to cross-sell offer). Only set upsell/crosssell fields when relevant — do not set them on every turn. Lead tracking (these three go on the sales report, not the customer profile): "lead_temperature" ("hot" when this person shows real buying intent for something we can supply — asked a price, named a quantity, gave a deadline, or asked how to order; "cold" when they are only browsing, have gone quiet, or what they want is not something we sell or have, and they have not taken up an alternative you offered). "order_confirmed" (true ONLY on the single turn the customer first commits to a concrete order — a product plus a quantity, e.g. "mau order 3 karton". Never repeat it on later turns about the same order, it is counted each time). "order_value_idr" (integer rupiah total for THAT order only, not a running total: the total hitung_harga returned for it. Omit it entirely when hitung_harga gave no total — a missing number is fine, a guessed one is not). Only include fields learned in THIS turn.',
+    'CATAT: customer profile fields learned in this turn, only from what the customer wrote. Customer: name, business_name (their shop, restaurant, catering or brand), business_type (what they sell or pack). Order: brands (array of "imperial_indopack" for boxes, "kertas_supreme" for wrapping paper, greaseproof, paper bags, sleeves and envelopes), items (array of { product, size, gsm, print, qty, qty_unit ("rim" or "pcs"), has_design }). Send only the items that changed this turn, never the whole list. To update an item already noted (a new qty, has_design), resend it with the same product and size as before plus only the changed fields - a product or size written differently is saved as a second item. Write qty on the turn the customer states how many they need - if your message says you noted it, it must be here. Upsell/cross-sell tracking: upsell_offered (boolean, set true when you offered an upsell this turn), upsell_accepted (boolean, set when customer responded to upsell offer), crosssell_offered (boolean, set true when you offered cross-sell this turn), crosssell_accepted (boolean, set when customer responded to cross-sell offer). Only set upsell/crosssell fields when relevant — do not set them on every turn. Lead tracking (these three go on the sales report, not the customer profile): "lead_temperature" ("hot" when this person shows real buying intent for something we can supply — asked a price, named a quantity, gave a deadline, or asked how to order; "cold" when they are only browsing, have gone quiet, or what they want is not something we sell or have, and they have not taken up an alternative you offered). "order_confirmed" (true ONLY on the single turn the customer first commits to a concrete order — a product plus a quantity, e.g. "oke kak saya ambil 10 rim". Never repeat it on later turns about the same order, it is counted each time). "order_value_idr" (integer rupiah total for THAT order only, not a running total: the total hitung_harga returned for it. Omit it entirely when hitung_harga gave no total — a missing number is fine, a guessed one is not). Only include fields learned in THIS turn.',
   follow_up_notes:
-    'Fill when a follow-up action is required before the conversation can proceed, OR when the customer has just stated a concrete intent to order (a product plus a quantity, e.g. "mau order 3 karton") — record what they want in one line so a human can follow up and close it, even when your own message this turn already handles everything else. E.g. "Tunggu foto handle lama dari Kak Budi untuk cocokkan tipe body kunci." / "Order: knob handle 3 karton (150 Lsn), tunggu konfirmasi nama toko." Leave empty if no follow-up needed.',
+    'Fill when a follow-up action is required before the conversation can proceed, OR when the customer has just stated a concrete intent to order (a product plus a quantity, e.g. "oke kak saya ambil 10 rim") — record what they want in one line so a human can follow up and close it, even when your own message this turn already handles everything else. E.g. "Kirim contoh desain kertas nasi ke Kak Budi." / "Order: Kertas Supreme 30x30 10 rim, logo menyusul." Leave empty if no follow-up needed.',
   fit_basis:
-    'REQUIRED whenever your message names a product from the catalog block. For each product you name, copy the exact text from that product\'s own [DATA KATALOG RESMI] fields (Fungsi / Bahan / Ketebalan / Kelengkapan) that shows it fits the customer\'s situation. Copy it verbatim, character for character — do not paraphrase, summarise or translate, and never quote the "Kategori (petunjuk pencarian)" line, the Playbook, or your own reasoning. One supporting field is enough. If the fields explicitly CONTRADICT or restrict against the situation, put the single word DIAM instead and set confidence "low". If they are merely silent (no field mentions the situation either way), put DIAM but keep confidence "high" and hedge honestly in the message. Leave this empty only when your message names no product at all (greetings, asking for a name, sending the catalog).',
+    'REQUIRED whenever your message names a product from the catalog block. For each product you name, copy the exact text from that product\'s own data in the catalog block (the description after its name on the Produk line, or its Kegunaan / Bahan / Ketebalan / Kelengkapan / Keunggulan line) that shows it fits the customer\'s need. Copy it verbatim, character for character - do not paraphrase, summarise or translate, and never quote the Kategori line, the Recommendations section, or your own reasoning. One supporting line is enough. If the data explicitly CONTRADICTS or restricts against the need, put the single word DIAM instead and set confidence "low". If it is merely silent (no line mentions the need either way), put DIAM but keep confidence "high" and hedge honestly in the message. Leave this empty only when your message names no product at all (greetings, asking for a name, sending the price list).',
 };
 
 // General web search (Anthropic server-side). Haiku 4.5 supports only the basic
@@ -64,12 +63,12 @@ const WEB_SEARCH_TOOL: Anthropic.WebSearchTool20250305 = {
 };
 
 // Client-side link opener — see linkResolver.ts for why this is ours and not a hosted fetch
-// tool (both hosted options failed live on a maps.app.goo.gl store link). Exists for one
-// job: a reseller sends their store's link as identity, and the bot must read the name from
-// it instead of claiming "sudah aku lihat lokasinya" with no way to look.
+// tool (both hosted options failed live on a maps.app.goo.gl store link). A customer who sends a
+// link (their shop, a packaging example) must have it read, not answered with "sudah aku lihat"
+// with no way to look.
 const RESOLVE_LINK_TOOL_NAME = 'resolve_link';
 const RESOLVE_LINK_TOOL_DESC =
-  'Open a URL the customer sent (Google Maps, marketplace, Instagram, website) and return the final URL plus the page/place name. Follows short-link redirects itself — one call is enough. Use ONLY on links the customer sent; never to look up Legacy products or prices.';
+  'Open a URL the customer sent (Google Maps, marketplace, Instagram, website) and return the final URL plus the page/place name. Follows short-link redirects itself — one call is enough. Use ONLY on links the customer sent; never to look up our own products or prices.';
 const RESOLVE_LINK_URL_DESC = 'The exact URL the customer sent';
 
 const RESOLVE_LINK_TOOL: Anthropic.Tool = {
@@ -343,13 +342,13 @@ export function productsQuotingPrices(catalogBlock: string, message: string): st
 }
 
 const FIT_CLAIM_RE = /\b(?:cocok|pas\s+(?:untuk|buat|di)|bisa\s+(?:dipakai|dipasang)|sesuai\s+untuk)\b/i;
-// ponytail: the catalog's category names are the type vocabulary. A claim about something as broad
-// as "handle" (53 products across several categories) matches no single category and stays
-// unjudged; raise the cap or split by category if such claims show up live.
+// ponytail: the catalog's category names (its "Kategori:" lines) are the type vocabulary. A claim
+// about something as broad as "box" that spans many products matches too many and stays unjudged;
+// raise the cap or split by category if such claims show up live.
 const MAX_TYPE_PRODUCTS = 12;
 
 /**
- * The products of every category the reply names - "doorpull" and "door pull" both name Door Pull -
+ * The products of every category the reply names - "lunchbox" and "lunch box" both name Lunch Box -
  * so a claim about the type is judged against those products' own data. Empty when the categories
  * named add up to more than MAX_TYPE_PRODUCTS: evidence that wide is noise to the judge.
  */
@@ -357,7 +356,7 @@ export function productsOfNamedType(catalogBlock: string, message: string): stri
   const text = ` ${normalize(message)} `;
   const byCategory = new Map<string, string[]>();
   for (const rec of catalogBlock.split(/\n(?=Merek: )/)) {
-    const category = /^Kategori \(petunjuk pencarian\): (.+)$/m.exec(rec)?.[1]?.trim();
+    const category = /^Kategori: (.+)$/m.exec(rec)?.[1]?.trim();
     const name = /^Produk: (.+)$/m.exec(rec)?.[1]?.split(' — ')[0]?.trim();
     if (category && name) byCategory.set(category, [...(byCategory.get(category) ?? []), name]);
   }
@@ -382,28 +381,27 @@ export interface FitVerdict {
 // "biasa" echoed back — while admitting the Fungsi listed jendela) and fabricated restrictions
 // from dimensions. Silence-honesty now lives in the generation prompt; the judge only blocks
 // claims the data actually contradicts.
-export const JUDGE_SYSTEM_PROMPT = `Kamu adalah pemeriksa QA internal untuk customer service toko hardware. Tugasmu SATU: mendeteksi KONTRADIKSI eksplisit antara BALASAN YANG DIUSULKAN dan DATA RESMI PRODUK. Kamu BUKAN editor gaya bahasa dan BUKAN pemilih produk — hanya pemeriksa fakta.
+export const JUDGE_SYSTEM_PROMPT = `Kamu adalah pemeriksa QA internal untuk customer service penjual kemasan kertas dan box karton. Tugasmu SATU: mendeteksi KONTRADIKSI eksplisit antara BALASAN YANG DIUSULKAN dan DATA RESMI PRODUK. Kamu BUKAN editor gaya bahasa dan BUKAN pemilih produk — hanya pemeriksa fakta.
 
-Baris "[Analisis otomatis foto ...]" adalah PERKIRAAN MESIN tentang isi foto, bukan kata-kata pelanggan. Konteks pemasangan yang terlihat (jenis daun pintu kaca/kayu, lokasi pemakaian) tetap dihitung sebagai situasi pelanggan. Tapi perkiraan atribut produk yang difoto (bahan, warna/finishing, angka dimensi terbaca dari gambar) BUKAN syarat dari pelanggan — produk krom di foto bisa salah terbaca "stainless steel". Jika pelanggan hanya menanyakan apakah produk di foto tersedia dan balasan mengidentifikasi produk katalog yang sejenis, JANGAN menolak hanya karena perkiraan foto berbeda dari data resmi produk itu sendiri.
+Baris "[Analisis otomatis foto ...]" adalah PERKIRAAN MESIN tentang isi foto, bukan kata-kata pelanggan. Konteks pemakaian yang terlihat (makanan apa yang dikemas, cara dipakai) tetap dihitung sebagai situasi pelanggan. Tapi perkiraan atribut barang yang difoto (bahan, warna, angka ukuran terbaca dari gambar) BUKAN syarat dari pelanggan — karton di foto bisa salah terbaca "plastik". Jika pelanggan hanya menanyakan apakah barang di foto tersedia dan balasan mengidentifikasi produk katalog yang sejenis, JANGAN menolak hanya karena perkiraan foto berbeda dari data resmi produk itu sendiri.
 
 ok=false HANYA jika salah satu dari ini benar-benar terjadi, berdasarkan yang TERTULIS EKSPLISIT di data (bukan simpulanmu sendiri):
-1. RESTRIKSI DILANGGAR — data eksplisit membatasi cakupan produk (mis. "khususnya pada pintu kayu", "hanya untuk X") dan balasan mengklaim cocok DI LUAR batas itu.
-2. FAKTA SALAH — balasan menyebut harga, nama produk, varian/warna, atau spesifikasi yang BERBEDA dari yang tertulis di data resmi, atau menyebut varian yang tidak ada di data. TENTANG HARGA, batasnya sempit: sebuah angka hanya SALAH kalau angka itu TIDAK MUNCUL di baris varian yang bersangkutan. Baris varian memuat DUA harga (pricelist lalu MP) dan KEDUANYA sama-sama benar — mengutip yang mana pun BUKAN fakta salah, dan kamu TIDAK pernah menolak hanya karena menurutmu angka yang satunya yang seharusnya dipakai. Siapa berhak atas harga yang mana sudah diperiksa di tempat lain; itu bukan tugasmu. Termasuk ANGKA spesifikasi yang DIKARANG: kapasitas beban, daya tahan, dimensi, atau angka teknis lain yang dinyatakan sebagai fakta padahal TIDAK ADA di data — prosa boleh berhati-hati soal data yang diam, tapi angka wajib bersumber dari data. Termasuk juga klaim "ready"/"tersedia"/"ada stok" untuk varian yang datanya bertanda [STOK HABIS SEMENTARA].
-3. KETIDAKCOCOKAN FISIK KASAT MATA — perbedaan besar dan jelas antara kebutuhan pelanggan dan produk (mis. pelanggan butuh handle ±1 meter, produk 36cm).
+1. RESTRIKSI DILANGGAR — data eksplisit membatasi cakupan produk (mis. "hanya untuk makanan kering") dan balasan mengklaim cocok DI LUAR batas itu.
+2. FAKTA SALAH — balasan menyebut nama produk, ukuran/varian, gsm, bahan, atau spesifikasi yang BERBEDA dari yang tertulis di data resmi, atau menyebut ukuran/varian yang tidak ada di data. TENTANG HARGA, batasnya sempit: harga satuan hanya SALAH kalau angka itu TIDAK MUNCUL di baris tingkat harga produk yang bersangkutan. Total pesanan, dan tingkat mana yang berlaku untuk jumlah pelanggan, dihitung kalkulator harga dan sudah diperiksa sistem — angka total yang tidak tertulis di data BUKAN fakta salah, dan itu bukan tugasmu. Termasuk ANGKA spesifikasi yang DIKARANG: daya tahan, kapasitas, ukuran, atau angka teknis lain yang dinyatakan sebagai fakta padahal TIDAK ADA di data. Termasuk juga klaim "ready"/"tersedia"/"ada stok" untuk varian yang datanya bertanda [STOK HABIS SEMENTARA].
+3. KETIDAKCOCOKAN FISIK KASAT MATA — perbedaan besar dan jelas antara kebutuhan pelanggan dan produk (mis. pelanggan butuh box untuk tumpeng besar, box-nya 10 x 10 cm).
 
 ok=TETAP true dalam semua kasus berikut — ini aturan utama, bukan pengecualian:
-- SATU field relevan (biasanya Fungsi) sudah eksplisit mendukung situasi pelanggan → CUKUP, walau field lain (Ketebalan, Kelengkapan, dst.) tidak menyebut situasi itu. Diamnya field lain BUKAN kontradiksi.
+- SATU baris data yang relevan (biasanya Kegunaan) sudah eksplisit mendukung situasi pelanggan → CUKUP, walau baris lain tidak menyebut situasi itu. Diamnya baris lain BUKAN kontradiksi.
 - Data diam total soal satu detail, dan tidak ada restriksi eksplisit yang dilanggar → BUKAN kontradiksi.
-- Balasan berparafrase atau meringkas data dengan kata lain (mis. "ketebalan normal" untuk jendela biasa) — kutipan identik TIDAK diwajibkan.
-- Balasan menyebut nama keluarga/lini produk (mis. "HANDLE TANGGUNG + BODY AOMORI SLIM") lalu merinci tipe-tipenya (JARDIN, KOBE, LEBRON) — itu ringkasan yang memang diminta, BUKAN nama produk yang salah.
+- Balasan berparafrase atau meringkas data dengan kata lain — kutipan identik TIDAK diwajibkan.
+- Balasan menyebut produk dengan nama singkat (mis. "box ivory" untuk "Box Ivory 270 gsm") — itu ringkasan, BUKAN nama produk yang salah.
 - Balasan merekomendasikan produk A padahal menurutmu produk B lebih cocok, atau tidak menyebut alternatif — pemilihan produk adalah keputusan penjual, bukan tugasmu.
-- Nama varian di data sering memuat beberapa kode warna sekaligus (mis. 'BNSN SNCP SS', 'BNSN, SNCP') atau keterangan kemasan (mis. '4" SN (BLISTER)'). Menyebut salah satu kode itu, menawarkannya sebagai pilihan warna terpisah (BNSN / SNCP / SS), atau menyingkat nama varian (mis. '4" SN', 'BC9030') BUKAN varian karangan. Yang karangan hanyalah kode, warna, atau ukuran yang TIDAK muncul sama sekali di data produk itu (mis. 'Black Silver' atau 'hitam' yang tidak tertulis di sana).
-- Menyatakan varian bertanda [STOK HABIS SEMENTARA] sedang habis/kosong SELALU benar, dan menawarkan varian lain yang ready (ukuran atau tipe berbeda) sebagai gantinya BUKAN kontradiksi maupun ketidakcocokan fisik — itu pilihan penjual.
-- Balasan memakai KONVERSI SATUAN standar yang memang diinstruksikan ke penulis: 1 Lusin/Lsn = 12 pcs, dan isi per CTN/Box seperti tertulis di baris varian. Angka konversi itu BUKAN klaim tentang produk dan tidak perlu tertulis di data — menulis "Rp 327.500/Lsn (12 pcs)" atau harga per-pcs hasil pembagiannya BUKAN mengarang.
-- Kamu MENYIMPULKAN sendiri sebuah batasan dari angka/ukuran yang tidak dinyatakan sebagai batasan (mis. "hanya untuk furnitur kecil" dari ukuran 2-3 inci padahal Fungsi-nya menyebut jendela) — itu mengarang restriksi, bukan menemukan kontradiksi.
+- Nama varian adalah ukurannya (mis. '30 x 30 cm'). Menulisnya dengan format lain ('30x30', '30 × 30') atau tanpa satuan BUKAN varian karangan. Yang karangan hanyalah ukuran, gsm, atau jumlah warna cetak yang TIDAK muncul sama sekali di data produk itu.
+- Menyatakan varian bertanda [STOK HABIS SEMENTARA] sedang habis/kosong SELALU benar, dan menawarkan ukuran lain yang ready sebagai gantinya BUKAN kontradiksi maupun ketidakcocokan fisik — itu pilihan penjual.
+- Balasan memakai KONVERSI SATUAN standar: 1 rim = 500 lembar/pcs (mis. "5 rim (2.500 pcs)"). Angka konversi itu BUKAN klaim tentang produk dan tidak perlu tertulis di data.
+- Kamu MENYIMPULKAN sendiri sebuah batasan dari angka/ukuran yang tidak dinyatakan sebagai batasan (mis. "hanya untuk kue kering" dari ukuran box, padahal Kegunaan-nya menyebut katering) — itu mengarang restriksi, bukan menemukan kontradiksi.
 - Balasan JUJUR atau memakai bahasa hedge ("sepertinya cocok, saya pastikan dulu ya") — selalu ok=true.
-- Balasan mengulang ukuran atau spesifikasi yang DIMINTA pelanggan untuk menyatakan barang itu belum ada atau untuk menanyakannya (mis. "engsel bubut ukuran 19mm belum ada di kami") — angka itu milik permintaan pelanggan, bukan klaim tentang produk kami, walaupun tidak ada di data dan walaupun pelanggan menyebutnya di pesan lain.
-- Satu varian bisa punya DUA harga tertulis (harga pricelist lalu "MP: ...", kadang dengan satuan berbeda - "Rp 46.000/Lsn | MP: Rp 5.500/Pcs" adalah SATU varian). Balasan yang mengutip salah satu angka itu PERSIS seperti tertulis BUKAN kontradiksi — walaupun menurutmu angka yang satunya lagi yang seharusnya dipakai untuk pelanggan ini. Memilih harga mana yang berlaku bukan tugasmu.
+- Balasan mengulang ukuran atau spesifikasi yang DIMINTA pelanggan untuk menyatakan barang itu belum ada atau untuk menanyakannya (mis. "untuk ukuran 32 x 32 harganya tim kami yang hitungkan ya kak") — angka itu milik permintaan pelanggan, bukan klaim tentang produk kami.
 
 Balas HANYA dengan JSON valid: {"ok": true/false, "reason": "satu kalimat Bahasa Indonesia, sebut restriksi/fakta spesifik yang dilanggar — bukan 'datanya kurang lengkap'"}. Tanpa teks lain.`;
 
@@ -566,22 +564,21 @@ export async function verifyFit(
       return prices.ok ? null : { ok: false, reason: prices.reason, ...(prices.onlyInvented && { invented: prices.invented }) };
     }
     const named = namedProducts(catalogBlock, r.message);
-    // The price does not depend on who buys (spec 7.3): no check reads a buyer type, so the
-    // two that still take one are given none.
+    // No service check: Legacy's "we sell goods only, no custom work" would push Imperial replies
+    // to refuse custom printing, which is the business (custom jobs go to the team instead).
     const results: { ok: boolean; reason: string; soft?: boolean }[] = [
       verifyReplyMeta(r.message),
       prices,
       verifyReplyTone(r.message),
       verifyReplyNotCarried(r.message),
       verifyReplyNotCarriedCloses(r.message, named.length > 0),
-      verifyReplyNoService(r.message),
       verifyReplyNameRepeat(r.message, deps.givenName ?? null),
       verifyReplyPhotoClaim(r.message, systemPrompt),
-      verifyReplyCatalogClaim(r.message, catalogSent, null),
+      verifyReplyCatalogClaim(r.message, catalogSent),
       // Not after a "belum ada": greeting the name and offering help with something else is the right
-      // reply there, and the opener's buyer-type repair pushed the funnel for an item we do not sell
-      // (replayed 2026-10-13: "budi" after "mesin gerinda belum ada" -> "dipakai sendiri ...?" 2/2).
-      ...(deps.openingTurn && !deps.afterNotCarried ? [verifyReplyOpener(r.message, null)] : []),
+      // reply there, and the opener's repair would push the order questions for an item we do not sell
+      // (replayed 2026-10-13: a name given after "belum ada" was answered with the funnel question 2/2).
+      ...(deps.openingTurn && !deps.afterNotCarried ? [verifyReplyOpener(r.message)] : []),
       ...(deps.firstReply ? [verifyReplyFirstGreeting(r.message)] : []),
     ];
     const failed = results.filter((c) => !c.ok);
@@ -661,25 +658,23 @@ export async function verifyFit(
   }
 
   // Out of repairs: hand off with the canned escalation reply, never the contested text. Only the
-  // TEXT is contested - the turn's profile facts are still true, and dropping them left
-  // customer_type unsaved, so the hand-off re-asked "dipakai sendiri atau dijual lagi?" right
-  // after the customer answered it and the next turn ran with no tier at all (UAT F-06).
+  // TEXT is contested - the turn's profile facts are still true, and dropping them left the answer
+  // unsaved, so the hand-off re-asked the question the customer had just answered (UAT F-06).
   console.warn(`[aiLayer] judge rejected repair → escalating. ${objection.reason}`);
   return { ...current, message: '', confidence: 'low', escalationReason: objection.reason };
 }
 
 // ─── System prompt assembly ──────────────────────────────────────────────────
 
-const TOOL_USE_SEARCH_INSTRUCTION = `\nPENCARI INFORMASI WEBSITE:
-Jika pertanyaan pelanggan tidak terjawab dari katalog produk (misalnya kegunaan produk, cara pemasangan, perbandingan produk), gunakan tool search_legacy_website SEBELUM menyatakan tidak tahu. Tool ini mencari artikel informatif dari website resmi Legacy.
-
-PENCARI WEB UMUM (web_search):
-Untuk memahami istilah atau situasi customer yang tidak kamu kenal dan tidak bisa diterka dari pengetahuan umum (mis. jenis pintu pada suatu bangunan, istilah lokal, NAMA MEREK atau nama produk yang disebut customer), kamu WAJIB memakai tool web_search lebih dulu — JANGAN mengaku "belum familiar" dan JANGAN meminta customer menjelaskan istilah publik; bertanya ke customer hanya untuk fakta situasi pribadi mereka. Gunakan HANYA untuk memahami maksud/kebutuhan customer — BUKAN untuk mencari produk, harga, varian, atau stok. Produk yang direkomendasikan tetap wajib berasal dari KATALOG PRODUK. Jangan memakai web_search untuk hal yang sudah kamu ketahui.
-
-Satu pemakaian web_search lain yang diizinkan: memeriksa apakah toko atau toko online milik CALON RESELLER benar-benar ada, sebelum harga price list reseller disebutkan (lihat Kebijakan Harga). Larangan di atas tetap berlaku penuh — web_search tetap tidak boleh dipakai untuk mencari produk, harga, varian, atau stok Legacy sendiri. Hasil yang tidak ketemu bukan alasan menolak customer, dan jangan pernah memberi tahu customer bahwa kamu sedang mengeceknya.
+// Tool mechanics ship with the build that has the tools, never in the DB-editable sections.
+export const TOOL_USE_SEARCH_INSTRUCTION = `\nPENCARI WEB UMUM (web_search):
+Untuk memahami istilah atau situasi pelanggan yang tidak kamu kenal dan tidak bisa diterka dari pengetahuan umum (mis. nama makanan daerah, istilah lokal, NAMA MEREK atau jenis kemasan yang disebut pelanggan), kamu WAJIB memakai tool web_search lebih dulu — JANGAN mengaku "belum familiar" dan JANGAN meminta pelanggan menjelaskan istilah publik; bertanya ke pelanggan hanya untuk fakta situasi pribadi mereka. Gunakan HANYA untuk memahami maksud/kebutuhan pelanggan — BUKAN untuk mencari produk, harga, ukuran, atau stok. Produk yang direkomendasikan tetap wajib berasal dari KATALOG PRODUK. Jangan memakai web_search untuk hal yang sudah kamu ketahui.
 
 PEMBUKA TAUTAN (resolve_link):
-Jika customer MENGIRIM tautan (link Google Maps, marketplace, Instagram, atau website) — terutama calon reseller yang mengirim link tokonya — kamu WAJIB membukanya dengan tool resolve_link SEBELUM membalas. Satu panggilan cukup: tool ini mengikuti redirect sendiri dan mengembalikan URL akhir plus nama tempat/judul halamannya (field "nama_tempat" / "judul_halaman"). Pakai nama dari hasil itu — JANGAN menanyakan lagi informasi yang sudah ada di dalam tautannya, dan JANGAN PERNAH mengaku sudah "melihat" isi tautan tanpa benar-benar memanggil resolve_link. Jika hasilnya menyatakan tautan tidak bisa dibuka atau tidak ada nama yang terbaca, katakan jujur lalu tanyakan nama tokonya secara langsung. resolve_link hanya untuk tautan yang customer kirim — bukan untuk mencari produk, harga, varian, atau stok Legacy.`;
+Jika pelanggan MENGIRIM tautan (link Google Maps, marketplace, Instagram, atau website — mis. akun usahanya atau contoh kemasan yang dia mau), kamu WAJIB membukanya dengan tool resolve_link SEBELUM membalas. Satu panggilan cukup: tool ini mengikuti redirect sendiri dan mengembalikan URL akhir plus nama tempat/judul halamannya (field "nama_tempat" / "judul_halaman"). Pakai nama dari hasil itu — JANGAN menanyakan lagi informasi yang sudah ada di dalam tautannya, dan JANGAN PERNAH mengaku sudah "melihat" isi tautan tanpa benar-benar memanggil resolve_link. Jika hasilnya menyatakan tautan tidak bisa dibuka atau tidak ada nama yang terbaca, katakan jujur lalu tanyakan langsung yang kamu perlukan. resolve_link hanya untuk tautan yang pelanggan kirim — bukan untuk mencari produk, harga, ukuran, atau stok.
+
+KALKULATOR HARGA (hitung_harga):
+Setiap harga untuk jumlah tertentu, setiap total, dan pilihan tingkat harga WAJIB berasal dari hitung_harga. Panggil dengan product (nama produk persis seperti di KATALOG PRODUK), size (ukuran variannya), qty (angka biasa: "2.500 pcs" = 2500, "10 rim" = 10), dan unit ("rim" atau "pcs"); satu panggilan per barang, dua barang = dua panggilan di giliran yang sama. Panggil hitung_harga dulu dan tunggu hasilnya sebelum respond_to_customer, lalu ulangi angkanya persis seperti tertulis, dengan "Rp" di depan setiap harga. HARGA: → sebutkan; DI_BAWAH_MINIMUM: → jelaskan minimumnya tanpa harga; DI_ATAS_TINGKAT_TERATAS: atau TIDAK_ADA_DI_KATALOG: → tanpa harga, confidence "low" (tim yang menghitung).`;
 
 function buildSystemPromptFromSections(sections: PromptSection[]): string {
   return sections.map((s) => `## ${s.name}\n${s.content}`).join('\n\n');
@@ -690,42 +685,16 @@ async function buildBrandContext(): Promise<string> {
     const allBrands = await listBrands();
     if (allBrands.length === 0) return '';
 
-    const ownBrands = allBrands.filter((b) => b.brandType !== 'distributed');
-    const distributedBrands = allBrands.filter((b) => b.brandType === 'distributed');
+    const lines = allBrands.map((b) => (b.description ? `- ${b.name}: ${b.description}` : `- ${b.name}`));
+    // What each KATALOG note from catalogDelivery.resolveCatalogDelivery means, so the reply and
+    // the attachments agree about what was sent.
+    return ['--- INFORMASI MEREK ---', ...lines, '--- AKHIR INFORMASI MEREK ---'].join('\n') + `
 
-    const formatLine = (b: (typeof allBrands)[0]) =>
-      b.description ? `- ${b.name}: ${b.description}` : `- ${b.name}`;
-
-    const sections: string[] = ['--- INFORMASI MEREK ---'];
-    if (ownBrands.length > 0) {
-      sections.push('MEREK SENDIRI (Legacy):');
-      sections.push(...ownBrands.map(formatLine));
-    }
-    if (distributedBrands.length > 0) {
-      sections.push('');
-      sections.push('MEREK DISTRIBUSI (pihak ketiga yang kami distribusikan):');
-      sections.push('(Garansi pabrik / layanan purna jual → arahkan ke tim kami, bukan Legacy sebagai produsen)');
-      sections.push(...distributedBrands.map(formatLine));
-    }
-    sections.push('--- AKHIR INFORMASI MEREK ---');
-
-    const context = sections.join('\n');
-    // Single company-wide catalogue — always available, never tied to a brand.
-    // No reason given here on purpose: the model repeated the old one ("File itu memuat HARGA
-    // PRICELIST, jadi hanya boleh dikirim ke reseller/agen dan pembeli proyek") to an end user
-    // word for word - "Katalog price list kami khusus untuk reseller dan proyek" (UAT F-15).
-    const result = context + `\n\nKATALOG PRODUK: File katalog tersedia PER MEREK — satu file untuk tiap merek, bukan satu file gabungan.
-Yang menentukan terkirim atau tidak adalah sistem, bukan kamu. Baris "KATALOG:" di INFORMASI PELANGGAN menyatakan apa yang BARUSAN terjadi — ikuti baris itu persis:
-- Jika di situ tertulis file sudah dikirim → sampaikan dengan hangat bahwa price list merek tersebut sudah dikirim.
-- Jika tertulis belum dikirim karena merek belum disebut → tanyakan merek mana yang diinginkan dan sebutkan pilihannya, serta boleh minta semuanya sekaligus. JANGAN bilang sudah dikirim.
-- Jika tertulis belum dikirim karena tipe pembeli belum diketahui → tanyakan tipe pembeli lebih dulu sesuai Rules. JANGAN bilang sudah dikirim.
-- Jika tertulis TIDAK ada file untuk customer ini → ikuti petunjuk di baris itu. JANGAN menyebut file, price list, reseller, atau tipe harga apa pun, dan JANGAN menjelaskan alasannya.
-Cara menulis pesannya:
-- Hangat, ramah, dan natural seperti CS toko sungguhan. VARIASIKAN kalimatnya setiap kali — jangan pakai template yang sama berulang.
-- JANGAN tanya apakah pelanggan sudah menerima/dapat filenya, dan JANGAN arahkan ke website seolah pengirimannya gagal.
-- Kalaupun pelanggan minta katalog lagi/berulang, tetap ramah dan kirim ulang dengan senang hati. DILARANG KERAS menyiratkan pelanggan sudah dikirimi "berkali-kali", atau terdengar kesal/menegur/tidak sabar — itu terasa kasar.
-- Setelah menyampaikan katalognya dikirim, JANGAN akhiri percakapan di situ — lanjutkan seperti CS sungguhan dengan pertanyaan prioritas berikutnya sesuai Rules: nama dulu jika belum diketahui, lalu tipe pembeli (dipakai sendiri / untuk proyek / dijual lagi), lalu gali kebutuhan — supaya bisa dibantu pilihkan produk yang pas (termasuk alternatif ekonomis/premium bila relevan).`;
-    return result;
+DAFTAR HARGA: tiap merek punya satu file daftar harga. Yang mengirim adalah sistem, bukan kamu. Baris "KATALOG:" di INFORMASI PELANGGAN menyatakan apa yang BARUSAN terjadi — ikuti persis:
+- "file terkirim" → sampaikan dengan hangat bahwa daftar harga merek itu sudah dikirim, lalu lanjutkan dengan detail pesanan berikutnya yang belum diketahui (Order Details) supaya harganya bisa dihitung pas.
+- "belum ada file yang dikirim" → JANGAN bilang daftar harga sudah dikirim; ikuti petunjuk di baris itu (tanyakan barang yang mau dikemas, atau hitung harganya lewat hitung_harga).
+- Tidak ada baris KATALOG → tidak ada file yang dikirim di giliran ini; jangan bilang ada file yang terkirim.
+Cara menulisnya: hangat dan bervariasi, jangan memakai kalimat yang sama berulang. Jangan menanyakan apakah filenya sudah diterima. Kalau pelanggan minta daftar harganya lagi, layani dengan ramah tanpa menyiratkan dia sudah dikirimi berkali-kali.`;
   } catch {
     return '';
   }
@@ -738,9 +707,6 @@ async function resolveIdentitySection(promptSections: PromptSection[] | null | u
   const defaultSections = await getDefaultPromptSections();
   return buildSystemPromptFromSections(defaultSections);
 }
-
-/** The buyer-type line of the customer block. No reply check reads it: the price does not depend on the buyer type. */
-export const CUSTOMER_TYPE_LINE = 'Tipe pembeli (sudah dipastikan): ';
 
 // The owner wants English answered in English (2026-09-24), and the Tone rule alone did not hold:
 // the prompt is thousands of Indonesian words that dictate Indonesian phrasings ("Sebelumnya, dengan
@@ -760,7 +726,7 @@ async function buildSystemPrompt(
   ragQuery: string,
   promptSections: PromptSection[] | null | undefined,
   extraKeywords?: string[],
-  turn?: { catalogNote?: string | null; customerType?: string | null; customerMessage?: string; photoNote?: string | null }
+  turn?: { catalogNote?: string | null; customerMessage?: string; photoNote?: string | null }
 ): Promise<string> {
   const fullCatalog = isFullCatalogEnabled();
   const [catalogContext, identitySection, brandContext] = await Promise.all([
@@ -778,26 +744,12 @@ async function buildSystemPrompt(
   // catalogNote states what resolveCatalogDelivery() actually did with the PDF this turn. It
   // belongs in the per-customer block AFTER the cache breakpoint - it changes every turn, so
   // putting it in the static prefix would give each turn its own cache line.
-  // The catalog block prints BOTH prices for every variant, and the Kebijakan Harga section
-  // describes the policy in the abstract - which left the model to infer, per turn, which of
-  // two equally-present numbers this customer may hear. It inferred wrong. Stating the
-  // already-resolved buyer type here, next to the name, turns that inference into a lookup.
-  const tier =
-    turn?.customerType === 'end_user'
-      ? `${CUSTOMER_TYPE_LINE}pengguna akhir. Sebutkan HARGA MP. JANGAN sebutkan harga pricelist.`
-      : turn?.customerType === 'reseller'
-        ? `${CUSTOMER_TYPE_LINE}reseller. Sebutkan HARGA PRICELIST (syarat reseller berlaku).`
-        : turn?.customerType === 'project'
-          ? `${CUSTOMER_TYPE_LINE}pembeli proyek. Sebutkan HARGA PRICELIST.`
-          : '';
   const language = turn?.customerMessage && writesEnglish(turn.customerMessage)
     ? 'Bahasa: customer menulis dalam bahasa Inggris - tulis SELURUH isi message dalam bahasa Inggris, termasuk sapaan dan pertanyaan yang contohnya berbahasa Indonesia di aturan; nama produk dan harga tetap persis seperti di katalog.'
     : '';
   // photoNote: the customer's photo compared with our own product photos (services/photoMatch.ts).
   // Per turn, so it sits here after the cache breakpoint like catalogNote.
-  // A brand the customer typed that is not ours ("gembok solid") - the photo's own is in photoNote.
-  const brandNote = turn?.customerMessage ? otherBrandNote('pesan', brandsNamedInText(turn.customerMessage)) : null;
-  const customerLines = [tier, turn?.catalogNote ?? '', turn?.photoNote ?? '', brandNote ?? '', language].filter(Boolean);
+  const customerLines = [turn?.catalogNote ?? '', turn?.photoNote ?? '', language].filter(Boolean);
   const customerCtx = customerLines.length
     ? `--- INFORMASI PELANGGAN ---\n${customerLines.join('\n')}\n--- AKHIR INFORMASI PELANGGAN ---`
     : '';
@@ -1161,7 +1113,7 @@ async function callClaude(
     firstReply: !lastBot,
     // Not the first reply: a greeting with no need stated gets "Ada yang bisa saya bantu?" there (client,
     // 2026-11-02) - a supplier or a courier says what they want only after it. The reply to the name
-    // question still has to ask the buyer type.
+    // question goes on to the order details instead.
     openingTurn: typeof lastBot?.content === 'string' && ASKS_NAME_RE.test(lastBot.content),
     afterNotCarried: typeof lastBot?.content === 'string' && saysNotCarried(lastBot.content),
     givenName: nameGivenIn(messages),
@@ -1236,11 +1188,10 @@ async function summarizeOldMessages(
     .map((m) => `${m.role === 'user' ? 'Customer' : 'Bot'}: ${historyBody(m)}`)
     .join('\n');
 
-  // Buyer type is called out explicitly because it decides which price the bot may quote
-  // (Kebijakan Harga). It is established early, so in a long conversation it is exactly the
-  // fact that ages out of the raw window first — and losing it means re-asking, or worse,
-  // quoting the wrong tier.
-  const prompt = `Summarize this WhatsApp sales conversation concisely. Capture:\n- What the customer asked about\n- Products discussed\n- Prices or offers mentioned\n- Any agreements or rejections\n- Customer tone and intent\n- The customer's buyer type if it has been established (dipakai sendiri / proyek / reseller) — state it explicitly and never drop it\n- The customer's name if they stated it (the bot is never told it any other way)\nKeep it under 150 words.\n\n${formatted}`;
+  // The order details are called out explicitly: they are given early, so in a long conversation
+  // they are exactly the facts that age out of the raw window first - and losing them means
+  // re-asking what the customer already answered (Order Details).
+  const prompt = `Summarize this WhatsApp sales conversation concisely. Capture:\n- What the customer asked about\n- Products discussed\n- Prices or offers mentioned\n- Any agreements or rejections\n- Customer tone and intent\n- The order details given so far (brand, product, size, quantity, whether they have a design, business name) — state them explicitly and never drop them\n- The customer's name if they stated it (the bot is never told it any other way)\nKeep it under 150 words.\n\n${formatted}`;
 
   if (isDevMode()) {
     return (await agentQuery({ systemPrompt: '', userContent: prompt, maxTurns: 1 })).trim();
@@ -1286,7 +1237,12 @@ async function maybeSummarizeConversation(conversationId: string): Promise<void>
 
 // ─── Public entry points ─────────────────────────────────────────────────────
 
-const IMAGE_MESSAGE_INSTRUCTION = `[Pelanggan mengirim foto produk. LANGKAH PERTAMA: cek blok KATALOG PRODUK — apakah produk pada foto (dan/atau yang disebut di caption) termasuk yang kami jual dan tersedia. Sampaikan jawaban KETERSEDIAAN ini lebih dulu, sebelum komentar desain/estetik atau menanyakan nama. SEBELUM menyatakan cocok: bandingkan apa yang terlihat di foto (jenis/bahan daun pintu, cara pemasangan, ukuran) dengan blok [DATA KATALOG RESMI] milik produk kandidat. Jika situasi di foto bertentangan dengan Fungsi/Bahan produk itu, itu BUKAN produk yang cocok — jangan dikonfirmasi sebagai produk kami, ikuti ATURAN KECOCOKAN KEGUNAAN PRODUK (jujur + confidence "low"). Jika cocok dengan produk di katalog, konfirmasikan dengan percaya diri dan sebutkan nama produk katalog yang cocok (mis. "iya, tipe Newton-nya ada di kami kak"). Jika produk pada foto memang cocok dengan produk katalog (mis. tipe/namanya disebut di caption dan ada di katalog), TEGASKAN bahwa itu MEMANG produk yang kami jual — contoh: "iya kak, ini produk kami — Handle Newton dari Vintage." JANGAN memakai kata "mirip", "serupa", atau "menyerupai" yang seolah-olah barang lain yang cuma mirip; itu memang produk kami, bukan sekadar yang mirip. Jika tidak ada produk yang cocok di KATALOG PRODUK: kalau fotonya sendiri belum jelas, JANGAN mengarang ketersediaan — minta klarifikasi natural seperti staf manusia, contoh: "Maaf, yang dimaksud itu produknya bagaimana ya? Bisa dijelaskan lebih detail?". Tetapi kalau sudah jelas apa yang dibutuhkan dan katalog memang tidak punya produk yang melayaninya, JANGAN berputar-putar minta klarifikasi — sampaikan terus terang lalu eskalasi ke tim (confidence "low"). Tetap patuhi closed-catalog rule — jangan mengarang SKU/varian.]`;
+// What the customer's photo is decides the reply (spec 7.7): a logo to print, or the packaging they want.
+const IMAGE_MESSAGE_INSTRUCTION = `[Pelanggan mengirim foto. Tentukan dulu jenisnya:
+- LOGO, DESAIN, atau ARTWORK yang mau dicetak → catat has_design: true di item pesanannya, ucapkan terima kasih, dan sampaikan desainnya akan diteruskan ke tim bersama pesanannya. Lanjutkan dengan detail pesanan yang belum diketahui (Order Details). Jangan menilai desainnya.
+- FOTO BOX, KERTAS, atau KEMASAN yang dia inginkan → cek blok KATALOG PRODUK: tawarkan produk yang jenis, bahan, dan ukurannya paling dekat dengan yang di foto, dengan nama produknya. Jangan bilang sama persis kalau belum pasti; sebut bedanya yang terlihat. Kalau tidak ada produk yang cocok (model, ukuran, atau cetakan khusus), sampaikan jujur dan set confidence "low" supaya tim yang mengecek.
+- Foto yang belum jelas maksudnya → tanyakan dengan natural, mis. "Ini contoh kemasannya atau logo yang mau dicetak kak?"
+Patuhi ATURAN KATALOG TERTUTUP: jangan mengarang produk, ukuran, atau harga.]`;
 
 type ImageInput = { base64: string; mimeType: string };
 
@@ -1321,7 +1277,7 @@ export async function buildContextAndCallAI(
   imageData?: ImageInput | ImageInput[] | null,
   quotedMessageBody?: string | null,
   /** Per-turn context for the customer block. An object, not a growing tail of positionals. */
-  turn?: { catalogNote?: string | null; customerType?: string | null; photoNote?: string | null }
+  turn?: { catalogNote?: string | null; photoNote?: string | null }
 ): Promise<AIResponse> {
   // Vision keywords may arrive as a still-running promise so the extraction overlaps the
   // main AI call. Only the legacy RAG path consumes them BEFORE that call (they feed
@@ -1454,9 +1410,7 @@ export async function callAIWithHistory(
   messages: { role: string; content: string }[],
   newMessage: string,
   promptSections?: PromptSection[] | null,
-  imageData?: { base64: string; mimeType: string } | null,
-  /** The buyer type production would have saved by now - renders the same tier line. */
-  turn?: { customerType?: string | null }
+  imageData?: { base64: string; mimeType: string } | null
 ): Promise<AIResponse> {
   // Enrich RAG query for short/contextual follow-up messages in an active product discussion.
   // Cases: "Betul" (pure ambiguous), "Yang Rekomendasi Utama saja" (short non-product phrase),
@@ -1478,7 +1432,7 @@ export async function callAIWithHistory(
     ragQuery = keyword ?? (lastBot ? lastBot.content : newMessage);
   }
 
-  const systemPrompt = await buildSystemPrompt(ragQuery, promptSections, undefined, { ...turn, customerMessage: newMessage });
+  const systemPrompt = await buildSystemPrompt(ragQuery, promptSections, undefined, { customerMessage: newMessage });
 
   const chatMessages: ChatMessage[] = [];
   for (const msg of messages) {

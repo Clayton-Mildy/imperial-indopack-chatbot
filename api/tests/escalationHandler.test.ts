@@ -313,6 +313,21 @@ describe('pickProfileGapQuestion — each question at most once (UAT F-06)', () 
     expect(pickProfileGapQuestion(null, [customer(ESCALATION_ASK_PRODUCT)])).toBe(ESCALATION_ASK_PRODUCT);
   });
 
+  // The model asks the name in its own words ("Sebelumnya, dengan siapa saya terhubung?"); the hand-off
+  // must not ask it a second time in the template's words.
+  it('counts the model\'s own name question, in any wording, as the name asked', () => {
+    const full = { items: [{ product: 'box', size: '1x1', qty: 1, has_design: true }], business_name: 'RM Siang' };
+    expect(pickProfileGapQuestion(P(full), [customer('halo')])).toBe(ESCALATION_ASK_NAME);
+    for (const asked of ['Halo kak 😊 Sebelumnya, dengan siapa saya terhubung?', 'Boleh tahu nama kakak siapa?', 'Siapa nama kakak?']) {
+      expect(pickProfileGapQuestion(P(full), [bot(asked), customer('berapa harganya?')]), asked).toBeNull();
+    }
+  });
+
+  it('still asks another detail after the model asked only the name', () => {
+    const asked = [bot('Sebelumnya, dengan siapa saya terhubung?'), customer('mau tanya harga')];
+    expect(pickProfileGapQuestion(null, asked)).toBe(ESCALATION_ASK_PRODUCT);
+  });
+
   it('counts any spelling of a quantity key the model writes', () => {
     expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '1x1' }], estimated_quantity: 10 }))).toBe(ESCALATION_ASK_DESIGN);
     expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '1x1' }], jumlah_unit: '3 set' }))).toBe(ESCALATION_ASK_DESIGN);
