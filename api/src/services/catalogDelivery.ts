@@ -12,6 +12,12 @@
  *   - Brand unknown: nothing is sent, and the note tells the model to ask what they pack first.
  *   - Repeats: each brand's file goes once per conversation (per contact, until /new), unless the
  *     customer asks for the list itself again (`explicit`).
+ *   - When: a request for the list itself goes before the reply. A price question is decided after
+ *     it, with this turn's facts (final review M6): "berapa harga kertas supreme 30x30 10 rim" as a
+ *     first message used to get the whole list, because the profile was still empty. Before the reply
+ *     the model reads a `preview` (what would go, said as going after its reply unless it prices the
+ *     item); after it, a quote this turn (`fresh.quoted`) or a priced item in this turn's facts sends
+ *     nothing - unless the reply itself says the list is coming (`promised`).
  *
  * One resolver, called by every send site, and its `note` is fed to the model so the reply and
  * the attachments cannot disagree about what was sent.
@@ -89,6 +95,8 @@ export function forgetSentPriceLists(contactId: string): void {
 }
 
 const NOT_SENT = 'KATALOG: belum ada file yang dikirim - JANGAN katakan katalog sudah dikirim.';
+/** The note when nothing could be resolved at all (the resolver failed): nothing went out. */
+export const CATALOG_NOT_SENT_NOTE = NOT_SENT;
 const UNKNOWN_BRAND = 'Merek belum jelas: tanyakan dulu barang apa yang mau dikemas, JANGAN bilang daftar harga sudah dikirim.';
 const PRICED_ITEM = 'Barang, ukuran, dan jumlahnya sudah diketahui, jadi daftar harga tidak dikirim: sebutkan harganya lewat hitung_harga.';
 
@@ -102,16 +110,23 @@ export async function resolveCatalogDelivery(
      * message's lists passes false.
      */
     explicit?: boolean;
-    /** What the customer said in THIS message, not saved to the profile yet (the model-flagged path runs after the reply). */
-    fresh?: { facts?: Record<string, unknown> };
+    /**
+     * What THIS turn learned, maybe not saved yet: the model's facts, and whether hitung_harga quoted a
+     * price (a quote is a priced item whatever the facts say).
+     */
+    fresh?: { facts?: Record<string, unknown>; quoted?: boolean };
+    /** Before the reply: say what would go, as going after it, and record nothing. */
+    preview?: boolean;
+    /** The reply told the customer the list is coming: a priced item does not stop it (repeats still do). */
+    promised?: boolean;
   } = {}
 ): Promise<CatalogDelivery> {
-  const { explicit = asksForPriceList(text), fresh } = opts;
+  const { explicit = asksForPriceList(text), fresh, preview = false, promised = false } = opts;
   const profile = contactId ? await getContactProfile(contactId) : null;
   const facts = asFacts(profile?.profile);
   const freshFacts = asFacts(fresh?.facts);
 
-  if (!explicit && (hasPricedItem(facts['items']) || hasPricedItem(freshFacts['items']))) {
+  if (!explicit && !promised && (hasPricedItem(facts['items']) || hasPricedItem(freshFacts['items']) || fresh?.quoted)) {
     return { files: [], note: `${NOT_SENT} ${PRICED_ITEM}` };
   }
 
@@ -135,14 +150,19 @@ export async function resolveCatalogDelivery(
       sentBefore.push(name);
       continue;
     }
-    if (contactId) sentPriceLists.add(key);
+    if (contactId && !preview) sentPriceLists.add(key);
     files.push({ url, filename: `Daftar Harga ${name}.pdf` });
     sentNow.push(name);
   }
 
+  // Nothing has gone yet, and whether it goes is decided by the reply: no sent marker, so a reply
+  // claiming "sudah dikirim" is still caught (verifyReplyCatalogClaim).
+  const previewNote = `KATALOG: daftar harga ${sentNow.join(', ')} dikirim sistem sesudah balasan ini - kecuali kamu menghitung ` +
+    'harga barangnya lewat hitung_harga di giliran ini; kalau begitu daftar harga tidak dikirim, jadi jangan menyebutnya. ' +
+    'Jangan bilang daftar harga sudah dikirim.';
   const note = [
-    files.length > 0 ? CATALOG_SENT_MARKER : NOT_SENT,
-    sentNow.length > 0 ? `Daftar harga ${sentNow.join(', ')} sudah dikirim.` : '',
+    files.length > 0 ? (preview ? previewNote : CATALOG_SENT_MARKER) : NOT_SENT,
+    sentNow.length > 0 && !preview ? `Daftar harga ${sentNow.join(', ')} sudah dikirim.` : '',
     sentBefore.length > 0 ? `Daftar harga ${sentBefore.join(', ')} sudah dikirim sebelumnya di chat ini, jadi tidak dikirim ulang.` : '',
     ...noFile.map((name) => `Daftar harga ${name} belum tersedia - JANGAN bilang daftar harga ${name} sudah dikirim; tanyakan barang, ukuran, dan jumlahnya supaya harganya bisa dihitung.`),
   ];

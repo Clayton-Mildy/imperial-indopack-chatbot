@@ -1258,6 +1258,112 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(1);
   });
 
+  // ─── Final review M1/M2: this turn's facts are saved before anything reads them ───
+  describe('saving the turn\'s facts', () => {
+    const QTY_ITEM = { product: 'kertas nasi', size: '30x30', qty: 10, qty_unit: 'rim' };
+    // The profile store: what saveConversationInsights wrote is what the next read sees.
+    function profileStore() {
+      let stored: unknown = { customerType: null, profile: { items: [{ product: 'kertas nasi', size: '30x30' }] } };
+      mockGetContactProfile.mockImplementation(async () => stored);
+      mockSaveConversationInsights.mockImplementation(async () => { stored = { customerType: null, profile: { items: [QTY_ITEM] } }; });
+    }
+    const handOffNote = () => mockNotifyStaff.mock.calls.map((c) => c[0] as { title: string; body: string }).find((n) => n.title === 'Eskalasi baru');
+
+    it.each([['text', false], ['photo', true]] as const)('the %s path: the team hand-off lists the quantity given in this very message', async (_path, photo) => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      profileStore();
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Siap kak, 10 rim ya 🙏', sendPoForm: true, profileUpdate: { items: [QTY_ITEM] } });
+
+      await routeInboundBaileysMessage(photo ? makeImagePayload('wamid-M1p', 'oke saya ambil yang ini') : makeTextPayload('wamid-M1t', 'oke kak saya ambil yang itu'));
+      await vi.runAllTimersAsync();
+
+      expect(handOffNote()!.body).toContain('Barang: kertas nasi, 30x30, 10 rim');
+      expect(mockSaveConversationInsights).toHaveBeenCalledTimes(1);
+    });
+
+    function slowSave(ms: number) {
+      const state = { done: false };
+      mockSaveConversationInsights.mockImplementation(() => new Promise<void>((res) => setTimeout(() => { state.done = true; res(); }, ms)));
+      return state;
+    }
+
+    it.each([['a reply', { ...BASE_AI_RESPONSE }], ['no reply', { message: '', confidence: 'high', noReply: true }]] as const)(
+      'the next queued turn starts only after the save, after %s', async (_label, first) => {
+        const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+        const save = slowSave(20_000);
+        const sawSaved: boolean[] = [];
+        mockBuildContextAndCallAI
+          .mockImplementationOnce(async () => { sawSaved.push(save.done); return first; })
+          .mockImplementation(async () => { sawSaved.push(save.done); return { ...BASE_AI_RESPONSE }; });
+
+        await routeInboundBaileysMessage(makeTextPayload('wamid-M2a', 'mau kertas nasi 30x30'));
+        await vi.advanceTimersByTimeAsync(9000); // turn 1 runs and is saving
+        await routeInboundBaileysMessage(makeTextPayload('wamid-M2b', '10 rim'));
+        await vi.runAllTimersAsync();
+
+        expect(sawSaved).toEqual([false, true]);
+      });
+  });
+
+  // ─── Final review M3: the price-list resolver and the reply send fail safe ───
+  describe('when the price list or the reply cannot go', () => {
+    it('answers the turn when the price list cannot be resolved, before or after the reply', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => { });
+      mockGetContactProfile.mockResolvedValue(null);
+      mockListBrands.mockRejectedValue(new Error('db down'));
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, catalogUrl: 'x' });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-M3a', 'minta pricelist kertas supreme'));
+      await vi.runAllTimersAsync();
+
+      expect(mockBuildContextAndCallAI.mock.calls[0]![6].catalogNote).toMatch(/belum ada file yang dikirim/);
+      expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual(['AI reply']);
+      expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'AI reply', status: 'sent' }));
+      expect(mockSendDocumentMessage).not.toHaveBeenCalled();
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('price list'))).toBe(true);
+      warn.mockRestore();
+    });
+
+    it.each([['text', false], ['photo', true]] as const)('tells staff when the %s reply itself cannot be sent', async (_path, photo) => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      mockSendTextMessage.mockRejectedValue(new Error('chakra 400'));
+
+      await routeInboundBaileysMessage(photo ? makeImagePayload('wamid-M3p') : makeTextPayload('wamid-M3t', 'ada box nasi?'));
+      await vi.runAllTimersAsync();
+
+      expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'AI reply', status: 'saved' }));
+      expect(mockNotifyStaff).toHaveBeenCalledWith(expect.objectContaining({ title: 'Balasan bot gagal terkirim', path: '/conversations/conv-uuid-1' }));
+    });
+  });
+
+  // ─── Final review M4: supersede no longer stops after a price list went out ───
+  it('drops a stale draft after a price list went out, and the re-run sends no second list', async () => {
+    process.env.TYPING_DEBOUNCE_MS = '1000';
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue(null);
+    mockListBrands.mockResolvedValue([{ id: 'b2', name: 'Kertas Supreme', catalogFileUrl: 'https://cdn.example/daftar-harga-supreme.pdf' }]);
+    let resolveTurn1: (v: unknown) => void = () => { };
+    mockBuildContextAndCallAI
+      .mockReturnValueOnce(new Promise((res) => { resolveTurn1 = res; }))
+      .mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'jawaban lengkap' });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-M4a', 'minta pricelist kertas supreme'));
+    await vi.advanceTimersByTimeAsync(1200);
+    await routeInboundBaileysMessage(makeTextPayload('wamid-M4b', 'untuk nasi padang'));
+    await vi.advanceTimersByTimeAsync(1200);
+    resolveTurn1({ ...BASE_AI_RESPONSE, message: 'draft basi' });
+    await vi.advanceTimersByTimeAsync(3000);
+    delete process.env.TYPING_DEBOUNCE_MS;
+
+    expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(2);
+    expect(mockBuildContextAndCallAI.mock.calls[1]![1]).toBe('minta pricelist kertas supreme\nuntuk nasi padang');
+    expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual(['jawaban lengkap']);
+    expect(mockSendDocumentMessage).toHaveBeenCalledTimes(1);
+    // The re-run is told what already went out, so its reply and the attachment agree.
+    expect(mockBuildContextAndCallAI.mock.calls[1]![6].catalogNote).toMatch(/^KATALOG: file terkirim\./);
+  });
+
   // ─── The price list: a price question, by brand (spec 7.3) ────────────────
 
   const IMPERIAL_PDF = 'https://cdn.example/daftar-harga-imperial.pdf';
@@ -1268,8 +1374,10 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   ]);
   const catalogNote = () => mockBuildContextAndCallAI.mock.calls.at(-1)![6]?.catalogNote as string | null;
 
-  // Review focus 4: the ad's own text from a customer the system has never seen.
-  it('sends the Kertas Supreme price list for the bare ad text, before the reply, and tells the model', async () => {
+  // Review focus 4: the ad's own text from a customer the system has never seen. Final review M6: a price
+  // question (not a request for the list itself) is decided after the reply, with this turn's facts, so
+  // the list follows the reply - and the model is told it will, unless it prices the item.
+  it('sends the Kertas Supreme price list for the bare ad text, after the reply, and tells the model', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockGetContactProfile.mockResolvedValue(null);
     withBrandFiles();
@@ -1280,8 +1388,9 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockSendDocumentMessage).toHaveBeenCalledTimes(1);
     expect(mockSendDocumentMessage.mock.calls[0][2]).toBe(SUPREME_PDF);
     expect(mockSendDocumentMessage.mock.calls[0][3]).toBe('Daftar Harga Kertas Supreme.pdf');
-    expect(mockSendDocumentMessage.mock.invocationCallOrder[0]).toBeLessThan(mockBuildContextAndCallAI.mock.invocationCallOrder[0]);
-    expect(catalogNote()).toMatch(/^KATALOG: file terkirim\./);
+    expect(mockSendDocumentMessage.mock.invocationCallOrder[0]).toBeGreaterThan(mockSendTextMessage.mock.invocationCallOrder[0]);
+    expect(catalogNote()).toMatch(/^KATALOG: daftar harga Kertas Supreme dikirim sistem sesudah balasan ini/);
+    expect(catalogNote()).not.toContain('file terkirim');
     // Stored under its wamid, like every file the bot sends.
     expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({
       waMessageId: 'wa-doc-id',
@@ -1298,6 +1407,55 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     await vi.runAllTimersAsync();
 
     expect(mockSendDocumentMessage.mock.calls.map((c) => c[2])).toEqual([SUPREME_PDF, IMPERIAL_PDF]);
+  });
+
+  // Final review M6: a fully specified first message used to get the whole list - the profile was still
+  // empty when the keyword path ran. This turn's facts decide now: a quote, not the list.
+  it('sends no price list when this very turn priced the item', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
+    mockBuildContextAndCallAI.mockResolvedValue({
+      ...BASE_AI_RESPONSE,
+      message: 'Untuk Kertas Supreme 64 gsm 30 x 30 cm, 10 rim: Rp 165.000/rim, total Rp 1.650.000 kak.',
+      toolFigures: [165000, 1650000, 160000], priceToolRan: true,
+      profileUpdate: { brands: ['kertas_supreme'], items: [{ product: 'Kertas Supreme 64 gsm', size: '30x30', qty: 10, qty_unit: 'rim' }] },
+    });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PLQ', 'berapa harga kertas supreme 30x30 10 rim'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendTextMessage).toHaveBeenCalledTimes(1);
+    expect(mockSendDocumentMessage).not.toHaveBeenCalled();
+  });
+
+  it('sends no price list when the tool quoted this turn, even with no facts saved', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: '10 rim: Rp 165.000/rim kak.', toolFigures: [165000, 1650000], priceToolRan: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PLQ2', 'berapa harga kertas supreme 30x30 10 rim'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendDocumentMessage).not.toHaveBeenCalled(); // the tool's quote is the price
+  });
+
+  it('sends it after all when the reply says the list is coming', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
+    mockBuildContextAndCallAI.mockResolvedValue({
+      ...BASE_AI_RESPONSE,
+      message: '10 rim: Rp 165.000/rim kak. Daftar harga lengkapnya saya kirimkan juga ya.',
+      toolFigures: [165000, 1650000], priceToolRan: true,
+      profileUpdate: { items: [{ product: 'Kertas Supreme 64 gsm', size: '30x30', qty: 10, qty_unit: 'rim' }] },
+    });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PLQ3', 'berapa harga kertas supreme 30x30 10 rim'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendDocumentMessage.mock.calls.map((c) => c[2])).toEqual([SUPREME_PDF]);
   });
 
   it('sends nothing while the brand is unknown, and tells the model to ask what they pack', async () => {

@@ -8,7 +8,7 @@ import { getFirstPhoneNumber, findPhoneNumberByProviderId } from '../repositorie
 import { getAiEnabledDefault, getPoFormUrl } from '../repositories/appSettings.js';
 import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormMessage, PO_FORM_PLACEHOLDER_URL, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM } from '../domain/constants.js';
 import { buildContextAndCallAI } from './aiLayer.js';
-import { resolveCatalogDelivery, isPriceRequest, asksForPriceList, forgetSentPriceLists } from './catalogDelivery.js';
+import { resolveCatalogDelivery, isPriceRequest, asksForPriceList, forgetSentPriceLists, CATALOG_NOT_SENT_NOTE, type CatalogDelivery } from './catalogDelivery.js';
 import { extractCatalogKeywordsFromImage, visionExtractToKeywords, type VisionExtract } from './visionKeywords.js';
 import { matchCustomerPhoto, photoBatchNote, photoHistoryNote, photoLine, captionOf, type PhotoMatch } from './photoMatch.js';
 import { escalateConversation, detectComplaint, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, isNonSalesHandoff, isNonSalesReason, pickProfileGapQuestion, unansweredSizeQuestion, replyPromisesTeamCheck } from './escalationHandler.js';
@@ -88,6 +88,8 @@ interface TextDebounceEntry {
   sendImage?: (url: string) => Promise<string>;
   /** Carries a batch whose draft was already thrown away once - see supersedeStaleTurn. */
   superseded?: boolean;
+  /** The note of the price lists a dropped draft's turn already sent: the re-run sends none again. */
+  carriedCatalogNote?: string;
 }
 
 /** One customer photo, waiting with the others sent alongside it. */
@@ -405,20 +407,56 @@ function notifyEscalatedTurnAnswered(conversationId: string, text: string): void
  * yet, so drop the draft and fold this batch into the waiting one: the next turn answers everything
  * at once (its texts, not just the new ones, so detectHumanRequest and the PPN gate still see them).
  *
- * At most once per batch - otherwise someone who keeps typing never gets an answer. Not after
- * catalog files went out: the re-run would detect the same request and send them again.
+ * At most once per batch - otherwise someone who keeps typing never gets an answer. Also after price
+ * lists went out (that guard used to stop it on most ad-opening turns, final review M4): a request for
+ * the list itself is sent before the reply, so the re-run is handed that turn's note and sends no list
+ * again; a price question's list is decided after the reply, so a dropped draft never sent one.
  * ponytail: costs a second AI call each time it fires; watch the usage log if bursts are common.
  */
-function supersedeStaleTurn(entry: TextDebounceEntry, filesSent: boolean): boolean {
-  if (entry.superseded || filesSent) return false;
+function supersedeStaleTurn(entry: TextDebounceEntry, sentCatalogNote: string | null): boolean {
+  if (entry.superseded) return false;
   const pending = textDebounceMap.get(entry.conversationId);
   if (!pending) return false;
   pending.texts = [...entry.texts, ...pending.texts];
   pending.sentAt = [...entry.sentAt, ...pending.sentAt];
   pending.quotedWaMessageId ??= entry.quotedWaMessageId;
   pending.superseded = true;
+  if (sentCatalogNote) pending.carriedCatalogNote ??= sentCatalogNote;
   console.log(`[messageRouter] customer wrote again during the turn for ${entry.conversationId} - dropping the draft, answering both batches together`);
   return true;
+}
+
+/**
+ * resolveCatalogDelivery runs on almost every turn, before and after the reply: a failure there (the
+ * profile or brands read) must cost the turn its price list, never the turn (final review M3).
+ */
+async function catalogDeliveryOrNothing(
+  contactId: string, text: string, opts: Parameters<typeof resolveCatalogDelivery>[2]
+): Promise<CatalogDelivery> {
+  try {
+    return await resolveCatalogDelivery(contactId, text, opts);
+  } catch (err) {
+    console.warn('[messageRouter] price list could not be resolved - sending none:', err instanceof Error ? err.message : err);
+    return { files: [], note: CATALOG_NOT_SENT_NOTE };
+  }
+}
+
+// The reply tells the customer a price list is coming ("daftar harganya saya kirimkan ya", "berikut
+// pricelist-nya"): then it goes, priced item or not - the reply and the attachment must agree.
+const PRICE_LIST_WORD = String.raw`(?:katalog|catalog|price\s*list|pricelist|daftar\s+harga|brosur)`;
+const PROMISES_PRICE_LIST_RE = new RegExp(
+  String.raw`${PRICE_LIST_WORD}[^.!?\n]{0,60}(?:kirim|lampir|berikut|di\s*bawah)|(?:kirim|lampir|berikut)[^.!?\n]{0,40}${PRICE_LIST_WORD}`, 'i');
+
+/**
+ * The reply did not reach WhatsApp: the row is stored as 'saved', and without this nobody knew the
+ * customer got nothing (final review M3).
+ */
+function notifyReplyNotSent(conversationId: string, reply: string): void {
+  notifyStaff({
+    title: 'Balasan bot gagal terkirim',
+    body: `Balasan ini tidak terkirim ke pelanggan, mohon dibalas manual: ${reply.slice(0, 140)}`,
+    path: `/conversations/${conversationId}`,
+  });
 }
 
 // Staff type replies on the WhatsApp phone, and those reach us only through Chakra's sync - so each
@@ -473,23 +511,30 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // question. See detectNonSalesTopic.
     const nonSales = detectNonSalesTopic(combinedText, await earlierCustomerText(conversationId));
 
-    // The brand price lists are keyword-triggered and independent of the AI: a price question, or a
-    // request for the list itself (which also resends one already sent, and goes even for a priced
-    // item). The sends are fire-and-forget - resolving them BEFORE the call is what lets the reply
-    // and the attachments agree, via `catalogNote`. Which brand's file, if any, is catalogDelivery's rule.
+    // The brand price lists are keyword-triggered and independent of the AI. A request for the list
+    // itself goes now, before the reply (fire-and-forget sends), which is what lets the reply and the
+    // attachments agree via `catalogNote`. A price question is only previewed here: whether its list
+    // goes is decided after the reply, with this turn's facts (deliverPriceList below, final review M6).
+    // Which brand's file, if any, is catalogDelivery's rule.
 
-    let catalogNote: string | null = null;
-    let filesSent = false;
+    let catalogNote: string | null = entry.carriedCatalogNote ?? null;
+    // The note of lists this turn already sent, handed to a re-run if the draft is dropped.
+    let sentCatalogNote: string | null = entry.carriedCatalogNote ?? null;
+    let priceQuestion = false;
     const fileAsked = detectCatalogRequest(combinedText) || asksForPriceList(combinedText);
-    if (!nonSales && (fileAsked || isPriceRequest(combinedText))) {
-      const delivery = await resolveCatalogDelivery(conv.contactId, combinedText, { explicit: fileAsked });
+    if (!nonSales && !entry.carriedCatalogNote && fileAsked) {
+      const delivery = await catalogDeliveryOrNothing(conv.contactId, combinedText, { explicit: true });
       catalogNote = delivery.note;
-      filesSent = delivery.files.length > 0;
+      if (delivery.files.length > 0) sentCatalogNote = delivery.note;
       for (const f of delivery.files) {
         void Promise.resolve(entry.sendDoc?.(f.url, f.filename)).catch((err) =>
           console.warn('[messageRouter] Failed to send catalog:', err instanceof Error ? err.message : err)
         );
       }
+    } else if (!nonSales && !entry.carriedCatalogNote && isPriceRequest(combinedText)) {
+      const preview = await catalogDeliveryOrNothing(conv.contactId, combinedText, { explicit: false, preview: true });
+      catalogNote = preview.note;
+      priceQuestion = preview.files.length > 0;
     }
 
     const quotedBody = await resolveQuotedBody(entry.quotedWaMessageId);
@@ -517,7 +562,26 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
       return;
     }
     // Before anything is sent, saved or escalated: the next turn decides all of that afresh.
-    if (supersedeStaleTurn(entry, filesSent)) return;
+    if (supersedeStaleTurn(entry, sentCatalogNote)) return;
+
+    // The price question's list, after the reply (or the hand-off): sent unless this turn priced the item
+    // - a quote from hitung_harga, or a priced item in the facts just saved - or when the reply says the
+    // list is coming. The model's catalog_url flag runs the same decision on an ordinary reply: it spotted
+    // a request the keywords missed, or learned the brand this turn. Same once-per-brand record as the
+    // keyword path, never explicit, and never the model-provided URL (closed catalog).
+    const deliverPriceList = async (sentReply: string, flagged: boolean): Promise<void> => {
+      if (!priceQuestion && !flagged) return;
+      const delivery = await catalogDeliveryOrNothing(conv.contactId, combinedText, {
+        explicit: false,
+        fresh: { facts: aiResponse.profileUpdate, quoted: (aiResponse.toolFigures?.length ?? 0) > 0 },
+        promised: PROMISES_PRICE_LIST_RE.test(sentReply),
+      });
+      for (const f of delivery.files) {
+        void Promise.resolve(entry.sendDoc?.(f.url, f.filename)).catch((err) =>
+          console.warn('[messageRouter] Failed to send catalog:', err instanceof Error ? err.message : err)
+        );
+      }
+    };
 
     // The model judged this a bare acknowledgement ("baik kak", "terima kasih") with nothing to add.
     // Its own call, via the tool's no_reply - not a keyword list here. Nothing is sent and the team is
@@ -525,7 +589,8 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // is in the same message, which hand off whatever the model decided.
     if (aiResponse.noReply && !detectHumanRequest(combinedText) && !detectPpnQuestion(combinedText)) {
       console.log(`[messageRouter] model chose no reply for ${conversationId} (acknowledgement only)`);
-      saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
+      // Awaited inside the turn: the next queued turn must read these facts (final review M2).
+      await saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
       return;
     }
 
@@ -568,6 +633,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
         let ackId: string | null = null;
         try { ackId = await entry.sendReply(ack); } catch { /* recorded below as 'saved' */ }
         await insertMessage({ conversationId, role: 'assistant', body: ack, waMessageId: ackId || undefined, status: ackId ? 'sent' : 'saved', metadata: { source: 'escalation_ack' } as Record<string, unknown> });
+        await deliverPriceList(ack, false);
         return;
       }
       // Someone who just asked for a human gets the hand-off line only, no sales question.
@@ -575,44 +641,34 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
         conv, reason, entry.escalationJid, askGap, entry.phoneNumber,
         complaint ? CANNED_COMPLAINT_REPLY : notBuyer ? CANNED_NON_SALES_REPLY : undefined
       );
+      // The price list asked for still follows the hand-off, as it did when it went before the reply.
+      await deliverPriceList('', false);
       return;
     }
 
     // Again, right before sending: the first check runs as the AI call returns, and a message that
     // lands during the escalation checks and staff sync above was missed (live 2026-11-08: "Dengan Rudi
     // ka" typed as a reply about Malang was being sent, which then asked the name again).
-    if (supersedeStaleTurn(entry, filesSent)) return;
+    if (supersedeStaleTurn(entry, sentCatalogNote)) return;
+    // This turn's facts first, inside the turn: the team hand-off's order summary and the price-list
+    // decision read them, and so does the next queued turn (final review M1, M2).
+    await saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
     const { followUp, poForm } = await onceOnlyFollowUp(conv, aiResponse, combinedText);
     if (needsTeam(followUp)) await handToTeam(conv, combinedText, followUp);
     else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conversationId, combinedText);
     const reply = replyText(aiResponse, followUp);
     let sentId: string | null = null;
     try { sentId = await entry.sendReply(reply); } catch { /* ignore */ }
+    if (!sentId) notifyReplyNotSent(conversationId, reply);
     // After the text: the reference photos in order, the team's design-examples promise, then the PO
     // form link (or the team's promise).
     const photos = await sendReferencePhotos(aiResponse.imageUrls, async (url) => (await entry.sendImage?.(url)) ?? null);
     const examplesSent = followUp.examples ? await sendFixedLine(CANNED_DESIGN_EXAMPLES_FROM_TEAM, 'design_examples', (text) => entry.sendReply(text)) : null;
     const poSent = poForm ? await sendFixedLine(poForm.body, 'po_form', (text) => entry.sendReply(text)) : null;
-    if (aiResponse.catalogUrl) {
-      // The model spotted a price-list request the keywords missed (say, the answer to "barang apa
-      // yang mau dikemas?"), or learned this turn the brand the keyword path did not know yet. Send
-      // the real file - never the model-provided URL (closed catalog). Same rule as the keyword
-      // path, never explicit: the once-per-brand record keeps what that path just sent from going
-      // twice. It runs after the reply, so the brands and items given in this very message count.
-      const delivery = await resolveCatalogDelivery(conv.contactId, combinedText, {
-        explicit: false,
-        fresh: { facts: aiResponse.profileUpdate },
-      });
-      for (const f of delivery.files) {
-        void Promise.resolve(entry.sendDoc?.(f.url, f.filename)).catch((err) =>
-          console.warn('[messageRouter] Failed to send catalog:', err instanceof Error ? err.message : err)
-        );
-      }
-    }
+    await deliverPriceList(reply, Boolean(aiResponse.catalogUrl));
     // Rows in send order, so the thread reads as the customer saw it.
     await insertMessage({ conversationId, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved' });
     await recordAfterReply(conversationId, photos, [examplesSent, poSent]);
-    saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
   } finally {
     inFlightConversations.delete(conversationId);
   }
@@ -797,12 +853,16 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     return;
   }
 
+  // As on the text path: this turn's facts before the hand-off summary reads them (final review M1),
+  // and inside the turn, before the next one starts (M2).
+  await saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
   const { followUp, poForm } = await onceOnlyFollowUp(conv, aiResponse, body);
   if (needsTeam(followUp)) await handToTeam(conv, body, followUp);
   else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conv.id, body);
   const reply = replyText(aiResponse, followUp);
   let sentId: string | null = null;
   try { sentId = await sendTextMessage(phoneNumber.phoneNumberId, replyJid, reply); } catch { /* ignore */ }
+  if (!sentId) notifyReplyNotSent(conv.id, reply);
   // After the text: the reference photos, the design-examples promise, then the PO form - as on the text path.
   const photos = await sendReferencePhotos(aiResponse.imageUrls, (url) => sendImageMessage(phoneNumber.phoneNumberId, replyJid, url, ''));
   const sendLine = (text: string) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text);
@@ -812,8 +872,9 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     // Price list asked for via the photo's caption. No keyword trigger runs on this path,
     // so without this the model says "katalognya sudah dikirim" and nothing is sent. Nothing was
     // sent for this caption yet, so a caption naming the list ("minta pricelist") counts as explicit.
-    const delivery = await resolveCatalogDelivery(conv.contactId, body, {
-      fresh: { facts: aiResponse.profileUpdate },
+    const delivery = await catalogDeliveryOrNothing(conv.contactId, body, {
+      fresh: { facts: aiResponse.profileUpdate, quoted: (aiResponse.toolFigures?.length ?? 0) > 0 },
+      promised: PROMISES_PRICE_LIST_RE.test(reply),
     });
     for (const f of delivery.files) {
       void sendDocumentMessage(phoneNumber.phoneNumberId, replyJid, f.url, f.filename)
@@ -823,7 +884,6 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   }
   await insertMessage({ conversationId: conv.id, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved', metadata: { source: 'vision_recommend' } as Record<string, unknown> });
   await recordAfterReply(conv.id, photos, [examplesSent, poSent]);
-  saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
 }
 
 /**

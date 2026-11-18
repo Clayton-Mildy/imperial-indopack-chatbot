@@ -147,6 +147,42 @@ describe('the price list goes to a price question, by brand', () => {
   });
 });
 
+// Final review M6: a price question is decided after the reply, with this turn's facts. Before it, the
+// model gets a preview: what would go, said as going after its reply unless it prices the item.
+describe('the price question, decided after the reply', () => {
+  it('a preview says the list follows the reply, records nothing, and carries no sent marker', async () => {
+    const { resolveCatalogDelivery } = await load();
+    const p = await resolveCatalogDelivery(C, 'berapa harga kertas supreme?', { explicit: false, preview: true });
+    expect(urls(p)).toEqual([SUPREME_PDF]);
+    expect(p.note).toMatch(/^KATALOG: daftar harga Kertas Supreme dikirim sistem sesudah balasan ini/);
+    expect(p.note).toContain('hitung_harga');
+    expect(p.note).not.toContain(CATALOG_SENT_MARKER);
+    // Nothing recorded: the real decision after the reply still sends it.
+    expect(urls(await resolveCatalogDelivery(C, 'berapa harga kertas supreme?', { explicit: false }))).toEqual([SUPREME_PDF]);
+  });
+
+  it('a preview keeps the other notes as they are', async () => {
+    const { resolveCatalogDelivery } = await load();
+    expect((await resolveCatalogDelivery(C, 'berapa harganya kak?', { explicit: false, preview: true })).note).toContain(UNKNOWN_BRAND_NOTE);
+    withFacts({ brands: ['kertas_supreme'], items: [PRICED_ITEM] });
+    expect((await resolveCatalogDelivery(C, 'berapa harga kertas supreme?', { explicit: false, preview: true })).files).toEqual([]);
+  });
+
+  it('a quote from the tool this turn is a priced item', async () => {
+    const { resolveCatalogDelivery } = await load();
+    const d = await resolveCatalogDelivery(C, 'berapa harga kertas supreme 30x30 10 rim', { explicit: false, fresh: { quoted: true } });
+    expect(d.files).toEqual([]);
+    expect(d.note).toContain('hitung_harga');
+  });
+
+  it('a reply that says the list is coming gets it even for a priced item, once', async () => {
+    const { resolveCatalogDelivery } = await load();
+    const opts = { explicit: false, promised: true, fresh: { facts: { items: [PRICED_ITEM] }, quoted: true } };
+    expect(urls(await resolveCatalogDelivery(C, 'berapa harga kertas supreme 30x30 10 rim', opts))).toEqual([SUPREME_PDF]);
+    expect(urls(await resolveCatalogDelivery(C, 'berapa harga kertas supreme 30x30 10 rim', opts))).toEqual([]);
+  });
+});
+
 describe('once per conversation per brand', () => {
   it('the same brand is not resent in the same conversation', async () => {
     const { resolveCatalogDelivery } = await load();
