@@ -262,15 +262,22 @@ const SUPPLIER_OFFER_RE = new RegExp([
 ].join('|'), 'i');
 
 // Buy intent overrides every supplier signal (client ruling, Task 13 review): a message that asks for,
-// prices or names what we sell is a buyer's, whoever wrote it. What a supplier says about its own goods
-// ("supplier kertas kraft roll", "vendor tinta sablon", "bisa supply plastik ke ...") and the "mau" of
-// "mau menawarkan" are cut first, so they never read as buying.
-const BUY_INTENT_RE = /\b(?:butuh|pesan|order|beli|mau|cari|harga|berapa|box|dus|kertas|cetak|sablon|kemasan)(?:nya)?\b/i;
-const SELLER_GOODS_RE = /\b(?:supplier|pemasok|vendor|distributor|pabrik|produsen|manufaktur|supply|suplai|memasok|menyuplai)\b[^,.?!\n]{0,40}/gi;
-const OFFER_MODAL_RE = /\b(?:mau|ingin|akan)\s+(?=(?:menawarkan|tawarkan|tawarin|memasok|menyuplai|supply|suplai|(?:jadi|menjadi)\s+(?:supplier|pemasok|vendor))\b)/gi;
+// prices or names what we sell is a buyer's, whoever wrote it. A buy VERB anywhere in the message is
+// enough ("Kami pabrik roti butuh box 5000 pcs, boleh kirim penawaran?" - no comma before the need).
+// A buy NOUN counts once what a supplier says about its own goods is cut ("supplier kertas kraft
+// roll", "vendor tinta sablon", "bisa supply plastik ke ..."): the cut takes the noun phrase after the
+// supplier word and stops at punctuation or a buy verb. Cost accepted: a supplier who writes "mau
+// menawarkan" reaches the bot, whose prompt hands it off as BUKAN PEMBELI.
+const BUY_VERBS = String.raw`butuh|perlu|pesan|order|beli|mau|cari|minta`;
+const BUY_VERB_RE = new RegExp(String.raw`\b(?:${BUY_VERBS})(?:nya)?\b`, 'i');
+const BUY_NOUN_RE = /\b(?:box|dus|kertas|cetak|sablon|kemasan)(?:nya)?\b/i;
+const SELLER_GOODS_RE = new RegExp(
+  String.raw`\b(?:supplier|pemasok|vendor|distributor|pabrik|produsen|manufaktur|supply|suplai|memasok|menyuplai)\b(?:(?!\b(?:${BUY_VERBS})\b)[^,.?!\n]){0,40}`,
+  'gi'
+);
 
 function wantsToBuy(message: string): boolean {
-  return BUY_INTENT_RE.test(message.replace(SELLER_GOODS_RE, ' ').replace(OFFER_MODAL_RE, ' '));
+  return BUY_VERB_RE.test(message) || BUY_NOUN_RE.test(message.replace(SELLER_GOODS_RE, ' '));
 }
 
 /**

@@ -514,7 +514,7 @@ describe('detectNonSalesTopic', () => {
     ['saya cari kerja kak, ada posisi kosong?', 'Lowongan kerja'], ['info lowker dong kak', 'Lowongan kerja'],
     ['kak saya sudah transfer, tolong dicek ya', 'Pembayaran / status pesanan'], ['pesanan saya belum sampai kak', 'Pembayaran / status pesanan'],
     ['saya beli di shopee kemarin, kapan dikirim?', 'Pembayaran / status pesanan'], ['minta nomor resi kak', 'Pembayaran / status pesanan'],
-    ['kami dari PT ABC supplier plastik, mau tawarkan kerja sama', 'Penawaran kerja sama / supplier'],
+    ['kami dari PT ABC supplier plastik, ingin tawarkan kerja sama', 'Penawaran kerja sama / supplier'],
     ['grab\nmau ambil pesanan', 'Kurir / pengambilan pesanan'],
   ])('%s -> %s', (m, topic) => expect(detectNonSalesTopic(m)).toBe(topic));
   it.each([
@@ -545,8 +545,8 @@ describe('detectNonSalesTopic - a supplier across messages', () => {
   // Task 13 carry: the supplier patterns name Imperial Indopack and Kertas Supreme.
   it.each([
     'kami ingin menjajaki kebutuhan plastik di perusahaan bapak',
-    'mau menawarkan produk kami kak, tinta dan lem',
-    'boleh minta kontak bagian purchasing?',
+    'ingin menawarkan produk kami kak, tinta dan lem', // "mau menawarkan" now reaches the bot (fix round 2)
+    'boleh tahu kontak bagian purchasing?', // "minta" is a buy verb (fix round 2)
     'bisa hubungi tim pengadaan kemana ya?',
     'kami ingin jadi supplier imperial indopack',
     'kami supplier untuk PT Imperial Indopack sejak 2020',
@@ -556,7 +556,7 @@ describe('detectNonSalesTopic - a supplier across messages', () => {
     'Kami supplier kertas kraft roll, boleh kirim penawaran ke bagian pembelian?',
     'Perkenalkan kami vendor tinta sablon, ingin menawarkan kerja sama',
     'Kami dari CV Maju, bisa supply plastik ke Imperial Indopack',
-    'Kami mau menawarkan kerja sama untuk pengiriman barang',
+    'Kami ingin menawarkan kerja sama untuk pengiriman barang',
     'kami siap jadi supplier kalian untuk lem dan tinta',
     'izin kirim company profile kami ya kak',
   ])('an offer on its own: %s', (m) => expect(detectNonSalesTopic(m)).toBe(SUPPLIER));
@@ -574,6 +574,14 @@ describe('detectNonSalesTopic - a supplier across messages', () => {
     ['kami supplier untuk Imperial Kitchen sejak 2019', ''], // m1: a bare "imperial" is not us
     ['boleh kirim penawaran harga box 2000 pcs?', bakery],
     ['Kami dari PT Sinar Kue, mau pesan kertas bungkus cetak logo', ''],
+    // Accepted cost of fix round 2: "mau menawarkan" carries a buy verb, so it goes to the bot.
+    ['Kami mau menawarkan kerja sama untuk pengiriman barang', ''],
+    // Fix round 2: no comma between the introduction and the need.
+    ['Kami pabrik roti butuh box 5000 pcs, boleh kirim penawaran?', ''],
+    ['Kami produsen roti butuh box kue, bisa supply ke kami?', ''],
+    ['Kami pabrik roti butuh box 5000 pcs, bisa hubungi bagian pembelian?', ''],
+    ['Kami supplier nasi kotak butuh box nasi, ingin menawarkan kerja sama', ''],
+    ['kami vendor catering mau pesan box, boleh kirim penawaran', ''],
   ])('a buyer with a supplier-sounding introduction: %s', (m, earlier) => expect(detectNonSalesTopic(m, earlier)).toBeNull());
 
   it.each([
