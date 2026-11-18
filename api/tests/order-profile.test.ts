@@ -70,6 +70,10 @@ describe('orderDetailsSummary', () => {
     expect(orderDetailsSummary({ items: [{ product: 'Box Nasi', qty: 3 }] })).toBe('Barang: Box Nasi, 3');
     expect(orderDetailsSummary({})).toBe('');
   });
+  it('prints no empty "Barang:" line for a stored item that sanitises to nothing', () => {
+    expect(orderDetailsSummary({ items: [{ product: '  ', qty: {} }, {}, { product: 'Box Nasi' }] })).toBe('Barang: Box Nasi');
+    expect(orderDetailsSummary({ items: [{ product: '', size: null }] })).toBe('');
+  });
   it('does not throw on legacy stored items', () =>
     expect(orderDetailsSummary({ items: [{ gsm: 64, qty: {} }, { product: 7, size: 30 }] })).toBe('Barang: 64 gsm\nBarang: 7, 30'));
   it('lists several items on their own lines', () =>

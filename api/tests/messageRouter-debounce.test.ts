@@ -231,7 +231,8 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     mockGetLastNMessages.mockResolvedValue([]);
     // Complete profile by default → pickProfileGapQuestion returns null, so the still-checking
     // ack is the bare line. The thin-profile case gets its own test below.
-    mockGetContactProfile.mockResolvedValue({ customerType: 'end_user', profile: { quantity: 5 } });
+    // all six order details known, so no gap question rides on the acks
+    mockGetContactProfile.mockResolvedValue({ customerType: null, profile: { name: 'Budi', business_name: 'RM Siang', items: [{ product: 'box nasi', size: '10x10x5', qty: 2500, qty_unit: 'pcs', has_design: true }] } });
     mockInsertMessageIfNew.mockResolvedValue({ id: 'msg-uuid', conversationId: 'conv-uuid-1' });
     mockClaimSyncedInbound.mockResolvedValue(null);
     mockSyncContactChat.mockResolvedValue(0);
@@ -1531,6 +1532,22 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation).not.toHaveBeenCalled();
   });
 
+  it('the placeholder-PO hand-off tells staff the order details too', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+    mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
+    mockGetContactProfile.mockResolvedValue({ customerType: null, profile: { name: 'Budi', items: [{ product: 'Box Nasi', size: '10x10x5' }] } });
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PO5b', 'oke kak saya ambil 10 rim'));
+    await vi.runAllTimersAsync();
+
+    const body = (mockNotifyStaff.mock.calls[0]![0] as { body: string }).body;
+    expect(body).toContain('Form PO belum diatur di Pengaturan');
+    expect(body).toContain('Nama: Budi');
+    expect(body).toContain('Barang: Box Nasi, 10x10x5');
+  });
+
   it('photo path: the placeholder PO link is not sent either, and the team takes it', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_PO_FORM_FROM_TEAM, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
@@ -1762,7 +1779,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     // nothing to say, at least collect what the team will need — same question the first
     // hand-off asks.
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    const { CANNED_STILL_CHECKING_REPLY, ESCALATION_ASK_CUSTOMER_TYPE } = await import('../src/domain/constants.js');
+    const { CANNED_STILL_CHECKING_REPLY, ESCALATION_ASK_PRODUCT } = await import('../src/domain/constants.js');
     mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated' });
     mockGetContactProfile.mockResolvedValue({ customerType: null, profile: {} });
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, confidence: 'low' });
@@ -1771,7 +1788,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     await vi.runAllTimersAsync();
 
     expect(mockSendTextMessage).toHaveBeenCalledTimes(1);
-    expect(mockSendTextMessage.mock.calls[0][2]).toBe(`${CANNED_STILL_CHECKING_REPLY} ${ESCALATION_ASK_CUSTOMER_TYPE}`);
+    expect(mockSendTextMessage.mock.calls[0][2]).toBe(`${CANNED_STILL_CHECKING_REPLY} ${ESCALATION_ASK_PRODUCT}`);
   });
 
   it('but NOT when the customer asked for a human — same rule escalateConversation follows', async () => {
@@ -1792,20 +1809,20 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   // profile, and the ack asked on. Once is enough; the next rung (or nothing) comes after.
   it('never repeats a gap question the conversation already asked', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    const { CANNED_STILL_CHECKING_REPLY, ESCALATION_ASK_CUSTOMER_TYPE, ESCALATION_ASK_QUANTITY } =
+    const { CANNED_STILL_CHECKING_REPLY, ESCALATION_ASK_PRODUCT, ESCALATION_ASK_SIZE } =
       await import('../src/domain/constants.js');
     mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated' });
     mockGetContactProfile.mockResolvedValue({ customerType: null, profile: {} });
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, confidence: 'low' });
     mockGetLastNMessages.mockResolvedValue([
-      { role: 'assistant', body: `Kita coba cek dengan tim dulu ya kak 🙏 ${ESCALATION_ASK_CUSTOMER_TYPE}` },
-      { role: 'user', body: 'sendiri' },
+      { role: 'assistant', body: `Kita coba cek dengan tim dulu ya kak 🙏 ${ESCALATION_ASK_PRODUCT}` },
+      { role: 'user', body: 'box nasi' },
     ]);
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-GAP3', 'kok lama ya'));
     await vi.runAllTimersAsync();
 
-    expect(mockSendTextMessage.mock.calls[0][2]).toBe(`${CANNED_STILL_CHECKING_REPLY} ${ESCALATION_ASK_QUANTITY}`);
+    expect(mockSendTextMessage.mock.calls[0][2]).toBe(`${CANNED_STILL_CHECKING_REPLY} ${ESCALATION_ASK_SIZE}`);
   });
 
   // UAT E-05: "engsel yang saya beli bulan lalu sudah berkarat" got "kira-kira kebutuhannya berapa

@@ -18,7 +18,7 @@ const mockNotifyStaff = vi.fn();
 vi.mock('../src/services/staffNotify.js', () => ({ notifyStaff: mockNotifyStaff }));
 
 const { detectComplaint, detectCourierMessage, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, escalateConversation, isNonSalesHandoff, isNonSalesReason, mentionsQuantity, pickProfileGapQuestion } = await import('../src/services/escalationHandler.js');
-const { ASK_BUYER_TYPE_REPLY, CANNED_COMPLAINT_REPLY, CANNED_ESCALATION_REPLY, ESCALATION_ASK_CUSTOMER_TYPE, ESCALATION_ASK_QUANTITY, ESCALATION_ASK_STORE_NAME } = await import('../src/domain/constants.js');
+const { CANNED_COMPLAINT_REPLY, CANNED_ESCALATION_REPLY, ESCALATION_ASK_BUSINESS_NAME, ESCALATION_ASK_DESIGN, ESCALATION_ASK_NAME, ESCALATION_ASK_PRODUCT, ESCALATION_ASK_QUANTITY, ESCALATION_ASK_SIZE } = await import('../src/domain/constants.js');
 
 const CONVERSATION = { id: 'conv-1', contactId: 'contact-1', phoneNumberId: 'pn-1' } as Parameters<typeof escalateConversation>[0];
 
@@ -98,44 +98,60 @@ describe('detectPpnQuestion', () => {
   });
 });
 
+const P = (facts: Record<string, unknown> = {}) => profileWith(null, facts);
+const ALL_GAP_QUESTIONS = [ESCALATION_ASK_PRODUCT, ESCALATION_ASK_SIZE, ESCALATION_ASK_QUANTITY, ESCALATION_ASK_DESIGN, ESCALATION_ASK_BUSINESS_NAME, ESCALATION_ASK_NAME];
+
 describe('pickProfileGapQuestion', () => {
-  it('asks buyer type first when nothing is known', () => {
-    expect(pickProfileGapQuestion(null)).toBe(ESCALATION_ASK_CUSTOMER_TYPE);
-    expect(pickProfileGapQuestion(profileWith(null, { quantity: 12 }))).toBe(ESCALATION_ASK_CUSTOMER_TYPE);
+  it('asks the product first on an empty profile', () => {
+    expect(pickProfileGapQuestion(null, [])).toBe(ESCALATION_ASK_PRODUCT);
+    expect(pickProfileGapQuestion(P(), [])).toBe(ESCALATION_ASK_PRODUCT);
   });
 
-  it('offers all three buyer types, since each is priced differently', () => {
-    expect(ESCALATION_ASK_CUSTOMER_TYPE).toContain('dipakai sendiri');
-    expect(ESCALATION_ASK_CUSTOMER_TYPE).toContain('proyek');
-    expect(ESCALATION_ASK_CUSTOMER_TYPE).toContain('dijual lagi');
+  it('a business type counts as knowing the product', () => {
+    expect(pickProfileGapQuestion(P({ business_type: 'katering' }), [])).toBe(ESCALATION_ASK_SIZE);
   });
 
-  it('asks quantity once buyer type is known', () => {
-    expect(pickProfileGapQuestion(profileWith('end_user'))).toBe(ESCALATION_ASK_QUANTITY);
-    expect(pickProfileGapQuestion(profileWith('project'))).toBe(ESCALATION_ASK_QUANTITY);
+  it('asks size once the product is known', () => {
+    expect(pickProfileGapQuestion(P({ items: [{ product: 'box' }] }), [])).toBe(ESCALATION_ASK_SIZE);
   });
 
-  // The live failure this rung exists for: a reseller's 3-carton order sat escalated for two
-  // days with buyer type and quantity already on file, so the ack asked nothing at all - while
-  // the price gate in Kebijakan Harga was blocked on the one fact nobody was asking for.
-  it('asks a reseller for the store name BEFORE quantity', () => {
-    expect(pickProfileGapQuestion(profileWith('reseller'))).toBe(ESCALATION_ASK_STORE_NAME);
-    expect(pickProfileGapQuestion(profileWith('reseller', { quantity: 1800 }))).toBe(ESCALATION_ASK_STORE_NAME);
+  it('walks size, qty, design, business, name', () => {
+    const item = { product: 'box' };
+    expect(pickProfileGapQuestion(P({ items: [item] }), [])).toBe(ESCALATION_ASK_SIZE);
+    expect(pickProfileGapQuestion(P({ items: [{ ...item, size: '10x10x5' }] }), [])).toBe(ESCALATION_ASK_QUANTITY);
+    expect(pickProfileGapQuestion(P({ items: [{ ...item, size: '10x10x5', qty: 2500, qty_unit: 'pcs' }] }), [])).toBe(ESCALATION_ASK_DESIGN);
+    const withDesign = { ...item, size: '10x10x5', qty: 2500, qty_unit: 'pcs', has_design: false };
+    expect(pickProfileGapQuestion(P({ items: [withDesign] }), [])).toBe(ESCALATION_ASK_BUSINESS_NAME);
+    expect(pickProfileGapQuestion(P({ items: [withDesign], business_name: 'RM Siang' }), [])).toBe(ESCALATION_ASK_NAME);
+    expect(pickProfileGapQuestion(P({ items: [withDesign], business_name: 'RM Siang', name: 'Budi' }), [])).toBeNull();
   });
 
-  it('moves on to quantity once the reseller has named their store', () => {
-    expect(pickProfileGapQuestion(profileWith('reseller', { business_name: 'Tb. Jaya Karya' }))).toBe(ESCALATION_ASK_QUANTITY);
+  it('an item counts for each field it has, even across items', () => {
+    const facts = { items: [{ product: 'box', size: '10x10x5' }, { product: 'cup', qty: 3, qty_unit: 'rim', has_design: true }] };
+    expect(pickProfileGapQuestion(P({ ...facts, business_name: 'X' }), [])).toBe(ESCALATION_ASK_NAME);
   });
 
-  // Only resellers hit the store-name gate - an end user is never asked for a shop.
-  it('never asks an end user or project buyer for a store name', () => {
-    expect(pickProfileGapQuestion(profileWith('end_user'))).not.toBe(ESCALATION_ASK_STORE_NAME);
-    expect(pickProfileGapQuestion(profileWith('project'))).not.toBe(ESCALATION_ASK_STORE_NAME);
+  it('has_design false is an answer, not a gap', () => {
+    const facts = { items: [{ product: 'box', size: '1x1', qty: 1, has_design: false }], business_name: 'X', name: 'Y' };
+    expect(pickProfileGapQuestion(P(facts), [])).toBeNull();
   });
 
-  it('asks nothing when the basics are covered (either quantity field counts)', () => {
-    expect(pickProfileGapQuestion(profileWith('end_user', { quantity: 12 }))).toBeNull();
-    expect(pickProfileGapQuestion(profileWith('reseller', { business_name: 'Tb. Jaya Karya', estimated_volume: '50/bulan' }))).toBeNull();
+  it('a stored item that holds nothing usable counts for nothing', () => {
+    expect(pickProfileGapQuestion(P({ items: [{ product: '  ', size: 5 }, 'junk'] }), [])).toBe(ESCALATION_ASK_PRODUCT);
+  });
+
+  it('never asks a question already sent in recent', () => {
+    expect(pickProfileGapQuestion(null, [bot(`Siap kak ${ESCALATION_ASK_PRODUCT}`)])).toBe(ESCALATION_ASK_SIZE);
+    expect(pickProfileGapQuestion(null, ALL_GAP_QUESTIONS.map((q) => bot(q)))).toBeNull();
+  });
+
+  it('stays quiet after a non-sales handoff', () => {
+    expect(pickProfileGapQuestion(null, [customer('masih ada lowongan driver?')])).toBeNull();
+    expect(pickProfileGapQuestion(null, [customer('box nasi saya berkarat dan rusak')])).toBeNull();
+  });
+
+  it('never asks the buyer type', () => {
+    expect(JSON.stringify(ALL_GAP_QUESTIONS)).not.toMatch(/dijual lagi|dipakai sendiri|proyek/);
   });
 });
 
@@ -146,6 +162,7 @@ describe('escalateConversation', () => {
     mockNotifyStaff.mockClear();
     mockGetContactProfile.mockReset();
     mockGetContactProfile.mockResolvedValue(null);
+    mockGetLastNMessages.mockClear();
   });
 
   // The reply used to be whatever the failing turn wrote. Asked to explain why it could not
@@ -161,7 +178,7 @@ describe('escalateConversation', () => {
 
     expect(mockSendText).toHaveBeenCalledTimes(1);
     const sent = mockSendText.mock.calls[0][2] as unknown as string;
-    expect(sent).toBe(`${CANNED_ESCALATION_REPLY} ${ESCALATION_ASK_CUSTOMER_TYPE}`);
+    expect(sent).toBe(`${CANNED_ESCALATION_REPLY} ${ESCALATION_ASK_PRODUCT}`);
     expect(sent.toLowerCase()).not.toContain('katalog');
     expect(sent.toLowerCase()).not.toContain('kayu');
     // Tone rule: maksimal satu emoji per balasan — templates must not stack a second one.
@@ -170,32 +187,32 @@ describe('escalateConversation', () => {
 
   // UAT Run 2 E-08: "Kita coba cek ... kira-kira kebutuhannya berapa banyak?" right after "10 buah".
   it('does not ask for a quantity the customer typed in the message that escalated', async () => {
-    mockGetContactProfile.mockResolvedValue(profileWith('end_user'));
+    mockGetContactProfile.mockResolvedValue(P({ items: [{ product: 'box', size: '10x10' }] }));
     mockGetLastNMessages.mockResolvedValueOnce([
-      { role: 'user', body: 'halo, saya Budi, dipakai sendiri buat rumah' },
+      { role: 'user', body: 'halo, saya Budi' },
       { role: 'assistant', body: 'Salam kenal, Pak Budi 😊 Lagi cari apa nih?' },
-      { role: 'user', body: 'mau gembok master key 10 buah satu kunci' },
+      { role: 'user', body: 'mau box 10 buah' },
     ]);
-    await escalateConversation(CONVERSATION, 'master key > 2 pcs', '628123');
-    expect(mockSendText.mock.calls[0][2]).toBe(CANNED_ESCALATION_REPLY);
+    await escalateConversation(CONVERSATION, 'reason', '628123');
+    expect(mockSendText.mock.calls[0][2]).toBe(`${CANNED_ESCALATION_REPLY} ${ESCALATION_ASK_DESIGN}`);
   });
 
   it('skips the sales question when the customer explicitly asked for a human', async () => {
     await escalateConversation(CONVERSATION, 'customer asked for a human', '628123', false);
     expect(mockSendText.mock.calls[0][2]).toBe(CANNED_ESCALATION_REPLY);
-    expect(mockGetContactProfile).not.toHaveBeenCalled();
+    expect(mockGetLastNMessages).not.toHaveBeenCalled();
   });
 
   // SOP: escalation hands off, it does not end the conversation - while the team checks,
-  // ask for the one profile fact we still lack, in this order: buyer type, then quantity.
-  it('appends the quantity question when buyer type is already known', async () => {
-    mockGetContactProfile.mockResolvedValue(profileWith('end_user'));
+  // ask for the first order detail we still lack.
+  it('appends the quantity question when product and size are already known', async () => {
+    mockGetContactProfile.mockResolvedValue(P({ items: [{ product: 'box', size: '10x10x5' }] }));
     await escalateConversation(CONVERSATION, 'reason', '628123');
     expect(mockSendText.mock.calls[0][2]).toBe(`${CANNED_ESCALATION_REPLY} ${ESCALATION_ASK_QUANTITY}`);
   });
 
-  it('sends the bare hand-off line when the profile basics are covered', async () => {
-    mockGetContactProfile.mockResolvedValue(profileWith('reseller', { business_name: 'Tb. Jaya Karya', estimated_volume: '50/bulan' }));
+  it('sends the bare hand-off line when all six details are known', async () => {
+    mockGetContactProfile.mockResolvedValue(P({ name: 'Budi', business_name: 'RM Siang', items: [{ product: 'box', size: '1x1', qty: 5, has_design: true }] }));
     await escalateConversation(CONVERSATION, 'reason', '628123');
     expect(mockSendText.mock.calls[0][2]).toBe(CANNED_ESCALATION_REPLY);
   });
@@ -206,16 +223,16 @@ describe('escalateConversation', () => {
     expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({
       conversationId: 'conv-1',
       role: 'assistant',
-      body: `${CANNED_ESCALATION_REPLY} ${ESCALATION_ASK_CUSTOMER_TYPE}`,
+      body: `${CANNED_ESCALATION_REPLY} ${ESCALATION_ASK_PRODUCT}`,
       waMessageId: 'wamid-1',
       status: 'sent',
     }));
   });
 
-  it('a profile lookup failure degrades to the buyer-type question, not a crash', async () => {
+  it('a profile lookup failure degrades to the product question, not a crash', async () => {
     mockGetContactProfile.mockRejectedValue(new Error('db down'));
     await escalateConversation(CONVERSATION, 'reason', '628123');
-    expect(mockSendText.mock.calls[0][2]).toBe(`${CANNED_ESCALATION_REPLY} ${ESCALATION_ASK_CUSTOMER_TYPE}`);
+    expect(mockSendText.mock.calls[0][2]).toBe(`${CANNED_ESCALATION_REPLY} ${ESCALATION_ASK_PRODUCT}`);
   });
 
   it('a caller-supplied phone number skips the DB lookup and is used for the send', async () => {
@@ -252,6 +269,22 @@ describe('escalateConversation staff notification', () => {
     expect(n.path).toBe('/conversations/conv-1');
   });
 
+  it('the staff notification includes the order summary', async () => {
+    mockGetContactProfile.mockResolvedValue(P({ name: 'Budi', business_name: 'RM Siang', items: [{ product: 'Kertas Supreme', gsm: '64', size: '30x30', qty: 5, qty_unit: 'rim', has_design: false }] }));
+    await escalateConversation(CONVERSATION, 'Minta harga khusus', '628123');
+    const n = mockNotifyStaff.mock.calls[0][0] as { body: string };
+    expect(n.body).toContain('Minta harga khusus');
+    expect(n.body).toContain('Nama: Budi');
+    expect(n.body).toContain('Usaha: RM Siang');
+    expect(n.body).toContain('Barang: ');
+  });
+
+  it('the summary is sent even when no gap question is asked', async () => {
+    mockGetContactProfile.mockResolvedValue(P({ name: 'Budi' }));
+    await escalateConversation(CONVERSATION, 'customer asked for a human', '628123', false);
+    expect((mockNotifyStaff.mock.calls[0][0] as { body: string }).body).toContain('Nama: Budi');
+  });
+
   it('notifies even when the customer-facing send fails', async () => {
     // A hand-off the customer never received is MORE urgent for the team, not less - so the
     // ping must not sit behind the send it would be reporting the failure of.
@@ -270,38 +303,19 @@ const bot = (body: string) => ({ role: 'assistant', body });
 const customer = (body: string) => ({ role: 'user', body });
 
 describe('pickProfileGapQuestion — each question at most once (UAT F-06)', () => {
-  it('moves on to the next rung once the buyer type was asked, answered or not', () => {
-    const asked = [bot(`Kita coba cek dengan tim dulu ya kak 🙏 ${ESCALATION_ASK_CUSTOMER_TYPE}`)];
-    expect(pickProfileGapQuestion(null, asked)).toBe(ESCALATION_ASK_QUANTITY);
-    expect(pickProfileGapQuestion(null, [...asked, bot(`Siap kak ${ESCALATION_ASK_QUANTITY}`)])).toBeNull();
+  it('moves on to the next rung once a question was asked, answered or not', () => {
+    const asked = [bot(`Kita coba cek dengan tim dulu ya kak 🙏 ${ESCALATION_ASK_PRODUCT}`)];
+    expect(pickProfileGapQuestion(null, asked)).toBe(ESCALATION_ASK_SIZE);
+    expect(pickProfileGapQuestion(null, [...asked, bot(`Siap kak ${ESCALATION_ASK_SIZE}`)])).toBe(ESCALATION_ASK_QUANTITY);
   });
 
   it('does not count the customer quoting a question as the bot having asked it', () => {
-    expect(pickProfileGapQuestion(null, [customer(ESCALATION_ASK_CUSTOMER_TYPE)])).toBe(ESCALATION_ASK_CUSTOMER_TYPE);
-  });
-
-  // verifyFit's fallback asks the same question in other words; a hand-off right after it must
-  // not ask it a second time.
-  it('treats the buyer-type fallback reply as the question already asked', () => {
-    expect(pickProfileGapQuestion(null, [bot(ASK_BUYER_TYPE_REPLY)])).toBe(ESCALATION_ASK_QUANTITY);
-  });
-
-  // Live 2026-10-06: the model asked it twice in its own words, the customer answered "Untuk proyek
-  // sih kak" and "Proyek", the turn escalated with no type saved - and the hand-off asked a third time.
-  it('treats the model asking the buyer type in its own words as the question already asked', () => {
-    const history = [
-      bot('Iya kak, ada! 😊 Boleh tahu nama kakak? Terus ini untuk dipakai sendiri, untuk proyek, atau dijual lagi ya?'),
-      customer('Saya yan'),
-      customer('Untuk proyek sih kak'),
-      bot('Halo Kak Yan! 😊 Terus ini untuk dipakai sendiri, untuk proyek, atau dijual lagi ya?'),
-      customer('Proyek'),
-    ];
-    expect(pickProfileGapQuestion(null, history)).toBe(ESCALATION_ASK_QUANTITY);
+    expect(pickProfileGapQuestion(null, [customer(ESCALATION_ASK_PRODUCT)])).toBe(ESCALATION_ASK_PRODUCT);
   });
 
   it('counts any spelling of a quantity key the model writes', () => {
-    expect(pickProfileGapQuestion(profileWith('end_user', { estimated_quantity: 10 }))).toBeNull();
-    expect(pickProfileGapQuestion(profileWith('end_user', { jumlah_unit: '3 set' }))).toBeNull();
+    expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '1x1' }], estimated_quantity: 10 }))).toBe(ESCALATION_ASK_DESIGN);
+    expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '1x1' }], jumlah_unit: '3 set' }))).toBe(ESCALATION_ASK_DESIGN);
   });
 });
 
@@ -349,7 +363,7 @@ describe('pickProfileGapQuestion — facts the customer already typed', () => {
       customer('untuk awal biasa campur 10 koli leher panjang dan leher pendek'),
       bot('Kita coba cek dengan tim dulu ya kak 🙏'),
     ];
-    expect(pickProfileGapQuestion(profileWith('reseller', { business_name: 'Toko Rei Jaya' }), recent)).toBeNull();
+    expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '1x1' }] }), recent)).toBe(ESCALATION_ASK_DESIGN);
   });
 
   it.each([
@@ -372,11 +386,11 @@ describe('pickProfileGapQuestion — facts the customer already typed', () => {
       customer('kebutuhan kurang lebih 300 an per ukuran'),
       customer('dikirim aja kak untuk list harga sesuai ukuran handle yang saya butuhkan'),
     ];
-    expect(pickProfileGapQuestion(profileWith('project'), recent)).toBeNull();
+    expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '1x1' }] }), recent)).toBe(ESCALATION_ASK_DESIGN);
   });
 
   it('skips the quantity question when the customer already gave one', () => {
-    expect(pickProfileGapQuestion(profileWith('end_user'), [customer('mau gembok master key 10 buah satu kunci')])).toBeNull();
+    expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '1x1' }] }), [customer('mau box 10 buah')])).toBe(ESCALATION_ASK_DESIGN);
   });
 
   it('counts a store name the customer gave in answer to the question for it (C-05)', () => {
@@ -387,7 +401,8 @@ describe('pickProfileGapQuestion — facts the customer already typed', () => {
       customer('saya mau ambil 3 karton engsel aomori 2,5 inch'),
       customer('bisa diskon 25% ga kalau ambil banyak?'),
     ];
-    expect(pickProfileGapQuestion(profileWith('reseller'), recent)).toBeNull();
+    const full = { items: [{ product: 'box', size: '1x1', qty: 1, has_design: true }] };
+    expect(pickProfileGapQuestion(P(full), recent)).toBe(ESCALATION_ASK_NAME);
   });
 
   it('asks nothing on a later hand-off in a complaint thread (UAT Run 3 E-06)', () => {
@@ -401,7 +416,8 @@ describe('pickProfileGapQuestion — facts the customer already typed', () => {
 
   it('does not take "punya toko bangunan di Surabaya" for a store name', () => {
     const recent = [customer('halo saya Dewi, punya toko bangunan di Surabaya, mau jadi reseller')];
-    expect(pickProfileGapQuestion(profileWith('reseller'), recent)).toBe(ESCALATION_ASK_STORE_NAME);
+    const full = { items: [{ product: 'box', size: '1x1', qty: 1, has_design: true }] };
+    expect(pickProfileGapQuestion(P(full), recent)).toBe(ESCALATION_ASK_BUSINESS_NAME);
   });
 });
 

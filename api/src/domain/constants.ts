@@ -103,8 +103,14 @@ export const CANNED_COMPLAINT_REPLY = 'Waduh, mohon maaf ya kak atas kendalanya 
 // retail, so "dipakai sendiri vs dijual lagi" alone cannot pick the right price.
 // One string for every fixed template that asks it, so pickProfileGapQuestion can tell it was
 // already asked whichever template carried it.
-export const BUYER_TYPE_QUESTION = 'ini rencananya untuk dipakai sendiri, untuk proyek, atau dijual lagi?';
-export const ESCALATION_ASK_CUSTOMER_TYPE = `Sambil menunggu, boleh tahu ya kak, ${BUYER_TYPE_QUESTION}`;
+// The gap questions for the six order details, in the order pickProfileGapQuestion asks them.
+// Fixed text, one per hand-off; "Sambil menunggu" ties each to the wait for staff.
+export const ESCALATION_ASK_PRODUCT = 'Sambil menunggu, boleh tahu kak, kemasannya untuk produk apa? (mis. nasi, kebab, kue, katering)';
+export const ESCALATION_ASK_SIZE = 'Sambil menunggu, boleh info ukurannya kak? (panjang x lebar, atau p x l x t untuk box)';
+export const ESCALATION_ASK_QUANTITY = 'Sambil menunggu, kira-kira mau pesan berapa banyak kak? (minimal 2.500 pcs / 5 rim)';
+export const ESCALATION_ASK_DESIGN = 'Sambil menunggu, apakah sudah ada desain atau logo yang mau dicetak kak?';
+export const ESCALATION_ASK_BUSINESS_NAME = 'Sambil menunggu, boleh tahu nama usahanya kak?';
+export const ESCALATION_ASK_NAME = 'Sambil menunggu, dengan kakak siapa saya bicara?';
 
 // What verifyFit sends instead of a hand-off when every draft still quotes a price to someone
 // whose buyer type is unknown. By Kebijakan Harga the only correct answer to that price question
@@ -112,7 +118,6 @@ export const ESCALATION_ASK_CUSTOMER_TYPE = `Sambil menunggu, boleh tahu ya kak,
 // questions of customers who had not said "sendiri" yet ended in "Kita coba cek dengan tim").
 // No product named - availability is not known here. Name first on the very first reply (Rules).
 export const ASK_NAME_REPLY = 'Halo kak, saya bantu ya 😊 Sebelumnya, dengan siapa saya terhubung?';
-export const ASK_BUYER_TYPE_REPLY = `Siap kak, saya bantu ya 😊 Biar harganya pas, boleh tahu dulu ${BUYER_TYPE_QUESTION}`;
 
 // Sent when a low-confidence turn lands on an ALREADY-escalated conversation. It used to be
 // dropped in total silence ("don't repeat the hand-off line"), which read as the bot ignoring
@@ -139,17 +144,6 @@ export const ESCALATION_FOLLOWUP_ACKS = [
   'Oke kak, sudah saya tambahkan ke catatannya 👍',
   'Baik kak, semuanya sudah saya catat ya.',
 ];
-export const ESCALATION_ASK_QUANTITY =
-  'Sambil menunggu, kira-kira kebutuhannya berapa banyak ya kak?';
-
-// Reseller-only rung, asked BEFORE quantity: the store-identity gate in Kebijakan Harga blocks
-// the pricelist on exactly this fact, so it is the one question that actually unblocks a stuck
-// reseller sale. Live, a 3-carton order sat escalated across two days while the ack asked
-// nothing at all - buyer type and quantity were already on file, and the ladder had no rung for
-// the fact the whole conversation was waiting on.
-export const ESCALATION_ASK_STORE_NAME =
-  'Sambil menunggu, boleh tahu nama tokonya apa ya kak?';
-
 export const SYSTEM_PROMPT_SECTIONS: { name: string; content: string }[] = [
   { name: 'Identity', content: `Kamu adalah Rina, seorang Customer Service untuk PT Legacy Inti Pratama di WhatsApp.` },
   { name: 'Mission', content: `Tugas customer service bukan hanya menjawab pertanyaan, tapi juga memahami kebutuhan pelanggan, mengurangi keraguan mereka, dan membantu memilih produk yang paling sesuai, serta secara proaktif menawarkan opsi yang lebih baik (upselling) dan produk pelengkap yang relevan (cross-selling) untuk memberikan nilai terbaik bagi pelanggan.` },

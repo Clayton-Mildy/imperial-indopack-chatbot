@@ -20,6 +20,7 @@ import { syncContactChat } from './chakraSync.js';
 import type { BaileysInboundPayload } from '../domain/schemas.js';
 import type { AIResponse, PhoneNumber, PromptSections } from '../domain/types.js';
 import { notifyStaff } from './staffNotify.js';
+import { mergeOrderFacts, orderDetailsSummary } from '../domain/orderProfile.js';
 import { claudeTokensExhausted } from './claude.js';
 import { getConfig } from '../config.js';
 
@@ -285,7 +286,7 @@ function replyText(r: AIResponse, f: TeamFollowUp = { total: Boolean(r.totalForT
  * that answered the rest also hands the chat to them - the canned line is a promise, and an escalation
  * is what makes someone keep it (it is also what the nudge reminds them of).
  */
-async function handToTeam(conv: { id: string; status: string }, text: string, f: TeamFollowUp): Promise<void> {
+async function handToTeam(conv: { id: string; status: string; contactId: string }, text: string, f: TeamFollowUp): Promise<void> {
   const reason = [
     f.total ? 'Pelanggan minta total harga - harga per item sudah dikirim, total keseluruhan mohon dihitung tim' : '',
     f.size ? 'Pelanggan menanyakan ukuran/panjang yang tidak ada di data katalog - mohon diinfokan tim' : '',
@@ -293,9 +294,12 @@ async function handToTeam(conv: { id: string; status: string }, text: string, f:
   ].filter(Boolean).join('; ');
   await updateConversationStatus(conv.id, 'escalated', reason)
     .catch((err) => console.warn('[messageRouter] team hand-off status failed:', err instanceof Error ? err.message : err));
+  // Same six order details escalateConversation gives staff.
+  const profile = await getContactProfile(conv.contactId).catch(() => null);
+  const summary = orderDetailsSummary(mergeOrderFacts({}, profile?.profile ?? {}));
   notifyStaff({
     title: conv.status === 'escalated' ? 'Pelanggan menunggu balasan' : 'Eskalasi baru',
-    body: `${reason}: ${text.slice(0, 120)}`,
+    body: `${reason}: ${text.slice(0, 120)}${summary ? `\n${summary}` : ''}`,
     path: `/conversations/${conv.id}`,
   });
 }

@@ -148,26 +148,22 @@ describe('pickProfileGapQuestion — the ack re-asked a question already answere
   // Live: customer answered "3 set aja masing2", and three minutes later the ack asked
   // "kira-kira kebutuhannya berapa banyak ya kak?" again. The check looked for exactly two keys
   // while the model picks the key from profile_update's per-customer-type field list.
-  const reseller = (facts: Record<string, unknown>) =>
-    ({ customerType: 'reseller', profile: { business_name: 'Toko Bimana', ...facts } }) as never;
+  const known = (facts: Record<string, unknown>) =>
+    ({ customerType: null, profile: { items: [{ product: 'box nasi', size: '10x10x5' }], ...facts } }) as never;
+  const ASKS_QTY = 'mau pesan berapa banyak';
 
   it('stops asking once ANY quantity-shaped fact is recorded', () => {
     for (const key of ['quantity', 'estimated_volume', 'estimatedVolume', 'order_qty', 'jumlah']) {
-      expect(pickProfileGapQuestion(reseller({ [key]: '3 set' })), `key: ${key}`).toBeNull();
+      expect(pickProfileGapQuestion(known({ [key]: '3 set' })), `key: ${key}`).not.toContain(ASKS_QTY);
     }
   });
 
   it('still asks when no quantity fact exists at all', () => {
-    expect(pickProfileGapQuestion(reseller({}))).toContain('berapa banyak');
+    expect(pickProfileGapQuestion(known({}))).toContain(ASKS_QTY);
   });
 
   it('ignores an empty-string value rather than treating it as answered', () => {
-    expect(pickProfileGapQuestion(reseller({ quantity: '' }))).toContain('berapa banyak');
-  });
-
-  it('asks the store name first for a reseller who has not given one', () => {
-    const p = { customerType: 'reseller', profile: { quantity: '3 set' } } as never;
-    expect(pickProfileGapQuestion(p)).toContain('nama tokonya');
+    expect(pickProfileGapQuestion(known({ quantity: '' }))).toContain(ASKS_QTY);
   });
 });
 

@@ -3,64 +3,59 @@ import { getContactProfile } from '../repositories/contactProfiles.js';
 import { sendTextMessage } from './whatsappSender.js';
 import {
   CANNED_ESCALATION_REPLY,
-  ESCALATION_ASK_CUSTOMER_TYPE,
+  ESCALATION_ASK_BUSINESS_NAME,
+  ESCALATION_ASK_DESIGN,
+  ESCALATION_ASK_NAME,
+  ESCALATION_ASK_PRODUCT,
   ESCALATION_ASK_QUANTITY,
-  ESCALATION_ASK_STORE_NAME,
+  ESCALATION_ASK_SIZE,
   MAX_CONTEXT_MESSAGES,
 } from '../domain/constants.js';
 import type { ContactProfile, Conversation, PhoneNumber } from '../domain/types.js';
 import { findPhoneNumberById } from '../repositories/phoneNumbers.js';
 import { notifyStaff } from './staffNotify.js';
+import { mergeOrderFacts, orderDetailsSummary, type OrderItem } from '../domain/orderProfile.js';
 
 /**
  * The one customer fact the team will need next, as a fixed question — or null when the
  * profile already has the basics. Templates only, never model prose: this rides on the
  * escalation reply, which is fixed text for a reason (see CANNED_ESCALATION_REPLY).
  */
-// ponytail: ladder starts at buyer type, not name — the model asks the name itself in its first
-// reply. Add a name rung (needs the contact row here) if hand-offs keep reaching staff nameless.
+// The ladder is the six order details staff need, first missing one first: product (or business
+// type), size, quantity, design, business name, name. Read from the merged facts - an item counts for
+// each field it has.
 //
 // `recent`: the conversation's recent rows, oldest first. Each question is asked at most once in
-// that window, whether or not the answer got saved - live (UAT F-06) the buyer type was asked four
-// times after "sendiri" and the quantity five times after "3 box", because the answer never
-// reached the profile. Asking again is nagging; the next rung, or nothing, is better.
-// And a fact the customer already TYPED counts as known even if the model never saved it: Run 2
-// asked the store name four minutes after "Toko Bangunan Maju Jaya", and "berapa banyak?" right
-// after "20 set newton", "3 karton" and "mau gembok master key 10 buah".
+// that window, whether or not the answer got saved - live (UAT F-06) the quantity was asked five
+// times after "3 box", because the answer never reached the profile. Asking again is nagging; the
+// next rung, or nothing, is better. And a quantity or store name the customer already TYPED counts
+// as known even if the model never saved it.
 export function pickProfileGapQuestion(profile: ContactProfile | null, recent: RecentRow[] = []): string | null {
   // A complaint or job hand-off stays free of sales questions for as long as the customer waits on
-  // it - on the acks after it AND on a later hand-off in the same thread: the rusted-hinge customer's
-  // next line, "engsel 3inch newton", has no complaint words of its own and got "berapa banyak?"
-  // (UAT Run 3 E-06). One place, so both hand-off paths ask the same.
+  // it - on the acks after it AND on a later hand-off in the same thread (UAT Run 3 E-06). One place,
+  // so both hand-off paths ask the same.
   if (recent.some((m) => m.role === 'user' && isNonSalesHandoff(m.body))) return null;
   const fresh = (question: string) => !recent.some((m) => m.role === 'assistant' && m.body.includes(question));
-  // Asked in ANY wording counts, not just the templates: the model asks it in its own words
-  // ("Terus ini untuk dipakai sendiri, untuk proyek, atau dijual lagi ya?"), and a verbatim match
-  // on BUYER_TYPE_QUESTION missed that - live 2026-10-06 the hand-off asked it a third time right
-  // after the customer had answered "Untuk proyek sih kak" and then "Proyek".
-  if (!profile?.customerType && !recent.some((m) => m.role === 'assistant' && ASKS_BUYER_TYPE_RE.test(m.body))) {
-    return ESCALATION_ASK_CUSTOMER_TYPE;
-  }
-  const facts = profile?.profile ?? {};
-  // Store name outranks quantity for a reseller: quantity unlocks nothing, while the price gate
-  // in Kebijakan Harga blocks the pricelist on business_name specifically. 'business_name' is the
-  // key the model itself writes (see profile_update's field list in aiLayer.ts).
-  if (profile?.customerType === 'reseller' && hasNoFact(facts, STORE_NAME_KEYS) && !answeredStoreName(recent)
-    && fresh(ESCALATION_ASK_STORE_NAME)) {
-    return ESCALATION_ASK_STORE_NAME;
-  }
-  if (hasNoFact(facts, QUANTITY_KEYS) && !recent.some((m) => m.role === 'user' && mentionsQuantity(m.body))
-    && fresh(ESCALATION_ASK_QUANTITY)) {
-    return ESCALATION_ASK_QUANTITY;
+  const facts = mergeOrderFacts({}, profile?.profile ?? {}) as Record<string, unknown>;
+  const items = (Array.isArray(facts.items) ? facts.items : []) as OrderItem[];
+  const text = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+
+  const ladder: Array<[boolean, string]> = [
+    [items.some((i) => i.product) || text(facts.business_type), ESCALATION_ASK_PRODUCT],
+    [items.some((i) => i.size), ESCALATION_ASK_SIZE],
+    [items.some((i) => i.qty !== undefined) || !hasNoFact(facts, QUANTITY_KEYS)
+      || recent.some((m) => m.role === 'user' && mentionsQuantity(m.body)), ESCALATION_ASK_QUANTITY],
+    [items.some((i) => i.has_design !== undefined), ESCALATION_ASK_DESIGN],
+    [text(facts.business_name) || answeredStoreName(recent), ESCALATION_ASK_BUSINESS_NAME],
+    [text(facts.name), ESCALATION_ASK_NAME],
+  ];
+  for (const [known, question] of ladder) {
+    if (!known && fresh(question)) return question;
   }
   return null;
 }
 
 type RecentRow = { role: string; body: string };
-
-// Both halves of the buyer-type question, so either one alone is enough. BUYER_TYPE_QUESTION (and
-// with it every template that carries it) matches by construction - see the test.
-const ASKS_BUYER_TYPE_RE = /dipakai\s+sendiri|dijual\s+lagi/i;
 
 // ponytail: the two scans below are heuristics, not parsing. A miss costs one question, asked once
 // (the `fresh` rule above); a false hit skips one. Widen the unit list if live chats show misses.
@@ -109,7 +104,6 @@ function answeredStoreName(recent: RecentRow[]): boolean {
 // Matching is a substring of the normalized key, so quantity / estimated_volume / order_qty /
 // estimated_quantity / jumlah_unit all count as "we already know".
 const QUANTITY_KEYS = ['quantity', 'qty', 'jumlah', 'volume'];
-const STORE_NAME_KEYS = ['businessname', 'storename', 'namatoko', 'shopname'];
 
 function hasNoFact(facts: Record<string, unknown>, keys: string[]): boolean {
   for (const [k, v] of Object.entries(facts)) {
@@ -145,10 +139,11 @@ export async function escalateConversation(
   // Status write, phone-number lookup (skipped when the caller already has it) and the
   // profile/history reads are independent — run them together; this all sits before the
   // hand-off message the customer is waiting on.
+  // The profile is read even without a gap question: staff get the order details in their note.
   const [, phoneNumber, profile, recent] = await Promise.all([
     updateConversationStatus(conversation.id, 'escalated', reason),
     knownPhoneNumber ? Promise.resolve(knownPhoneNumber) : findPhoneNumberById(conversation.phoneNumberId),
-    askProfileGap ? getContactProfile(conversation.contactId).catch(() => null) : Promise.resolve(null),
+    getContactProfile(conversation.contactId).catch(() => null),
     askProfileGap ? getLastNMessages(conversation.id, MAX_CONTEXT_MESSAGES).catch(() => []) : Promise.resolve([]),
   ]);
   if (!phoneNumber) return;
@@ -156,9 +151,10 @@ export async function escalateConversation(
   // The hand-off is only half of an escalation; this is the half that reaches a person. Fired
   // here rather than in messageRouter so both the text and image paths get it for free, and
   // before the customer send so a failed send still raises the alarm.
+  const summary = orderDetailsSummary(mergeOrderFacts({}, profile?.profile ?? {}));
   notifyStaff({
     title: 'Eskalasi baru',
-    body: reason,
+    body: summary ? `${reason}\n${summary}` : reason,
     path: `/conversations/${conversation.id}`,
   });
 
