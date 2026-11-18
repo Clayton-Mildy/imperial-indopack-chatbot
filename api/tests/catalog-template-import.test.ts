@@ -90,4 +90,21 @@ describe('importCatalogFromXlsx with the Imperial template', () => {
     const { v } = await variantOf(PROD);
     expect((await listTiersByVariant([v.id])).get(v.id)).toHaveLength(1);
   });
+
+  it('blank Gramasi/Kegunaan leave description and fungsi alone; size matches case-insensitively', async () => {
+    const NAME = `${P}Teks Bebas`;
+    const db = getDb();
+    await importCatalogFromXlsx(await xlsxOf([row(NAME, 5, 'rim', 100000, { gramasi: '80 gsm', kegunaan: 'Untuk apa saja' })]));
+    const { p, v } = await variantOf(NAME);
+    await db.update(products).set({ description: 'Teks bebas tim', fungsi: 'Fungsi tulisan tangan' }).where(eq(products.id, p.id));
+
+    const upper = [BRAND, NAME, SIZE.toUpperCase(), null, null, null, null, 5, 'rim', 90000, 'rim', 'tidak', null];
+    const r = await importCatalogFromXlsx(await xlsxOf([upper]));
+    expect(r).toMatchObject({ variantsCreated: 0, variantsUpdated: 1 });
+    const after = await variantOf(NAME);
+    expect(after.v.id).toBe(v.id);
+    expect(after.p.description).toBe('Teks bebas tim');
+    expect(after.p.fungsi).toBe('Fungsi tulisan tangan');
+    expect(Number(after.v.priceIdr)).toBe(90000);
+  });
 });

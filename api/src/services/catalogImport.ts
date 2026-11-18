@@ -11,7 +11,7 @@
  */
 
 import readXlsxFile from 'read-excel-file/node';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { brands, products, productVariants } from '../db/schema.js';
 import { InvalidXlsxError } from './leadImport.js';
@@ -73,24 +73,30 @@ export async function importCatalogFromXlsx(buffer: Buffer): Promise<CatalogImpo
         result.lookupsCreated++;
       }
 
+      // A blank cell means "no change": only fields the file actually fills are written.
+      const blankless = {
+        ...(v.description !== null ? { description: v.description } : {}),
+        ...(v.fungsi !== null ? { fungsi: v.fungsi } : {}),
+      };
       let productId = productMap.get(v.product.toLowerCase());
       if (productId === undefined) {
         const [row] = await tx
           .insert(products)
-          .values({ name: v.product, brandId, description: v.description, fungsi: v.fungsi })
+          .values({ name: v.product, brandId, ...blankless })
           .returning({ id: products.id });
         productId = row!.id;
         productMap.set(v.product.toLowerCase(), productId);
         touchedProducts.add(productId);
         result.productsCreated++;
-      } else if (!touchedProducts.has(productId)) {
-        // First variant of this product in the file decides its description and fungsi.
+      } else {
         await tx
           .update(products)
-          .set({ brandId, description: v.description, fungsi: v.fungsi, updatedAt: new Date() })
+          .set({ brandId, ...blankless, updatedAt: new Date() })
           .where(eq(products.id, productId));
-        touchedProducts.add(productId);
-        result.productsUpdated++;
+        if (!touchedProducts.has(productId)) {
+          touchedProducts.add(productId);
+          result.productsUpdated++;
+        }
       }
       changed.add(productId);
 
@@ -98,7 +104,7 @@ export async function importCatalogFromXlsx(buffer: Buffer): Promise<CatalogImpo
       const [existing] = await tx
         .select({ id: productVariants.id })
         .from(productVariants)
-        .where(and(eq(productVariants.productId, productId), eq(productVariants.name, v.size)));
+        .where(and(eq(productVariants.productId, productId), sql`lower(${productVariants.name}) = ${v.size.toLowerCase()}`));
       let variantId: string;
       if (existing) {
         variantId = existing.id;

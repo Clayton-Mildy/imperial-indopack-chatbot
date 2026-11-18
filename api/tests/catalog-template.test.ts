@@ -110,4 +110,26 @@ describe('parseTemplateRows', () => {
       },
     ]);
   });
+
+  it('a blank key poisons every variant matching the filled keys, under any brand', () => {
+    const p = parseTemplateRows([
+      HEADER,
+      ROW(BRAND, PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'ya'),
+      ROW('Merek Lain', PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'ya'),
+      ROW(BRAND, PRODUCT, '40 x 40 cm', 5, 'rim', 1, 'rim', 'ya'),
+      ROW('', PRODUCT, SIZE, 10, 'rim', 165000, 'rim', 'ya'),
+    ]);
+    expect(p.errors.map((e) => e.row)).toEqual([5]);
+    expect(p.variants.map((v) => v.size)).toEqual(['40 x 40 cm']);
+  });
+
+  it('reads whole-rupiah separators both ways and rejects decimals', () => {
+    const ok = (v: unknown) => parseTemplateRows([HEADER, ROW(BRAND, PRODUCT, SIZE, 5, 'rim', v, 'rim', 'ya')]);
+    expect(ok('1,500').variants[0]!.tiers[0]!.priceIdr).toBe(1500);
+    expect(ok('1.250.000').variants[0]!.tiers[0]!.priceIdr).toBe(1250000);
+    expect(ok(185000).variants[0]!.tiers[0]!.priceIdr).toBe(185000);
+    for (const bad of ['1,5', '1500.50', 1500.5]) {
+      expect(ok(bad).errors[0]!.message).toMatch(/bilangan bulat rupiah/);
+    }
+  });
 });

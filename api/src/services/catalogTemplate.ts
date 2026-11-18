@@ -40,12 +40,14 @@ function text(v: unknown): string | null {
   return s === '' ? null : s;
 }
 
-/** "1.500" and 1500 are both fifteen hundred; anything unreadable is NaN (a row error, never a guess). */
+/** "1.500", "1,500" and 1500 are all fifteen hundred (a separator followed by exactly 3 digits is a
+ *  thousands separator, repeatable); anything with a real decimal part comes back non-integer so the
+ *  caller can reject it, and anything unreadable is NaN. Never a guess at a price. */
 function number(v: unknown): number {
   if (typeof v === 'number') return v;
   let s = (text(v) ?? '').replace(/^Rp\s*/i, '').replace(/\s/g, '');
   if (s === '') return NaN;
-  if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  if (/^\d{1,3}([.,]\d{3})+$/.test(s)) s = s.replace(/[.,]/g, '');
   else s = s.replace(',', '.');
   return Number(s);
 }
@@ -77,6 +79,7 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
   const groups = new Map<string, TemplateVariant>();
   const seenTiers = new Set<string>();
   const failed = new Set<string>();
+  const blankKeyRows: { brand: string | null; product: string | null; size: string | null }[] = [];
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i] ?? [];
@@ -87,9 +90,12 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
     const brand = text(cell('Merek'));
     const product = text(cell('Produk'));
     const size = text(cell('Ukuran'));
-    if (!brand) { err(row, 'Merek kosong.'); continue; }
-    if (!product) { err(row, 'Produk kosong.'); continue; }
-    if (!size) { err(row, 'Ukuran kosong.'); continue; }
+    if (!brand || !product || !size) {
+      err(row, `${!brand ? 'Merek' : !product ? 'Produk' : 'Ukuran'} kosong.`);
+      // Whose tier was this? Every variant matching the keys that ARE filled is suspect.
+      if (brand || product || size) blankKeyRows.push({ brand, product, size });
+      continue;
+    }
 
     const key = [brand, product, size].map((s) => s.toLowerCase()).join('\u0000');
     // A bad row poisons its whole variant: importing the rest would replace its tiers with a
@@ -101,7 +107,7 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
     const qtyUnit = unit(cell('Satuan Qty'));
     if (!qtyUnit) { bad(`Satuan Qty harus rim atau pcs: "${text(cell('Satuan Qty')) ?? ''}".`); continue; }
     const priceIdr = number(cell('Harga'));
-    if (!Number.isFinite(priceIdr) || priceIdr <= 0) { bad(`Harga harus lebih dari 0: "${text(cell('Harga')) ?? ''}".`); continue; }
+    if (!Number.isInteger(priceIdr) || priceIdr <= 0) { bad(`Harga harus bilangan bulat rupiah lebih dari 0: "${text(cell('Harga')) ?? ''}".`); continue; }
     const priceUnit = unit(cell('Satuan Harga'));
     if (!priceUnit) { bad(`Satuan Harga harus rim atau pcs: "${text(cell('Satuan Harga')) ?? ''}".`); continue; }
     const deliveryRaw = text(cell('Termasuk Ongkir'))?.toLowerCase() ?? 'tidak';
@@ -123,7 +129,14 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
     const note = text(cell('Catatan'));
     variant.tiers.push({ minQty, qtyUnit, priceIdr, priceUnit, includesDelivery: deliveryRaw === 'ya', ...(note ? { note } : {}) });
   }
-  out.variants = [...groups].filter(([k]) => !failed.has(k)).map(([, v]) => v);
+  const poisoned = (v: TemplateVariant) =>
+    blankKeyRows.some(
+      (b) =>
+        (!b.brand || b.brand.toLowerCase() === v.brand.toLowerCase()) &&
+        (!b.product || b.product.toLowerCase() === v.product.toLowerCase()) &&
+        (!b.size || b.size.toLowerCase() === v.size.toLowerCase())
+    );
+  out.variants = [...groups].filter(([k, v]) => !failed.has(k) && !poisoned(v)).map(([, v]) => v);
   return out;
 }
 
