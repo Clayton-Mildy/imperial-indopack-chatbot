@@ -244,7 +244,18 @@ describe('the helpers', () => {
 
   it('knows a price question', async () => {
     const { isPriceRequest } = await load();
-    for (const t of ['berapa harganya?', 'minta pricelist', 'ada price list?', 'Harga box?', 'BERAPA kak']) expect(isPriceRequest(t)).toBe(true);
+    for (const t of ['berapa harganya?', 'minta pricelist', 'ada price list?', 'Harga box?', 'BERAPA HARGA kak']) expect(isPriceRequest(t)).toBe(true);
     for (const t of ['halo kak', 'ada kertas nasi?', 'saya mau order']) expect(isPriceRequest(t)).toBe(false);
+  });
+
+  // Final review M5: any "berapa" fired, so "berapa lama?" got an unrequested price list.
+  it('reads "berapa" as a price question only with a price word, or as "berapaan"', async () => {
+    const { isPriceRequest } = await load();
+    for (const t of ['berapa harga kertas supreme?', 'biayanya berapa kak', 'ongkosnya berapa', 'tarif cetak berapa?', 'price nya berapa', 'berapaan kak?', 'box 20x20 berapa-an?']) {
+      expect(isPriceRequest(t), t).toBe(true);
+    }
+    for (const t of ['berapa lama kak?', 'produksinya berapa hari?', 'minimal berapa?', 'BERAPA kak', 'isinya berapa lembar?']) {
+      expect(isPriceRequest(t), t).toBe(false);
+    }
   });
 });

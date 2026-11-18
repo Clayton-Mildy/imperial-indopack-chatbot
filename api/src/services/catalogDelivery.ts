@@ -50,7 +50,10 @@ export function asksForPriceList(text: string): boolean {
   return PRICE_LIST_RE.test(text);
 }
 
-const PRICE_REQUEST_RE = /harga|price ?list|pricelist|berapa/i;
+// A price word, or "berapaan" ("how much is it"). Not a bare "berapa": "berapa lama?", "berapa hari?",
+// "minimal berapa?" and "isinya berapa lembar?" are not price questions, and drew an unrequested price
+// list (final review M5). "berapa harga ...?" has its price word.
+const PRICE_REQUEST_RE = /harga|price|biaya|ongkos|tarif|\bberapa\s*-?\s*an\b/i;
 
 /** A price or price-list question: what earns the price list. */
 export function isPriceRequest(text: string): boolean {
