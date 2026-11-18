@@ -654,10 +654,16 @@ async function firePhotoBatch(conversationId: string): Promise<void> {
  * certainty. A "mirip" used to become "apakah yang dimaksud X?", and no verdict at all (nothing to compare,
  * a timeout, a failed call) or "none" left the model to judge the photo from the catalog by itself -
  * which is how a customer's photo got an unrelated product offered.
+ *
+ * Except while the catalog has no product photos at all (NO_CATALOG_PHOTOS, the go-live state): then no
+ * photo could ever be confirmed, every one went to the team, and the logo path of spec 7.7 never ran -
+ * "ini logonya, mau cetak kertas nasi 30x30 10 rim" got the photo-check hand-off and "kemasannya untuk
+ * produk apa?" (final review C1). The model reads those photos itself, under IMAGE_MESSAGE_INSTRUCTION.
  */
 function photoUnsureReason(matches: (PhotoMatch | null)[]): string | null {
   const why = matches.map((m, i) => {
     const tag = matches.length > 1 ? `foto ${i + 1}: ` : '';
+    if (m?.noCatalogPhotos) return null;
     if (m?.certainty === 'same' && m.product) return null;
     if (m?.certainty === 'similar' && m.product) return `${tag}mirip ${m.product.name}, belum pasti`;
     if (m) return `${tag}tidak sama dengan foto produk yang dibandingkan`;

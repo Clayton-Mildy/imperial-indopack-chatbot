@@ -48,7 +48,19 @@ export interface PhotoMatch {
   reason: string;
   /** The words the shortlist was searched with - logged, so a product missing from `compared` can be traced. */
   searched?: string[];
+  /** Nothing was compared: no product in the catalog has a photo yet (see NO_CATALOG_PHOTOS). */
+  noCatalogPhotos?: true;
 }
+
+/**
+ * matchCustomerPhoto's answer while no product in the catalog has a photo - the go-live state. Not a
+ * verdict and not a failure: nothing could be compared, so the reply model reads the photo itself
+ * (spec 7.7: a logo is noted as the design and thanked for; a box or wrapper gets the closest catalog
+ * product). A failed or timed-out comparison is still null, and still goes to the team.
+ */
+export const NO_CATALOG_PHOTOS: PhotoMatch = Object.freeze({
+  certainty: 'none', product: null, compared: [], reason: 'katalog belum punya foto produk - tidak ada yang dibandingkan', noCatalogPhotos: true,
+}) as PhotoMatch;
 
 /** The photo a product is compared by: its own, else its first variant's that has one. */
 export function referenceImageUrl(p: Product): string | null {
@@ -271,7 +283,10 @@ export function sharesItemWord(p: Product, itemType: string): boolean {
   return words.some((w) => text.includes(w));
 }
 
-/** null = nothing to compare against (no candidate has a photo), or the comparison failed. */
+/**
+ * NO_CATALOG_PHOTOS while no product has a photo; null when none of the likely products has one, or
+ * the comparison failed or timed out.
+ */
 export async function matchCustomerPhoto(
   customer: { base64: string; mimeType: string },
   keywords: string[] | Promise<string[]>,
@@ -279,7 +294,7 @@ export async function matchCustomerPhoto(
   seen: PhotoSeen | null | Promise<PhotoSeen | null> = null
 ): Promise<PhotoMatch | null> {
   const run = async (): Promise<PhotoMatch | null> => {
-    if (!(await catalogHasPhotos())) return null;
+    if (!(await catalogHasPhotos())) return NO_CATALOG_PHOTOS;
     const kw = await keywords;
     const candidates = await pickCandidates(kw, caption);
     const refs = (await Promise.all(candidates.map(async (product) => {
@@ -334,7 +349,7 @@ export async function matchCustomerPhoto(
 const LATEST_PHOTO = ' Hasil ini untuk foto yang terlampir di pesan TERAKHIR pelanggan; foto lain di riwayat chat punya hasilnya sendiri - jangan dicampur.';
 
 export function photoMatchNote(m: PhotoMatch | null, scope = LATEST_PHOTO): string | null {
-  if (!m) return null;
+  if (!m || m.noCatalogPhotos) return null;
   const compared = m.compared.join(', ');
   if (m.certainty === 'same' && m.product) {
     return `PERBANDINGAN FOTO: foto pelanggan SAMA dengan foto produk kami ${m.product.name}. Konfirmasikan dengan percaya diri bahwa itu produk kami, lalu lanjutkan seperti biasa.${scope}`;
@@ -373,6 +388,8 @@ export function photoBatchNote(photos: { match: PhotoMatch | null }[]): string |
 export function photoHistoryNote(m: PhotoMatch | null, keywords: string[]): string {
   if (m?.product && m.certainty === 'same') return `produk kami ${m.product.name} (foto sama)`;
   const seen = keywords.slice(0, 6).join(', ');
+  // Nothing was compared and the reply model answered the photo itself: what it showed is all there is.
+  if (m?.noCatalogPhotos) return seen ? `isi foto: ${seen}` : '';
   // A "mirip" is a question to ask, never an answer either way. Unnamed it read as "not carried" and the
   // bot told customers "belum ada di kami" for a product the comparison had found (review 2026-10-13);
   // stated plainly, "mirip produk kami X" on a photo of another item type was SOLD as X. The type rule in

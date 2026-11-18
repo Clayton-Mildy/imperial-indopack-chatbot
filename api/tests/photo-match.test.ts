@@ -101,10 +101,14 @@ describe('comparing', () => {
     expect(m!.searched).toEqual(['lunch', 'kraft']);
   });
 
-  it('skips the whole step while no product has a photo - no search, no model call', async () => {
-    const { matchCustomerPhoto } = await load();
+  // Final review C1: said apart from a failed comparison, so the reply model answers the photo itself
+  // (spec 7.7: a logo is noted as the design) instead of every photo going to the team at go-live.
+  it('skips the whole step while no product has a photo - no search, no model call - and says so', async () => {
+    const { matchCustomerPhoto, NO_CATALOG_PHOTOS } = await load();
     hasPhotos = false;
-    expect(await matchCustomerPhoto(customer, new Promise(() => { }), 'ada ini?')).toBeNull();
+    const m = await matchCustomerPhoto(customer, new Promise(() => { }), 'ada ini?');
+    expect(m).toBe(NO_CATALOG_PHOTOS);
+    expect(m).toMatchObject({ noCatalogPhotos: true, product: null, compared: [] });
     expect(mockSearch).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
   });
@@ -350,3 +354,19 @@ describe('what a later turn knows about the photo', () => {
   });
 });
 
+
+// Final review C1: no catalog photos means nothing was compared - the photo turn is the model's, so no
+// verdict note goes to it and a later turn is not told the team is checking the photo.
+describe('a catalog with no product photos yet', () => {
+  it('gives the reply model no verdict note', async () => {
+    const { photoMatchNote, photoBatchNote, NO_CATALOG_PHOTOS } = await load();
+    expect(photoMatchNote(NO_CATALOG_PHOTOS)).toBeNull();
+    expect(photoBatchNote([{ match: NO_CATALOG_PHOTOS }, { match: NO_CATALOG_PHOTOS }])).toBeNull();
+  });
+
+  it('keeps only what the photo showed for later turns', async () => {
+    const { photoHistoryNote, NO_CATALOG_PHOTOS } = await load();
+    expect(photoHistoryNote(NO_CATALOG_PHOTOS, ['logo', 'kertas nasi'])).toBe('isi foto: logo, kertas nasi');
+    expect(photoHistoryNote(NO_CATALOG_PHOTOS, [])).toBe('');
+  });
+});

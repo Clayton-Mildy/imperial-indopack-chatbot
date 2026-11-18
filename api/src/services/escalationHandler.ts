@@ -49,7 +49,8 @@ export function pickProfileGapQuestion(profile: ContactProfile | null, recent: R
     [items.some((i) => i.size), ESCALATION_ASK_SIZE],
     [items.some((i) => i.qty !== undefined) || !hasNoFact(facts, QUANTITY_KEYS)
       || recent.some((m) => m.role === 'user' && mentionsQuantity(m.body)), ESCALATION_ASK_QUANTITY],
-    [items.some((i) => i.has_design !== undefined), ESCALATION_ASK_DESIGN],
+    [items.some((i) => i.has_design !== undefined) || typeof facts.has_design === 'boolean'
+      || recent.some((m) => m.role === 'user' && mentionsDesign(m.body)), ESCALATION_ASK_DESIGN],
     [text(facts.business_name) || answeredStoreName(recent), ESCALATION_ASK_BUSINESS_NAME],
     [text(facts.name), ESCALATION_ASK_NAME],
   ];
@@ -89,6 +90,21 @@ const QUANTITY_CONTEXT_RE = new RegExp(
 
 export function mentionsQuantity(text: string): boolean {
   return QUANTITY_RE.test(text) || QUANTITY_CONTEXT_RE.test(text);
+}
+
+// The customer saying whether there is a design, either way: "logo saya sudah ada kak", "ini logonya"
+// (a photo caption), "belum punya desain", "pakai logo saya". Same job as mentionsQuantity - the design
+// question is not asked right after the customer answered it, saved or not. Not a question about
+// design work ("bisa dibantu desainnya?", "logonya dicetak berapa warna?"): no have-word next to it.
+const DESIGN_WORD = String.raw`(?:logo|desain|design|artwork)(?:nya)?`;
+const DESIGN_ANSWER_RE = new RegExp([
+  String.raw`\b${DESIGN_WORD}(?:\s+(?:saya|aku|kami|sendiri|kak|ka))*\s+(?:sudah|udah|sdh|udh|ada|punya|siap|belum|blm|tidak|gak|ga|nggak|ngga)\b`,
+  String.raw`\b(?:sudah|udah|sdh|udh|belum|blm|punya|pakai|pake|tidak|gak|nggak|ngga)\s+(?:ada\s+|punya\s+)?${DESIGN_WORD}\b`,
+  String.raw`\bini\s+${DESIGN_WORD}\b`,
+].join('|'), 'i');
+
+export function mentionsDesign(text: string): boolean {
+  return DESIGN_ANSWER_RE.test(text);
 }
 
 // The model asks for the business in its own words ("Nama toko atau usahanya apa kak?"), so a pattern

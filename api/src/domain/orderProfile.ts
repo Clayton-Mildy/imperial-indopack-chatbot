@@ -91,7 +91,8 @@ function mergeItem(existing: OrderItem, patch: OrderItem): OrderItem {
  * Merge one turn's profile_update into the stored facts. Plain keys overwrite; `brands` is a union
  * of known slugs; `items` is matched by itemKey: a known item takes only the fields sent, a new
  * one is appended. Neither array is ever replaced wholesale, so a chat that moves from paper to
- * boxes keeps both.
+ * boxes keeps both. An item with neither product nor size is dropped, except its has_design, which
+ * becomes the order-level `has_design`.
  */
 export function mergeOrderFacts(existing: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...existing };
@@ -111,8 +112,13 @@ export function mergeOrderFacts(existing: Record<string, unknown>, patch: Record
 
   if ('items' in patch) {
     const items = (Array.isArray(existing.items) ? existing.items : []).filter(isRecord).map(sanitizeItem);
-    const sent = (Array.isArray(patch.items) ? patch.items : [])
-      .filter(isRecord).map(sanitizeItem).filter((i) => itemKey(i) !== '|');
+    const sentAll = (Array.isArray(patch.items) ? patch.items : []).filter(isRecord).map(sanitizeItem);
+    // "Logo saya sudah ada kak" before any product or size is known: a design fact with no item to
+    // hang on. It is the order's (top-level has_design) rather than dropped with the keyless item -
+    // dropped, the hand-off asked "apakah sudah ada desain atau logo...?" right after it.
+    const designOnly = sentAll.find((i) => itemKey(i) === '|' && i.has_design !== undefined);
+    if (designOnly) out.has_design = designOnly.has_design;
+    const sent = sentAll.filter((i) => itemKey(i) !== '|');
     const merged = items;
     for (const item of sent) {
       const idx = merged.findIndex((m) => itemKey(m) === itemKey(item));
@@ -151,5 +157,7 @@ export function orderDetailsSummary(facts: Record<string, unknown>): string {
     const line = itemLine(i);
     if (line) lines.push(`Barang: ${line}`);
   }
+  // The order-level design fact (see mergeOrderFacts): said before any item was known.
+  if (typeof facts.has_design === 'boolean') lines.push(`Desain: ${facts.has_design ? 'ada' : 'belum ada'}`);
   return lines.join('\n');
 }

@@ -60,6 +60,25 @@ describe('mergeOrderFacts item validation', () => {
       .toEqual([{ product: '5', qty: 2 }]));
 });
 
+// Final review C1: "logo saya sudah ada kak" is a design fact with no product or size yet. Dropped, the
+// hand-off asked "apakah sudah ada desain atau logo...?" right after it.
+describe('a design-only fact', () => {
+  it('keeps a design-only item as the order-level has_design instead of dropping it', () =>
+    expect(mergeOrderFacts({}, { items: [{ has_design: true }] })).toEqual({ items: [], has_design: true }));
+  it('keeps the other items, and a later answer overwrites it', () => {
+    const once = mergeOrderFacts({ items: [BOX_20] }, { items: [{ has_design: false }, SUPREME_30] });
+    expect(once.items).toHaveLength(2);
+    expect(once.has_design).toBe(false);
+    expect(mergeOrderFacts(once, { has_design: true }).has_design).toBe(true);
+  });
+  it('ignores a design-only item whose has_design is not a boolean', () =>
+    expect(mergeOrderFacts({}, { items: [{ has_design: 'ya' }] })).toEqual({ items: [] }));
+  it('shows the order-level design to staff', () => {
+    expect(orderDetailsSummary({ has_design: true, items: [BOX_20] })).toContain('Desain: ada');
+    expect(orderDetailsSummary({ has_design: false })).toBe('Desain: belum ada');
+  });
+});
+
 describe('orderDetailsSummary', () => {
   it('summarises the details for staff', () =>
     expect(orderDetailsSummary({ name: 'Budi', business_name: 'RM Siang', items: [SUPREME_30] })).toBe(

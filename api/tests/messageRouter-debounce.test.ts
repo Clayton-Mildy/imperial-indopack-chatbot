@@ -2404,7 +2404,33 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(call[5]).toBe(CANNED_PHOTO_CHECK_REPLY);
   });
 
-  it('hands a photo with nothing to compare against, or no match, to the team too', async () => {
+  // Final review C1: at go-live no product has a photo, so every photo went to the team and the logo
+  // path (spec 7.7) never ran - "ini logonya, mau cetak kertas nasi 30x30 10 rim" got the photo-check
+  // hand-off plus "kemasannya untuk produk apa?". With nothing to compare, the model reads the photo.
+  it('answers the photo itself while the catalog has no product photos, and keeps the design fact', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { NO_CATALOG_PHOTOS } = await vi.importActual<typeof import('../src/services/photoMatch.js')>('../src/services/photoMatch.js');
+    mockMatchCustomerPhoto.mockResolvedValueOnce(NO_CATALOG_PHOTOS);
+    const answer = {
+      ...BASE_AI_RESPONSE,
+      message: 'Terima kasih logonya kak, nanti saya teruskan ke tim bersama pesanannya 😊',
+      profileUpdate: { items: [{ product: 'kertas nasi', size: '30x30', qty: 10, qty_unit: 'rim', has_design: true }] },
+    };
+    mockBuildContextAndCallAI.mockResolvedValue(answer);
+
+    await routeInboundBaileysMessage(makeImagePayload('wamid-NOPH1', 'ini logonya, mau cetak kertas nasi 30x30 10 rim'));
+    await vi.runAllTimersAsync();
+
+    expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(1);
+    expect(mockBuildContextAndCallAI.mock.calls[0]![6]).toEqual({ photoNote: null }); // nothing was compared
+    expect(mockEscalateConversation).not.toHaveBeenCalled();
+    expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual([answer.message]);
+    expect(mockSaveConversationInsights).toHaveBeenCalledWith('conv-uuid-1', 'contact-uuid-1', expect.objectContaining({
+      profileUpdate: { items: [expect.objectContaining({ has_design: true })] },
+    }));
+  });
+
+  it('hands a photo whose comparison failed or timed out (no verdict), or did not match, to the team', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockMatchCustomerPhoto
       .mockResolvedValueOnce(null)

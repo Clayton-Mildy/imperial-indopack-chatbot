@@ -17,7 +17,8 @@ vi.mock('../src/repositories/contactProfiles.js', () => ({ getContactProfile: mo
 const mockNotifyStaff = vi.fn();
 vi.mock('../src/services/staffNotify.js', () => ({ notifyStaff: mockNotifyStaff }));
 
-const { detectComplaint, detectCourierMessage, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, escalateConversation, isNonSalesHandoff, isNonSalesReason, mentionsQuantity, pickProfileGapQuestion } = await import('../src/services/escalationHandler.js');
+const { detectComplaint, detectCourierMessage, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, escalateConversation, isNonSalesHandoff, isNonSalesReason, mentionsDesign, mentionsQuantity, pickProfileGapQuestion } = await import('../src/services/escalationHandler.js');
+const { mergeOrderFacts } = await import('../src/domain/orderProfile.js');
 const { CANNED_COMPLAINT_REPLY, CANNED_ESCALATION_REPLY, ESCALATION_ASK_BUSINESS_NAME, ESCALATION_ASK_DESIGN, ESCALATION_ASK_NAME, ESCALATION_ASK_PRODUCT, ESCALATION_ASK_QUANTITY, ESCALATION_ASK_SIZE } = await import('../src/domain/constants.js');
 
 const CONVERSATION = { id: 'conv-1', contactId: 'contact-1', phoneNumberId: 'pn-1' } as Parameters<typeof escalateConversation>[0];
@@ -655,4 +656,48 @@ describe('escalateConversation — complaint wording', () => {
     expect(mockSendText.mock.calls[0][2]).toBe(CANNED_COMPLAINT_REPLY);
     expect((CANNED_COMPLAINT_REPLY.match(/\p{Extended_Pictographic}/gu) ?? []).length).toBe(1);
   });
+});
+
+// Final review C1: a design the customer already mentioned is not asked about again - from the
+// order-level fact, a design-only item, or the customer's own words.
+describe('the design rung', () => {
+  const ITEM = { product: 'kertas nasi', size: '30x30', qty: 10, qty_unit: 'rim' };
+
+  it('reads an order-level has_design', () => {
+    expect(pickProfileGapQuestion(P({ items: [ITEM], has_design: true }), [])).toBe(ESCALATION_ASK_BUSINESS_NAME);
+    expect(pickProfileGapQuestion(P({ items: [ITEM], has_design: false }), [])).toBe(ESCALATION_ASK_BUSINESS_NAME);
+  });
+
+  it('reads a design-only item the model sent on its own', () => {
+    const facts = mergeOrderFacts(mergeOrderFacts({}, { items: [{ has_design: true }] }), { items: [ITEM] });
+    expect(pickProfileGapQuestion(P(facts), [])).toBe(ESCALATION_ASK_BUSINESS_NAME);
+  });
+
+  it('does not ask after "logo saya sudah ada kak"', () =>
+    expect(pickProfileGapQuestion(P({ items: [ITEM] }), [customer('logo saya sudah ada kak')])).toBe(ESCALATION_ASK_BUSINESS_NAME));
+
+  it('does not ask after the photo caption "ini logonya, mau cetak kertas nasi 30x30 10 rim"', () =>
+    expect(pickProfileGapQuestion(P({ items: [ITEM] }), [customer('ini logonya, mau cetak kertas nasi 30x30 10 rim')])).toBe(ESCALATION_ASK_BUSINESS_NAME));
+
+  it('still asks when nothing says so', () =>
+    expect(pickProfileGapQuestion(P({ items: [ITEM] }), [customer('mau cetak kertas nasi 30x30 10 rim')])).toBe(ESCALATION_ASK_DESIGN));
+
+  it.each([
+    'logo saya sudah ada kak',
+    'ini logonya',
+    'desainnya sudah ada',
+    'sudah punya desain sendiri',
+    'udah ada logo kak',
+    'belum ada logo kak',
+    'belum punya desain',
+    'logonya belum ada',
+    'pakai logo saya ya',
+  ])('reads a design answer in: %s', (m) => expect(mentionsDesign(m)).toBe(true));
+
+  it.each([
+    'mau cetak kertas nasi 30x30 10 rim',
+    'bisa dibantu desainnya?',
+    'box nasi 20x20 berapa?',
+    'logonya dicetak berapa warna?',
+  ])('does not read a design answer in: %s', (m) => expect(mentionsDesign(m)).toBe(false));
 });
