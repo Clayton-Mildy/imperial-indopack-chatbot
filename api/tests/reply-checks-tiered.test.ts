@@ -125,6 +125,59 @@ describe('verifyReplyTieredPrices - which figures fail, and what the model is to
 
 // The catalog's own wording is not a sum: "1 rim = 500 pcs" is in the block header, and "jumlah"
 // is also the word for a quantity. Without the tool, only a total word or a real "=" makes a total.
+// Final review I2: a price not written "Rp N" skipped the check entirely - "185rb per rim, total 1,5jt"
+// and "IDR 120.000/rim" went out with no tool call, and after a quote "175.000/rim, total 1.400.000"
+// (the wrong tier and total) passed. Any such figure now fails: the reply writes the full "Rp N".
+describe('verifyReplyTieredPrices - prices not written "Rp N"', () => {
+  const SUPREME_BLOCK = formatProducts([SUPREME]); // 185.000 / 165.000 / 160.000 per rim
+  const QUOTE_8 = [185000, 1480000, 165000]; // hitung_harga, 8 rim of Kertas Supreme
+
+  it.each([
+    ['harganya sekitar 185rb per rim, total 1,5jt', undefined],
+    ['harga IDR 120.000/rim', undefined],
+    ['8 rim harganya 175.000/rim, total 1.400.000', QUOTE_8],
+    ['cuma 185k per rim kak', undefined],
+    ['185 ribu per rim kak', undefined],
+    ['totalnya 1.48 juta', QUOTE_8],
+    ['harga 185.000 per rim', undefined],
+    ['Rp 185.000/rim, kalau 10 rim 165.000 per rim', undefined],
+    ['harganya 2.000/pcs', undefined],
+    ['harganya 1.800 per lembar', undefined],
+  ])('fails "%s"', (msg, tool) => {
+    const v = verifyReplyTieredPrices(msg, SUPREME_BLOCK, tool);
+    expect(v.ok).toBe(false);
+    expect(v.onlyInvented).toBeFalsy(); // nothing withoutInventedTotals could cut
+  });
+
+  it('fails even when the value is the tool\'s own figure - the customer reads "Rp 185.000"', () =>
+    expect(verifyReplyTieredPrices('8 rim harganya 185rb/rim', SUPREME_BLOCK, QUOTE_8).ok).toBe(false));
+
+  it('names the figure and tells the model to write the full "Rp N" from the tool', () => {
+    const v = verifyReplyTieredPrices('harganya sekitar 185rb per rim, total 1,5jt', SUPREME_BLOCK, undefined);
+    expect(v.reason).toContain('"185rb"');
+    expect(v.reason).toContain('"1,5jt"');
+    expect(v.reason).toMatch(/"Rp 185\.000"/);
+    expect(v.reason).toContain('hitung_harga');
+  });
+
+  it.each([
+    '8 rim: Rp 185.000/rim, total Rp 1.480.000 kak',
+    'mau pesan 2.500 pcs kak',
+    'minimal 5 rim ya kak',
+    'isi 500 lembar per rim',
+    '1 rim = 500 pcs',
+    'ukuran 30x30 dan 25 x 25 cm',
+    'kertas 64 gsm, 10 rim',
+    'hubungi 0812-0000-0001 atau 6281200000001',
+    'dikirim tanggal 18-11-2026, atau 18.11.2026',
+    'butuh 10 ribu pcs kak',
+    'sekitar 5k lembar',
+    'beratnya 5kg',
+    'pesanan 3 jt pcs?',
+  ])('passes "%s"', (msg) =>
+    expect(verifyReplyTieredPrices(msg, SUPREME_BLOCK, msg.includes('Rp') ? QUOTE_8 : undefined).ok).toBe(true));
+});
+
 describe('verifyReplyTieredPrices - what a total line is without the tool', () => {
   it('passes a tier listing with "(1 rim = 500 pcs)" on the price line', () => {
     expect(verifyReplyTieredPrices('Box Ivory mulai 5 rim (1 rim = 500 pcs): Rp 2.000/pcs kak', BLOCK, undefined).ok).toBe(true);

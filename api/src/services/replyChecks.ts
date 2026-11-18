@@ -234,6 +234,20 @@ const noToolTotalLine = (line: string): boolean => {
   return TOTAL_WORDS_RE.test(rest) || rest.includes('=');
 };
 
+// A price written some other way than "Rp N" (final review I2): "IDR 120.000", "185rb", "185k",
+// "185 ribu", "1,5jt", "2 juta", or a thousands-separated number per unit ("175.000/rim", "2.000 per
+// pcs"). Unchecked, "185rb per rim, total 1,5jt" went out with no tool call and "175.000/rim, total
+// 1.400.000" after a quote for another tier. Never a quantity: "10 ribu pcs", "5k lembar" and "3 jt pcs"
+// are counts, and a plain "2.500 pcs", "5 rim", a size, gsm, a phone number or a date has no price
+// suffix or per-unit. Not part of a figure already written "Rp N" (rpFigures checks that one).
+const QTY_UNIT_AFTER = String.raw`(?!\s*(?:pcs|pc|lembar|lbr|rim|box|dus|biji|buah|unit|pack|karton|ctn|kg|gr|gram)\b)`;
+const UNWRITTEN_PRICE_RE = new RegExp([
+  String.raw`\bIDR\.?\s*\d[\d.,]*\d|\bIDR\.?\s*\d`,
+  String.raw`(?<!Rp\.?\s*)(?<![\d.,])\b\d+(?:[.,]\d+)?\s*(?:rb|ribu|k|jt|juta)\b${QTY_UNIT_AFTER}`,
+  String.raw`(?<!Rp\.?\s*)(?<![\d.,])\b\d{1,3}(?:[.,]\d{3})+\s*(?:\/\s*|per\s+)(?:pcs|pc|rim|lembar|lbr)\b`,
+].join('|'), 'gi');
+const unwrittenPrices = (text: string): string[] => [...text.matchAll(UNWRITTEN_PRICE_RE)].map((m) => m[0].trim());
+
 /**
  * The price check verifyFit runs (spec 7.5). Imperial Indopack's prices are tiers by quantity, and a
  * tolerant matcher (multiples, divisors) would pass exactly the wrong quotes this catalog invites - a
@@ -252,7 +266,11 @@ const noToolTotalLine = (line: string): boolean => {
  * quotes correctly on a line of its own: "Rp 2.000/pcs" then "8 rim x Rp 2.000 = Rp 8.000.000" cuts
  * the sum and keeps the tier, where cutting by 2.000 would have thrown the whole answer away.
  * `onlyInvented`: every failing figure is on a total line, so the total can go to the team. Every
- * such line is one withoutInventedTotals can cut.
+ * such line is one withoutInventedTotals can cut - never when a price is not written "Rp N", which
+ * that cut cannot see.
+ *
+ * A price not written "Rp N" (UNWRITTEN_PRICE_RE) fails whatever its value: the reply is redone with
+ * the full figure, the form the tool's results and the catalog use.
  */
 export function verifyReplyTieredPrices(
   message: string,
@@ -273,7 +291,14 @@ export function verifyReplyTieredPrices(
       if (!totalLine) offTotalLine = true;
     }
   }
-  if (failing.size === 0) return { ok: true, reason: '' };
+  const unwritten = unwrittenPrices(message);
+  if (failing.size === 0 && unwritten.length === 0) return { ok: true, reason: '' };
+
+  const unwrittenReason = unwritten.length === 0 ? '' :
+    `Harga ${unwritten.map((u) => `"${u}"`).join(', ')} tidak ditulis lengkap: tulis setiap harga sebagai "Rp" dan angka penuhnya, ` +
+    'mis. "Rp 185.000" - bukan "185rb", "185k", "1,5jt", "IDR 185.000" atau "185.000/rim" tanpa Rp - persis seperti angka dari hitung_harga ' +
+    '(panggil hitung_harga lagi untuk harga sesuai jumlah; tanpa hitung_harga hanya harga tingkat yang tertulis di KATALOG PRODUK).';
+  if (failing.size === 0) return { ok: false, reason: unwrittenReason, invented: [], onlyInvented: false };
 
   const figures = [...failing].map(rp).join(', ');
   // The repair is written without the tool results in view (verifyFit's regenerate sends only the
@@ -292,7 +317,12 @@ export function verifyReplyTieredPrices(
       'persis di KATALOG PRODUK yang boleh disebut - tanpa total, hitungan, atau tanda "=". Untuk harga sesuai jumlah pelanggan, ' +
       'panggil hitung_harga lalu ulangi angka-angkanya persis.';
   const invented = [...failing].filter((n) => !passing.has(n));
-  return { ok: false, reason, invented, onlyInvented: invented.length > 0 && !offTotalLine };
+  return {
+    ok: false,
+    reason: unwrittenReason ? `${reason} ${unwrittenReason}` : reason,
+    invented,
+    onlyInvented: invented.length > 0 && !offTotalLine && unwritten.length === 0,
+  };
 }
 
 // The customer answering the name question: "Dengan Rudi ka", "Saya Bang Andi dari Sidoarjo",
