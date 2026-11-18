@@ -388,6 +388,11 @@ export interface AIResponse {
    * the reply carries per-item prices only, messageRouter adds CANNED_TOTAL_FOR_TEAM and tells the team.
    */
   totalForTeam?: boolean;
+  /**
+   * Every Rp figure hitung_harga returned in this turn (unit prices, totals, next-tier prices), set
+   * by both call paths. Empty when the tool did not run.
+   */
+  toolFigures?: number[];
 }
 
 export interface ApiEnvelope<T> {

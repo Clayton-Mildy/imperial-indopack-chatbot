@@ -25,20 +25,15 @@ import { getDefaultPromptSections } from '../repositories/appSettings.js';
 import { listBrands } from '../repositories/products.js';
 import { CUSTOMER_TYPES } from '../domain/types.js';
 import type { AIResponse, CustomerType, PromptSection } from '../domain/types.js';
-import { searchLegacyWebsite } from './legacySearch.js';
 import { resolveLink } from './linkResolver.js';
+import { PRICE_TOOL, PRICE_TOOL_DESC, PRICE_TOOL_NAME, PriceToolInput, runPriceTool } from './priceTool.js';
 import { getClient, isDevMode, isFullCatalogEnabled, agentQuery, logUsageLine, CLAUDE_MODEL } from './claude.js';
 
 // ─── Tool contract (single source for both prod API and dev Agent SDK) ───────
 
-const SEARCH_TOOL_NAME = 'search_legacy_website';
-const SEARCH_TOOL_DESC =
-  'Search the Legacy website for product information, use cases, and articles when the local catalog is insufficient. Use this tool when the customer asks about product use cases, applications, installation tips, or any details not covered by the local product knowledge base. Always try this before saying you do not know.';
-const SEARCH_QUERY_DESC = 'The product name or use-case to search for';
-
 const RESPOND_TOOL_NAME = 'respond_to_customer';
 const RESPOND_TOOL_DESC =
-  'Send your final response to the customer. You MUST call this tool for every turn — never output plain text, and never write your own reasoning or analysis anywhere. Call search_legacy_website first if you need more information, then call this tool once you are ready to respond. If the customer\'s message needs no answer at all, call it with no_reply true instead of writing anything.';
+  'Send your final response to the customer. You MUST call this tool for every turn — never output plain text, and never write your own reasoning or analysis anywhere. Call the other tools first if you need them (hitung_harga for any price for a quantity), then call this tool once you are ready to respond. If the customer\'s message needs no answer at all, call it with no_reply true instead of writing anything.';
 
 export const RESPOND_FIELD_DESC = {
   message: 'The customer-facing reply, in the language the customer writes in (Indonesian unless they write in English). Plain WhatsApp text exactly as the customer will read it, up to ~800 characters (use the room when listing a product range). Use empty string only when escalating without a message, or when no_reply is true. Never put analysis of the conversation, notes about the customer, or an explanation of why you are not replying here: whatever is in this field is sent to the customer word for word.',
@@ -60,18 +55,6 @@ export const RESPOND_FIELD_DESC = {
     'REQUIRED every turn. The buyer type the customer has STATED so far in this conversation, this message included: "end_user" (dipakai sendiri), "project" (for a construction/contractor project), "reseller" (dijual lagi), or "unknown" if they have not said it. Never infer it from the product, the quantity or the tone. When INFORMASI PELANGGAN states the type, repeat it unless the customer has just said otherwise. Price figures are checked against this: with "unknown" the message may not contain any Rp figure.',
   fit_basis:
     'REQUIRED whenever your message names a product from the catalog block. For each product you name, copy the exact text from that product\'s own [DATA KATALOG RESMI] fields (Fungsi / Bahan / Ketebalan / Kelengkapan) that shows it fits the customer\'s situation. Copy it verbatim, character for character — do not paraphrase, summarise or translate, and never quote the "Kategori (petunjuk pencarian)" line, the Playbook, or your own reasoning. One supporting field is enough. If the fields explicitly CONTRADICT or restrict against the situation, put the single word DIAM instead and set confidence "low". If they are merely silent (no field mentions the situation either way), put DIAM but keep confidence "high" and hedge honestly in the message. Leave this empty only when your message names no product at all (greetings, asking for a name, sending the catalog).',
-};
-
-const SEARCH_TOOL: Anthropic.Tool = {
-  name: SEARCH_TOOL_NAME,
-  description: SEARCH_TOOL_DESC,
-  input_schema: {
-    type: 'object' as const,
-    properties: {
-      query: { type: 'string', description: SEARCH_QUERY_DESC },
-    },
-    required: ['query'],
-  },
 };
 
 // General web search (Anthropic server-side). Haiku 4.5 supports only the basic
@@ -147,6 +130,10 @@ const RESPOND_SHAPE = {
   fit_basis: z.array(z.string()).describe(RESPOND_FIELD_DESC.fit_basis),
   customer_type: z.enum(['reseller', 'end_user', 'project', 'unknown']).describe(RESPOND_FIELD_DESC.customer_type),
 };
+
+// One array for the loop, the failsafe and the cache warmup: the tools are part of the cached
+// prefix, so a different list or order is a different cache line.
+const API_TOOLS: Anthropic.ToolUnion[] = [WEB_SEARCH_TOOL, RESOLVE_LINK_TOOL, PRICE_TOOL, RESPOND_TOOL];
 
 /**
  * The model sometimes writes the rest of its tool call INTO `message`: UAT Run 3 sent
@@ -875,11 +862,24 @@ async function buildSystemPrompt(
 
 type ChatMessage = { role: 'user' | 'assistant'; content: Anthropic.MessageParam['content'] };
 
-async function runSearchTool(searchQuery: string): Promise<string> {
-  const results = await searchLegacyWebsite(searchQuery);
-  return results.length > 0
-    ? JSON.stringify(results)
-    : 'Tidak ada hasil ditemukan di website Legacy untuk query ini.';
+/**
+ * One hitung_harga call from the Messages API, whose input nothing has validated yet (the Agent SDK
+ * validates against PriceToolInput itself). A malformed call gets an error the model can correct
+ * on the next iteration instead of a price.
+ */
+async function priceToolResult(block: Anthropic.ToolUseBlock, figures: number[]): Promise<Anthropic.ToolResultBlockParam> {
+  const parsed = PriceToolInput.safeParse(block.input);
+  if (!parsed.success) {
+    return {
+      type: 'tool_result',
+      tool_use_id: block.id,
+      is_error: true,
+      content: `Input ${PRICE_TOOL_NAME} tidak valid (${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}). Kirim product, size, qty (angka) dan unit ("rim" atau "pcs").`,
+    };
+  }
+  const { text, figures: returned } = await runPriceTool(parsed.data);
+  figures.push(...returned);
+  return { type: 'tool_result', tool_use_id: block.id, content: text };
 }
 
 // Split the assembled prompt into system content-blocks with the cache breakpoint at the
@@ -930,7 +930,7 @@ export async function warmPromptCache(): Promise<void> {
       model: CLAUDE_MODEL,
       max_tokens: 0,
       system: toSystemBlocks(systemPrompt),
-      tools: [SEARCH_TOOL, WEB_SEARCH_TOOL, RESOLVE_LINK_TOOL, RESPOND_TOOL],
+      tools: API_TOOLS,
       messages: [{ role: 'user', content: 'warmup' }],
     });
     logUsage('warmup', response.usage);
@@ -942,10 +942,14 @@ export async function warmPromptCache(): Promise<void> {
 async function callViaAPI(systemPrompt: string, messages: ChatMessage[]): Promise<AIResponse> {
   const client = getClient();
   const loopMessages: Anthropic.MessageParam[] = [...messages];
-  const tools: Anthropic.ToolUnion[] = [SEARCH_TOOL, WEB_SEARCH_TOOL, RESOLVE_LINK_TOOL, RESPOND_TOOL];
+  const tools = API_TOOLS;
   const system = toSystemBlocks(systemPrompt);
+  // Every figure hitung_harga returned this turn - the only figures the price check accepts.
+  const figures: number[] = [];
+  const respond = (block: Anthropic.ToolUseBlock): AIResponse =>
+    ({ ...extractFromToolInput(block.input as Record<string, unknown>), toolFigures: figures });
 
-  // Tool-use loop: Claude may call search_legacy_website (client) or web_search
+  // Tool-use loop: Claude may call resolve_link or hitung_harga (client) or web_search
   // (server-side), and exits by calling respond_to_customer (our structured
   // output — no free-text JSON).
   for (let turn = 0; turn < 5; turn++) {
@@ -977,26 +981,24 @@ async function callViaAPI(systemPrompt: string, messages: ChatMessage[]): Promis
     const respondBlock = response.content.find(
       (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === RESPOND_TOOL_NAME
     );
-    if (respondBlock) {
-      return extractFromToolInput(respondBlock.input as Record<string, unknown>);
-    }
+    if (respondBlock) return respond(respondBlock);
 
     loopMessages.push({ role: 'assistant', content: response.content });
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const block of response.content) {
       if (block.type !== 'tool_use') continue;
-      if (block.name === SEARCH_TOOL_NAME) {
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: block.id,
-          content: await runSearchTool((block.input as { query: string }).query),
-        });
+      if (block.name === PRICE_TOOL_NAME) {
+        toolResults.push(await priceToolResult(block, figures));
       } else if (block.name === RESOLVE_LINK_TOOL_NAME) {
         toolResults.push({
           type: 'tool_result',
           tool_use_id: block.id,
           content: await resolveLink((block.input as { url: string }).url),
         });
+      } else {
+        // Every tool_use needs a tool_result or the next request is rejected - e.g. a call to the
+        // website search tool this bot no longer has.
+        toolResults.push({ type: 'tool_result', tool_use_id: block.id, is_error: true, content: `Tool ${block.name} tidak tersedia.` });
       }
     }
     loopMessages.push({ role: 'user', content: toolResults });
@@ -1021,9 +1023,7 @@ async function callViaAPI(systemPrompt: string, messages: ChatMessage[]): Promis
   const forcedBlock = forcedResponse.content.find(
     (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === RESPOND_TOOL_NAME
   );
-  if (forcedBlock) {
-    return extractFromToolInput(forcedBlock.input as Record<string, unknown>);
-  }
+  if (forcedBlock) return respond(forcedBlock);
   const plainText = forcedResponse.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text).join('').trim();
@@ -1071,23 +1071,25 @@ async function callViaAgentSDK(systemPrompt: string, messages: ChatMessage[]): P
     ];
 
   let captured: Record<string, unknown> | null = null;
+  // Same as callViaAPI: every figure hitung_harga returned this turn, the retry below included.
+  const figures: number[] = [];
+  const respond = (input: Record<string, unknown>): AIResponse => ({ ...extractFromToolInput(input), toolFigures: figures });
   const respondTool = tool(RESPOND_TOOL_NAME, RESPOND_TOOL_DESC, RESPOND_SHAPE, async (input) => {
     captured = input as Record<string, unknown>;
     return { content: [{ type: 'text' as const, text: 'Tersampaikan ke pelanggan.' }] };
   });
   const tools = [
     tool(
-      SEARCH_TOOL_NAME,
-      SEARCH_TOOL_DESC,
-      { query: z.string().describe(SEARCH_QUERY_DESC) },
-      async ({ query }) => ({ content: [{ type: 'text' as const, text: await runSearchTool(query) }] })
-    ),
-    tool(
       RESOLVE_LINK_TOOL_NAME,
       RESOLVE_LINK_TOOL_DESC,
       { url: z.string().describe(RESOLVE_LINK_URL_DESC) },
       async ({ url }) => ({ content: [{ type: 'text' as const, text: await resolveLink(url) }] })
     ),
+    tool(PRICE_TOOL_NAME, PRICE_TOOL_DESC, PriceToolInput.shape, async (input) => {
+      const { text, figures: returned } = await runPriceTool(input);
+      figures.push(...returned);
+      return { content: [{ type: 'text' as const, text }] };
+    }),
     respondTool,
   ];
 
@@ -1103,7 +1105,7 @@ async function callViaAgentSDK(systemPrompt: string, messages: ChatMessage[]): P
   } catch (err) {
     firstError = err;
   }
-  if (captured) return extractFromToolInput(captured);
+  if (captured) return respond(captured);
 
   const draft = resultText.trim();
   console.warn(`[aiLayer] Agent SDK run ended without respond_to_customer${firstError ? ` (${firstError instanceof Error ? firstError.message : firstError})` : ''} - asking once more through the tool`);
@@ -1116,7 +1118,7 @@ async function callViaAgentSDK(systemPrompt: string, messages: ChatMessage[]): P
   } catch (err) {
     if (!captured) throw firstError ?? err;
   }
-  if (captured) return extractFromToolInput(captured);
+  if (captured) return respond(captured);
   if (firstError) throw firstError;
   return structuredOutputFailed(draft);
 }
@@ -1140,12 +1142,16 @@ async function callClaude(
   // by whichever branch produced the reply. `situation` is what the customer actually has - for
   // a photo that is the vision extract, the only place the words "pintu kaca" exist at all.
   return verifyFit(response, systemPrompt, situationStr, {
-    regenerate: (correction) =>
-      generate([
+    // The repair sees only the draft's text, not the tool results behind it, so the figures
+    // hitung_harga returned earlier in this turn stay accepted for the rewrite.
+    regenerate: async (correction) => {
+      const repaired = await generate([
         ...messages,
         { role: 'assistant', content: response.message },
         { role: 'user', content: correction },
-      ]),
+      ]);
+      return { ...repaired, toolFigures: [...(response.toolFigures ?? []), ...(repaired.toolFigures ?? [])] };
+    },
     firstReply: !lastBot,
     // Not the first reply: a greeting with no need stated gets "Ada yang bisa saya bantu?" there (client,
     // 2026-11-02) - a supplier or a courier says what they want only after it. The reply to the name

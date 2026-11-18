@@ -256,10 +256,20 @@ export async function buildCatalogContext(userMessage: string, extraKeywords?: s
 // Not wired into buildCatalogContext — a separate caller assembles the system
 // prompt from this directly, so it can sit behind Anthropic's prompt cache
 // instead of being rebuilt per-message.
+//
+// The block and the product list it is rendered from are cached as ONE snapshot: hitung_harga
+// prices from the list (getCatalogProducts), so the tiers it quotes are the tiers the model was
+// shown, and an invalidation clears both at once.
 
-let catalogCacheBlock: string | null = null;
+interface CatalogSnapshot {
+  /** Products with at least one active variant - exactly what the block lists. */
+  products: Product[];
+  block: string;
+}
+
+let catalogCache: CatalogSnapshot | null = null;
 let catalogCacheBuiltAt = 0;
-let catalogCacheInFlight: Promise<string> | null = null;
+let catalogCacheInFlight: Promise<CatalogSnapshot> | null = null;
 // Bumped on every invalidation: a build that started before an invalidation must not commit
 // its (pre-mutation) result, or a dashboard edit racing a cold build stays invisible for the
 // full max-age window.
@@ -267,15 +277,15 @@ let catalogCacheGeneration = 0;
 const CATALOG_CACHE_MAX_AGE_MS = 60 * 60 * 1000; // 60 min — safety net for a reseed without a service restart
 
 export function invalidateCatalogCache(): void {
-  catalogCacheBlock = null;
+  catalogCache = null;
   catalogCacheBuiltAt = 0;
   catalogCacheInFlight = null;
   catalogCacheGeneration++;
 }
 
-export async function getFullCatalogBlock(): Promise<string> {
-  if (catalogCacheBlock !== null && Date.now() - catalogCacheBuiltAt < CATALOG_CACHE_MAX_AGE_MS) {
-    return catalogCacheBlock;
+async function getCatalogSnapshot(): Promise<CatalogSnapshot> {
+  if (catalogCache !== null && Date.now() - catalogCacheBuiltAt < CATALOG_CACHE_MAX_AGE_MS) {
+    return catalogCache;
   }
   if (catalogCacheInFlight) return catalogCacheInFlight;
 
@@ -283,12 +293,12 @@ export async function getFullCatalogBlock(): Promise<string> {
   const build = (async () => {
     const { products: items } = await listProducts({ limit: 0 });
     const withActiveVariant = items.filter((p) => (p.variants ?? []).some((v) => v.isActive));
-    const block = formatProducts(withActiveVariant);
+    const snapshot: CatalogSnapshot = { products: withActiveVariant, block: formatProducts(withActiveVariant) };
     if (generation === catalogCacheGeneration) {
-      catalogCacheBlock = block;
+      catalogCache = snapshot;
       catalogCacheBuiltAt = Date.now();
     }
-    return block;
+    return snapshot;
   })();
   // Never leave a rejected promise memoized: one transient DB error must cost one message,
   // not every message until a restart (the next call simply retries).
@@ -298,6 +308,15 @@ export async function getFullCatalogBlock(): Promise<string> {
   });
 
   return build;
+}
+
+export async function getFullCatalogBlock(): Promise<string> {
+  return (await getCatalogSnapshot()).block;
+}
+
+/** The products the full catalog block lists, from the same cached snapshot. Do not mutate. */
+export async function getCatalogProducts(): Promise<Product[]> {
+  return (await getCatalogSnapshot()).products;
 }
 
 export const REFERENCE_PHOTOS_MARKER = '[FOTO REFERENSI TERSEDIA]';

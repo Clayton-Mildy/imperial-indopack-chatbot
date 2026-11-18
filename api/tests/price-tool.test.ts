@@ -1,0 +1,140 @@
+/**
+ * price-tool.test.ts
+ * hitung_harga: the model never does price arithmetic - it calls this tool and repeats the figures.
+ * The figures returned here are also the only ones the strict price check accepts for the turn, so
+ * a quote's `figures` must be exactly what its text prints, and every non-quote returns none.
+ *
+ * Pure - fixture catalog, no DATABASE_URL, no API key.
+ */
+
+import { describe, it, expect } from 'vitest';
+import { normalizeSize, runPriceTool, PriceToolInput, PRICE_TOOL, PRICE_TOOL_NAME } from '../src/services/priceTool.js';
+import { CATALOG, IVORY_INPUT, SUPREME_INPUT } from './price-fixtures.js';
+
+describe('runPriceTool - the plan cases', () => {
+  it('quotes 12 rim of Kertas Supreme 30x30', async () => {
+    const r = await runPriceTool({ product: 'kertas supreme 64 gsm cetak 1 warna', size: '30 x 30 cm', qty: 12, unit: 'rim' }, CATALOG);
+    expect(r.text).toMatch(/^HARGA:/); expect(r.text).toContain('Rp 165.000/rim'); expect(r.text).toContain('Rp 1.980.000');
+    expect(r.figures).toEqual(expect.arrayContaining([165000, 1980000, 160000]));
+  });
+  it.each(['30x30', '30 x 30 cm', '30*30', '30×30', '30 X 30'])('finds size written as %s', async (s) =>
+    expect((await runPriceTool({ product: 'kertas supreme 64 gsm cetak 1 warna', size: s, qty: 5, unit: 'rim' }, CATALOG)).text).toMatch(/^HARGA:/));
+  it('an unknown size is not in the catalog, with no figures', async () => {
+    const r = await runPriceTool({ product: 'kertas supreme 64 gsm cetak 1 warna', size: '32x32', qty: 5, unit: 'rim' }, CATALOG);
+    expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/); expect(r.figures).toEqual([]);
+  });
+  it('an empty catalog prices nothing', async () =>
+    expect((await runPriceTool({ product: 'box', size: '20x20x7,5', qty: 10, unit: 'rim' }, [])).text).toMatch(/^TIDAK_ADA_DI_KATALOG:/));
+  it('2.5 pcs is below the minimum', async () =>
+    expect((await runPriceTool({ ...IVORY_INPUT, qty: 2.5, unit: 'pcs' }, CATALOG)).text).toMatch(/^DI_BAWAH_MINIMUM:/));
+});
+
+describe('runPriceTool - tiers (spec 8: between tiers, top tier, above it, below the minimum, pcs vs rim)', () => {
+  it('a quote returns exactly unit price, total and next-tier price, and prints each', async () => {
+    const r = await runPriceTool(SUPREME_INPUT, CATALOG);
+    expect(r.figures).toEqual([165000, 1980000, 160000]);
+    expect(r.text).toContain('Rp 160.000/rim');
+    expect(r.text).toContain('belum termasuk ongkir');
+  });
+
+  it('8 rim between the 5 and 10 rim tiers gets the 5-rim per-pcs price, over 4.000 pcs', async () => {
+    const r = await runPriceTool(IVORY_INPUT, CATALOG);
+    expect(r.text).toMatch(/^HARGA:/);
+    expect(r.text).toContain('Rp 2.000/pcs');
+    expect(r.text).toContain('4.000 pcs');
+    expect(r.text).toContain('Rp 8.000.000');
+    expect(r.text).toContain('sudah termasuk ongkir');
+    expect(r.figures).toEqual([2000, 8_000_000, 1800]);
+  });
+
+  it('exactly the top tier is quoted, with no next-tier figure', async () => {
+    const r = await runPriceTool({ ...IVORY_INPUT, qty: 20 }, CATALOG);
+    expect(r.text).toMatch(/^HARGA:/);
+    expect(r.figures).toEqual([1500, 15_000_000]);
+  });
+
+  it('above the top tier goes to staff, with no figures and no Rp in the text', async () => {
+    const r = await runPriceTool({ ...IVORY_INPUT, qty: 21 }, CATALOG);
+    expect(r.text).toMatch(/^DI_ATAS_TINGKAT_TERATAS:/);
+    expect(r.text).toContain('20 rim');
+    expect(r.text).not.toMatch(/Rp/);
+    expect(r.figures).toEqual([]);
+  });
+
+  it('below the minimum names the minimum and quotes nothing', async () => {
+    const r = await runPriceTool({ ...IVORY_INPUT, qty: 4 }, CATALOG);
+    expect(r.text).toMatch(/^DI_BAWAH_MINIMUM:/);
+    expect(r.text).toContain('5 rim (2.500 pcs)');
+    expect(r.text).not.toMatch(/Rp/);
+    expect(r.figures).toEqual([]);
+  });
+
+  it('pcs entered against a per-rim price: 2.700 pcs is 5,4 rim', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, qty: 2700, unit: 'pcs' }, CATALOG);
+    expect(r.text).toMatch(/^HARGA:/);
+    expect(r.text).toContain('5,4 rim');
+    expect(r.figures).toEqual([185_000, 999_000, 165_000]);
+  });
+});
+
+describe('runPriceTool - what is not priceable', () => {
+  it('an out-of-stock variant is not quoted', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, size: '25x25' }, CATALOG);
+    expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/);
+    expect(r.figures).toEqual([]);
+  });
+
+  it('an inactive variant is not quoted', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, size: '40x40' }, CATALOG);
+    expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/);
+    expect(r.figures).toEqual([]);
+  });
+
+  it('a variant with no tiers is the team\'s to price', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, size: '35x35' }, CATALOG);
+    expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/);
+    expect(r.figures).toEqual([]);
+  });
+
+  it('an unknown product is not in the catalog', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, product: 'paper bag kraft' }, CATALOG);
+    expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/);
+    expect(r.figures).toEqual([]);
+  });
+});
+
+describe('runPriceTool - product match', () => {
+  it('a name holding every input word matches when it is the only one', async () =>
+    expect((await runPriceTool({ ...IVORY_INPUT, product: 'box ivory' }, CATALOG)).text).toMatch(/^HARGA:/));
+
+  it('words shared by two products match neither', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, product: 'kertas supreme' }, CATALOG);
+    expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/);
+    expect(r.figures).toEqual([]);
+  });
+
+  it('an exact name wins over longer names that contain it', async () => {
+    const longer = { ...CATALOG[2]!, id: 'p-ii2', name: 'Box Ivory 270 gsm cetak full color laminasi' };
+    expect((await runPriceTool(IVORY_INPUT, [...CATALOG, longer])).text).toMatch(/^HARGA:/);
+  });
+});
+
+describe('normalizeSize', () => {
+  it.each([
+    ['30 x 30 cm', '30x30'],
+    ['30*30', '30x30'],
+    ['30×30', '30x30'],
+    ['30 X 30', '30x30'],
+    ['30x30cm', '30x30'],
+    ['20 x 20 x 7,5', '20x20x7.5'],
+    ['20x20x7.5 cm', '20x20x7.5'],
+  ])('%s -> %s', (input, expected) => expect(normalizeSize(input)).toBe(expected));
+});
+
+describe('the tool contract', () => {
+  it('the API schema and the zod schema name the same required fields', () => {
+    expect(PRICE_TOOL.name).toBe(PRICE_TOOL_NAME);
+    expect(PRICE_TOOL_NAME).toBe('hitung_harga');
+    expect(PRICE_TOOL.input_schema.required).toEqual(Object.keys(PriceToolInput.shape));
+  });
+});

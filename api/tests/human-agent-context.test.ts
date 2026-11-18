@@ -44,7 +44,6 @@ vi.mock('../src/repositories/conversations.js', () => ({
   countConversationMessages: vi.fn(async () => 0),
   getMessagesForSummary: vi.fn(async () => []),
 }));
-vi.mock('../src/services/legacySearch.js', () => ({ searchLegacyWebsite: vi.fn() }));
 vi.mock('../src/services/replyChecks.js', () => ({
   verifyReplyPrices: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyPacks: vi.fn(() => ({ ok: true, reason: '' })),

@@ -36,7 +36,6 @@ vi.mock('../src/repositories/conversations.js', () => ({
   countConversationMessages: vi.fn(),
   getMessagesForSummary: vi.fn(),
 }));
-vi.mock('../src/services/legacySearch.js', () => ({ searchLegacyWebsite: vi.fn() }));
 vi.mock('../src/services/replyChecks.js', () => ({ verifyReplyPrices: vi.fn() }));
 
 const { warmPromptCache } = await import('../src/services/aiLayer.js');
@@ -62,7 +61,7 @@ describe('warmPromptCache', () => {
     expect(req.system[0].text).toContain('--- AKHIR KATALOG ---');
     // Same tools as callViaAPI, same order — a different list is a different cache tier.
     expect(req.tools.map((t: { name: string }) => t.name)).toEqual([
-      'search_legacy_website', 'web_search', 'resolve_link', 'respond_to_customer',
+      'web_search', 'resolve_link', 'hitung_harga', 'respond_to_customer',
     ]);
   });
 

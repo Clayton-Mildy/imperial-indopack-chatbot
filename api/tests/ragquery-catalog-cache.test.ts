@@ -13,7 +13,7 @@ vi.mock('../src/repositories/products.js', () => ({
   hybridSearchProducts: vi.fn(),
 }));
 
-const { getFullCatalogBlock, invalidateCatalogCache } = await import('../src/services/ragQuery.js');
+const { getFullCatalogBlock, getCatalogProducts, invalidateCatalogCache } = await import('../src/services/ragQuery.js');
 
 function makeVariant(name: string, isActive: boolean): ProductVariant {
   return {
@@ -117,5 +117,35 @@ describe('getFullCatalogBlock — failure and race hardening (adversarial-review
 
     expect(next).toContain('Produk: Fresh');
     expect(next).not.toContain('Stale');
+  });
+});
+
+// hitung_harga prices from getCatalogProducts(): it must be the list the block was rendered from,
+// or the tool could quote tiers the model was never shown.
+describe('getCatalogProducts — the price tool\'s catalog', () => {
+  it('is the block\'s own product list: active products only, one fetch for both', async () => {
+    mockListProducts.mockResolvedValue({
+      products: [makeProduct('Active One', true), makeProduct('Inactive One', false)],
+      total: 2,
+    });
+
+    const block = await getFullCatalogBlock();
+    const products = await getCatalogProducts();
+
+    expect(block).toContain('Produk: Active One');
+    expect(products.map((p) => p.name)).toEqual(['Active One']);
+    expect(mockListProducts).toHaveBeenCalledTimes(1);
+  });
+
+  it('invalidateCatalogCache clears it together with the block', async () => {
+    mockListProducts.mockResolvedValue({ products: [makeProduct('First', true)], total: 1 });
+    await getCatalogProducts();
+
+    mockListProducts.mockResolvedValue({ products: [makeProduct('Second', true)], total: 1 });
+    invalidateCatalogCache();
+
+    expect((await getCatalogProducts()).map((p) => p.name)).toEqual(['Second']);
+    expect(await getFullCatalogBlock()).toContain('Produk: Second');
+    expect(mockListProducts).toHaveBeenCalledTimes(2);
   });
 });

@@ -36,7 +36,6 @@ vi.mock('../src/repositories/conversations.js', () => ({
   countConversationMessages: vi.fn(),
   getMessagesForSummary: vi.fn(),
 }));
-vi.mock('../src/services/legacySearch.js', () => ({ searchLegacyWebsite: vi.fn() }));
 
 const { callAIWithHistory, extractFromToolInput } = await import('../src/services/aiLayer.js');
 
