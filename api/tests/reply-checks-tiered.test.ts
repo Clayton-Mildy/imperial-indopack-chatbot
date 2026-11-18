@@ -117,6 +117,11 @@ describe('verifyReplyTieredPrices - what a total line is without the tool', () =
     expect(v.ok).toBe(false); expect(v.onlyInvented).toBe(true);
   });
 
+  // "semua" alone is everyday talk ("semua ukuran", "harga semua sudah termasuk ongkir"); only
+  // "semuanya" sums ("semuanya jadi Rp ...").
+  it('passes "Semua ukuran mulai Rp 185.000/rim" - a bare "semua" is not a total word', () =>
+    expect(verifyReplyTieredPrices('Semua ukuran mulai Rp 185.000/rim', formatProducts([IVORY_FIXTURE, SUPREME]), undefined).ok).toBe(true));
+
   it('a conversion on the line does not hide a sum on it', () => {
     const v = verifyReplyTieredPrices('8 rim (1 rim = 500 pcs) x Rp 2.000 = Rp 8.000.000', BLOCK, undefined);
     expect(v.ok).toBe(false); expect(v.onlyInvented).toBe(true);

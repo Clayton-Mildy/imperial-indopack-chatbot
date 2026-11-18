@@ -608,10 +608,10 @@ function backedTotals(message: string, priced: (n: number) => boolean): Set<numb
 // A line that adds up: the word for it, or an "=" ("2 set x Rp 210.000 = Rp 420.000").
 const TOTAL_LINE_RE = /\b(?:total|subtotal|jumlah|keseluruhan|grand)\b|=/i;
 // The total words verifyReplyTieredPrices also knows: "Totalnya Rp 8.000.000", "Semuanya jadi ...".
-// A bare "jumlah" is not one of them - it is also the everyday word for a quantity ("jumlah minimal
-// 5 rim"). withoutInventedTotals may cut a line with these too, so the two never disagree about
+// A bare "jumlah" or "semua" is not one of them - "jumlah minimal 5 rim" is a quantity, "semua ukuran"
+// is everyday talk. withoutInventedTotals may cut a line with these too, so the two never disagree about
 // which lines a total can be cut from.
-const TOTAL_WORDS_RE = /\b(?:total\w*|subtotal|keseluruhan|semua(?:nya)?|grand)\b/i;
+const TOTAL_WORDS_RE = /\b(?:total\w*|subtotal|keseluruhan|semuanya|grand)\b/i;
 const addsUp = (line: string): boolean => TOTAL_LINE_RE.test(line) || TOTAL_WORDS_RE.test(line);
 // The catalog's own unit conversion ("1 rim = 500 pcs/lembar"): an "=" that adds nothing up.
 const RIM_CONVERSION_RE = /\b\d+(?:[.,]\d+)?\s*rim\s*=\s*[\d.]+\s*(?:pcs|lembar)\b/gi;
