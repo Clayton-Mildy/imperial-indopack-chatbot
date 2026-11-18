@@ -23,7 +23,7 @@ import { getDefaultPromptSections, getPoFormUrl, PO_FORM_PLACEHOLDER_URL } from 
 import { listBrands } from '../repositories/products.js';
 import type { AIResponse, PromptSection } from '../domain/types.js';
 import { resolveLink } from './linkResolver.js';
-import { PRICE_TOOL, PRICE_TOOL_DESC, PRICE_TOOL_NAME, PriceToolInput, runPriceTool } from './priceTool.js';
+import { PRICE_TOOL, PRICE_TOOL_DESC, PRICE_TOOL_NAME, PriceToolInput, runPriceTool, type PriceToolCall } from './priceTool.js';
 import { getClient, isDevMode, isFullCatalogEnabled, agentQuery, logUsageLine, CLAUDE_MODEL } from './claude.js';
 
 // ─── Tool contract (single source for both prod API and dev Agent SDK) ───────
@@ -832,7 +832,7 @@ type ChatMessage = { role: 'user' | 'assistant'; content: Anthropic.MessageParam
  * on the next iteration instead of a price.
  */
 /** What hitung_harga did this turn: every figure it returned, and whether it ran at all (AIResponse.priceToolRan). */
-interface PriceTally { figures: number[]; ran: boolean }
+interface PriceTally { figures: number[]; ran: boolean; calls: PriceToolCall[] }
 
 async function priceToolResult(block: Anthropic.ToolUseBlock, tally: PriceTally): Promise<Anthropic.ToolResultBlockParam> {
   const parsed = PriceToolInput.safeParse(block.input);
@@ -844,9 +844,10 @@ async function priceToolResult(block: Anthropic.ToolUseBlock, tally: PriceTally)
       content: `Input ${PRICE_TOOL_NAME} tidak valid (${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}). Kirim product, size, qty (angka) dan unit ("rim" atau "pcs").`,
     };
   }
-  const { text, figures: returned } = await runPriceTool(parsed.data);
+  const { text, figures: returned, call } = await runPriceTool(parsed.data);
   tally.ran = true;
   tally.figures.push(...returned);
+  tally.calls.push(call);
   return { type: 'tool_result', tool_use_id: block.id, content: text };
 }
 
@@ -949,9 +950,9 @@ async function callViaAPI(systemPrompt: string, messages: ChatMessage[]): Promis
   const system = toSystemBlocks(systemPrompt);
   // Every figure hitung_harga returned this turn - the only figures the price check accepts - and
   // whether it ran at all: a call that priced nothing leaves no figure allowed.
-  const tally: PriceTally = { figures: [], ran: false };
+  const tally: PriceTally = { figures: [], ran: false, calls: [] };
   const respond = (block: Anthropic.ToolUseBlock): AIResponse =>
-    ({ ...extractFromToolInput(block.input as Record<string, unknown>), toolFigures: tally.figures, priceToolRan: tally.ran });
+    ({ ...extractFromToolInput(block.input as Record<string, unknown>), toolFigures: tally.figures, priceToolRan: tally.ran, priceCalls: tally.calls });
 
   // Tool-use loop: Claude may call resolve_link or hitung_harga (client) or web_search
   // (server-side), and exits by calling respond_to_customer (our structured
@@ -1067,9 +1068,9 @@ async function callViaAgentSDK(systemPrompt: string, messages: ChatMessage[]): P
   let captured: Record<string, unknown> | null = null;
   // Same as callViaAPI: every figure hitung_harga returned this turn, the retry below included, and
   // whether it ran at all.
-  const tally: PriceTally = { figures: [], ran: false };
+  const tally: PriceTally = { figures: [], ran: false, calls: [] };
   const respond = (input: Record<string, unknown>): AIResponse =>
-    ({ ...extractFromToolInput(input), toolFigures: tally.figures, priceToolRan: tally.ran });
+    ({ ...extractFromToolInput(input), toolFigures: tally.figures, priceToolRan: tally.ran, priceCalls: tally.calls });
   const respondTool = tool(RESPOND_TOOL_NAME, RESPOND_TOOL_DESC, RESPOND_SHAPE, async (input) => {
     captured = input as Record<string, unknown>;
     return { content: [{ type: 'text' as const, text: 'Tersampaikan ke pelanggan.' }] };
@@ -1082,9 +1083,10 @@ async function callViaAgentSDK(systemPrompt: string, messages: ChatMessage[]): P
       async ({ url }) => ({ content: [{ type: 'text' as const, text: await resolveLink(url) }] })
     ),
     tool(PRICE_TOOL_NAME, PRICE_TOOL_DESC, PriceToolInput.shape, async (input) => {
-      const { text, figures: returned } = await runPriceTool(input);
+      const { text, figures: returned, call } = await runPriceTool(input);
       tally.ran = true;
       tally.figures.push(...returned);
+      tally.calls.push(call);
       return { content: [{ type: 'text' as const, text }] };
     }),
     respondTool,
@@ -1173,6 +1175,7 @@ async function callClaude(
         ...repaired,
         toolFigures: [...(response.toolFigures ?? []), ...(repaired.toolFigures ?? [])],
         priceToolRan: Boolean(response.priceToolRan || repaired.priceToolRan),
+        priceCalls: [...(response.priceCalls ?? []), ...(repaired.priceCalls ?? [])],
       };
     },
     firstReply: !lastBot,

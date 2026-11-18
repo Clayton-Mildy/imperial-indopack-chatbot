@@ -14,6 +14,8 @@ import { matchCustomerPhoto, photoBatchNote, photoHistoryNote, photoLine, captio
 import { escalateConversation, detectComplaint, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, isNonSalesHandoff, isNonSalesReason, pickProfileGapQuestion, unansweredSizeQuestion, replyPromisesTeamCheck } from './escalationHandler.js';
 import { sendTextMessage, sendDocumentMessage, sendImageMessage } from './whatsappSender.js';
 import { recordOutboundMedia } from './outboundMedia.js';
+import { getCatalogProducts } from './ragQuery.js';
+import { MESSAGE_SOURCE } from '../domain/messageSources.js';
 import { saveConversationInsights } from './conversationInsights.js';
 import { recordLeadFromMessage } from './leadMatcher.js';
 import { syncContactChat } from './chakraSync.js';
@@ -83,7 +85,7 @@ interface TextDebounceEntry {
   conversationId: string;
   promptSections: PromptSections | null;
   quotedWaMessageId: string | null;
-  sendDoc?: (path: string, filename: string) => Promise<void>;
+  sendDoc?: (path: string, filename: string, brand: string) => Promise<void>;
   /** Resolves to the wamid; the caller stores the row after the reply's, so the thread keeps send order. */
   sendImage?: (url: string) => Promise<string>;
   /** Carries a batch whose draft was already thrown away once - see supersedeStaleTurn. */
@@ -458,6 +460,11 @@ const PROMISES_PRICE_LIST_RE = new RegExp(
  * The reply did not reach WhatsApp: the row is stored as 'saved', and without this nobody knew the
  * customer got nothing (final review M3).
  */
+/** The turn's hitung_harga calls for the reply row's metadata; nothing when the tool was not called. */
+function priceCallsMetadata(r: AIResponse): Record<string, unknown> {
+  return r.priceCalls?.length ? { priceCalls: r.priceCalls } : {};
+}
+
 function notifyReplyNotSent(conversationId: string, reply: string): void {
   notifyStaff({
     title: 'Balasan bot gagal terkirim',
@@ -534,7 +541,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
       catalogNote = delivery.note;
       if (delivery.files.length > 0) sentCatalogNote = delivery.note;
       for (const f of delivery.files) {
-        void Promise.resolve(entry.sendDoc?.(f.url, f.filename)).catch((err) =>
+        void Promise.resolve(entry.sendDoc?.(f.url, f.filename, f.brand)).catch((err) =>
           console.warn('[messageRouter] Failed to send catalog:', err instanceof Error ? err.message : err)
         );
       }
@@ -584,7 +591,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
         promised: PROMISES_PRICE_LIST_RE.test(sentReply),
       });
       for (const f of delivery.files) {
-        void Promise.resolve(entry.sendDoc?.(f.url, f.filename)).catch((err) =>
+        void Promise.resolve(entry.sendDoc?.(f.url, f.filename, f.brand)).catch((err) =>
           console.warn('[messageRouter] Failed to send catalog:', err instanceof Error ? err.message : err)
         );
       }
@@ -673,10 +680,10 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // form link (or the team's promise).
     const photos = await sendReferencePhotos(aiResponse.imageUrls, async (url) => (await entry.sendImage?.(url)) ?? null);
     const examplesSent = followUp.examples ? await sendFixedLine(CANNED_DESIGN_EXAMPLES_FROM_TEAM, 'design_examples', (text) => entry.sendReply(text)) : null;
-    const poSent = poForm ? await sendFixedLine(poForm.body, 'po_form', (text) => entry.sendReply(text)) : null;
+    const poSent = poForm ? await sendFixedLine(poForm.body, MESSAGE_SOURCE.poForm, (text) => entry.sendReply(text)) : null;
     await deliverPriceList(reply, Boolean(aiResponse.catalogUrl));
     // Rows in send order, so the thread reads as the customer saw it.
-    if (reply) await insertMessage({ conversationId, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved' });
+    if (reply) await insertMessage({ conversationId, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved', ...(aiResponse.priceCalls?.length ? { metadata: priceCallsMetadata(aiResponse) } : {}) });
     await recordAfterReply(conversationId, photos, [examplesSent, poSent]);
   } finally {
     inFlightConversations.delete(conversationId);
@@ -878,7 +885,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   const photos = await sendReferencePhotos(aiResponse.imageUrls, (url) => sendImageMessage(phoneNumber.phoneNumberId, replyJid, url, ''));
   const sendLine = (text: string) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text);
   const examplesSent = followUp.examples ? await sendFixedLine(CANNED_DESIGN_EXAMPLES_FROM_TEAM, 'design_examples', sendLine) : null;
-  const poSent = poForm ? await sendFixedLine(poForm.body, 'po_form', sendLine) : null;
+  const poSent = poForm ? await sendFixedLine(poForm.body, MESSAGE_SOURCE.poForm, sendLine) : null;
   if (aiResponse.catalogUrl) {
     // Price list asked for via the photo's caption. No keyword trigger runs on this path,
     // so without this the model says "katalognya sudah dikirim" and nothing is sent. Nothing was
@@ -889,11 +896,11 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     });
     for (const f of delivery.files) {
       void sendDocumentMessage(phoneNumber.phoneNumberId, replyJid, f.url, f.filename)
-        .then((wamid) => recordOutboundMedia({ conversationId: conv.id, kind: 'document', link: f.url, filename: f.filename, wamid, source: 'bot_media' }))
+        .then((wamid) => recordOutboundMedia({ conversationId: conv.id, kind: 'document', link: f.url, filename: f.filename, wamid, source: MESSAGE_SOURCE.priceList, extra: { brand: f.brand } }))
         .catch((err) => console.warn('[messageRouter] Failed to send catalog:', err instanceof Error ? err.message : err));
     }
   }
-  if (reply) await insertMessage({ conversationId: conv.id, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved', metadata: { source: 'vision_recommend' } as Record<string, unknown> });
+  if (reply) await insertMessage({ conversationId: conv.id, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved', metadata: { source: 'vision_recommend', ...priceCallsMetadata(aiResponse) } as Record<string, unknown> });
   await recordAfterReply(conv.id, photos, [examplesSent, poSent]);
 }
 
@@ -949,14 +956,30 @@ async function sendFixedLine(body: string, source: string, send: (text: string) 
   return { body, source, wamid };
 }
 
+/** Reference photo url -> the product it belongs to. A catalog that cannot be read just leaves the photos untagged. */
+async function referencePhotoOwners(): Promise<Map<string, string>> {
+  const owners = new Map<string, string>();
+  try {
+    for (const p of await getCatalogProducts()) for (const url of p.referenceImageUrls ?? []) if (!owners.has(url)) owners.set(url, p.id);
+  } catch (err) {
+    console.warn('[messageRouter] reference photo owners unavailable:', err instanceof Error ? err.message : err);
+  }
+  return owners;
+}
+
 /** The rows for what followed the reply, after the reply's own row and in the same order. */
 async function recordAfterReply(
   conversationId: string,
   photos: { url: string; wamid: string }[],
   lines: (FixedLineSent | null)[]
 ): Promise<void> {
+  const owners = photos.length > 0 ? await referencePhotoOwners() : new Map<string, string>();
   for (const p of photos) {
-    await recordOutboundMedia({ conversationId, kind: 'image', link: p.url, wamid: p.wamid, source: 'bot_media' });
+    const productId = owners.get(p.url);
+    await recordOutboundMedia({
+      conversationId, kind: 'image', link: p.url, wamid: p.wamid, source: MESSAGE_SOURCE.referencePhoto,
+      ...(productId && { extra: { productId } }),
+    });
   }
   for (const line of lines) {
     if (!line) continue;
@@ -1310,9 +1333,9 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
       },
       escalationJid: replyJid,
       phoneNumber,
-      sendDoc: async (path: string, filename: string) => {
+      sendDoc: async (path: string, filename: string, brand: string) => {
         const wamid = await sendDocumentMessage(phoneNumber.phoneNumberId, replyJid, path, filename);
-        await recordOutboundMedia({ conversationId: conversation.id, kind: 'document', link: path, filename, wamid, source: 'bot_media' });
+        await recordOutboundMedia({ conversationId: conversation.id, kind: 'document', link: path, filename, wamid, source: MESSAGE_SOURCE.priceList, extra: { brand } });
       },
       sendImage: (url: string) => sendImageMessage(phoneNumber.phoneNumberId, replyJid, url, ''),
       conversationId: conversation.id,

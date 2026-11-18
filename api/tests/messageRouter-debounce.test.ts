@@ -1662,6 +1662,61 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(rows[1].metadata).toMatchObject({ source: 'po_form' });
   });
 
+  const PRICE_CALL = {
+    input: { product: 'Kertas Supreme 64 gsm cetak 1 warna', size: '30 x 30 cm', qty: 12, unit: 'rim' },
+    outcome: 'quote', productId: 'p-ks1', productName: 'Kertas Supreme 64 gsm cetak 1 warna', variantName: '30 x 30 cm', quote: null,
+  };
+
+  it.each([['text', false], ['photo', true]] as const)('stores the %s turn price calls on the reply row', async (_path, photo) => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, priceCalls: [PRICE_CALL] });
+
+    await routeInboundBaileysMessage(photo ? makeImagePayload('wamid-PC1p', 'berapa kak?') : makeTextPayload('wamid-PC1', 'berapa 12 rim kak?'));
+    await vi.runAllTimersAsync();
+
+    const reply = mockInsertMessage.mock.calls.map((c) => c[0]).find((r) => r.role === 'assistant' && r.body === 'AI reply');
+    expect(reply.metadata.priceCalls).toHaveLength(1);
+    expect(reply.metadata.priceCalls[0]).toMatchObject({ outcome: 'quote', productName: 'Kertas Supreme 64 gsm cetak 1 warna' });
+  });
+
+  it('puts no priceCalls on a reply row when the tool was not called', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PC2', 'halo kak'));
+    await vi.runAllTimersAsync();
+    const reply = mockInsertMessage.mock.calls.map((c) => c[0]).find((r) => r.role === 'assistant' && r.body === 'AI reply');
+    expect(reply.metadata?.priceCalls).toBeUndefined();
+  });
+
+  it('tags the PO form row as po_form', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PC3', 'oke kak'));
+    await vi.runAllTimersAsync();
+    const po = mockInsertMessage.mock.calls.map((c) => c[0]).find((r) => r.body?.includes(PO_URL));
+    expect(po.metadata.source).toBe('po_form');
+  });
+
+  it('tags a sent reference photo with its source', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockSendImageMessage.mockResolvedValue('wa-img');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, imageUrls: ['/uploads/images/x.jpg'] });
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PC4', 'ada contoh kak?'));
+    await vi.runAllTimersAsync();
+    expect(imageRows()[0].metadata).toMatchObject({ source: 'reference_photo', mediaUrl: '/uploads/images/x.jpg' });
+  });
+
+  it('tags a sent price list with its source and brand', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue(null);
+    mockListBrands.mockResolvedValue([{ id: 'b2', name: 'Kertas Supreme', catalogFileUrl: 'https://cdn.example/daftar-harga-supreme.pdf' }]);
+    mockSendDocumentMessage.mockResolvedValue('wa-doc');
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PC5', 'minta pricelist kertas supreme'));
+    await vi.runAllTimersAsync();
+    const doc = mockInsertMessage.mock.calls.map((c) => c[0]).find((r) => r.metadata?.attachmentType === 'document');
+    expect(doc.metadata).toMatchObject({ source: 'price_list', brand: 'Kertas Supreme' });
+  });
+
   it('sends no PO form without the flag', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
 

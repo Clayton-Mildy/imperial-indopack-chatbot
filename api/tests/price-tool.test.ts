@@ -275,3 +275,24 @@ describe('the tool contract', () => {
     expect(PRICE_TOOL.input_schema.required).toEqual(Object.keys(PriceToolInput.shape));
   });
 });
+
+describe('runPriceTool - the call record', () => {
+  it('a quote call carries the match and the quote', async () => {
+    const { call } = await runPriceTool({ product: 'kertas supreme 64 gsm cetak 1 warna', size: '30x30', qty: 12, unit: 'rim' }, CATALOG);
+    expect(call).toMatchObject({ outcome: 'quote', productName: 'Kertas Supreme 64 gsm cetak 1 warna', quote: { kind: 'quote', unitPriceIdr: 165000, totalIdr: 1980000 } });
+    expect(call.variantName).not.toBeNull();
+  });
+  it.each([[3, 'below_minimum'], [21, 'above_top_tier']] as const)('%i rim is %s', async (qty, outcome) => {
+    const { call } = await runPriceTool({ ...SUPREME_INPUT, qty, unit: 'rim' }, CATALOG);
+    expect(call.outcome).toBe(outcome);
+    expect(call.quote?.kind).toBe(outcome);
+  });
+  it('an unknown size is not_in_catalog with a null quote', async () =>
+    expect((await runPriceTool({ ...SUPREME_INPUT, size: '32x32' }, CATALOG)).call).toMatchObject({ outcome: 'not_in_catalog', quote: null, productName: 'Kertas Supreme 64 gsm cetak 1 warna' }));
+  it.each([
+    ['no product match', { ...SUPREME_INPUT, product: 'paper bag kraft' }],
+    ['no tiers', { ...SUPREME_INPUT, size: '35x35' }],
+    ['no stock', { ...SUPREME_INPUT, size: '25x25' }],
+  ])('%s is not_in_catalog', async (_n, input) =>
+    expect((await runPriceTool(input, CATALOG)).call).toMatchObject({ outcome: 'not_in_catalog', quote: null, input }));
+});

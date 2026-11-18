@@ -85,6 +85,7 @@ describe('API path', () => {
 
     expect(result.message).toBe(REPLY.message);
     expect(result.toolFigures).toEqual(expect.arrayContaining([165000, 1980000, BOX_UNIT, BOX_TOTAL]));
+    expect(result.priceCalls?.map((c) => c.outcome)).toEqual(['quote', 'quote']);
     const secondCallMessages = mockCreate.mock.calls[1]![0].messages;
     expect(secondCallMessages.at(-1).content.filter((b: { type: string }) => b.type === 'tool_result')).toHaveLength(2);
     const [supreme, box] = toolResults(mockCreate.mock.calls[1]![0]);
@@ -115,6 +116,7 @@ describe('API path', () => {
     const result = await callAIWithHistory(HISTORY, 'halo');
     expect(result.toolFigures).toEqual([]);
     expect(result.priceToolRan).toBe(false);
+    expect(result.priceCalls).toEqual([]);
   });
 
   // Final review I1: a call that priced nothing (here above the top tier) still ran - the strict check
@@ -127,6 +129,7 @@ describe('API path', () => {
     expect(toolResults(mockCreate.mock.calls[1]![0])[0]!.content).toMatch(/^DI_ATAS_TINGKAT_TERATAS:/);
     expect(result.toolFigures).toEqual([]);
     expect(result.priceToolRan).toBe(true);
+    expect(result.priceCalls?.map((c) => c.outcome)).toEqual(['above_top_tier']);
   });
 
   it('says so when the only price call came from the failsafe', async () => {
@@ -136,6 +139,7 @@ describe('API path', () => {
       .mockResolvedValueOnce(respondTurn());
     const result = await callAIWithHistory(HISTORY, ASK);
     expect(result).toMatchObject({ toolFigures: [], priceToolRan: true });
+    expect(result.priceCalls?.map((c) => c.outcome)).toEqual(['below_minimum']);
   });
 
   it('a malformed call that never ran the tool is not a price call', async () => {
@@ -281,6 +285,7 @@ describe('API path', () => {
     expect(judge).toHaveLength(0);
     expect(result.toolFigures).toEqual(SUPREME_FIGURES);
     expect(result.priceToolRan).toBe(true);
+    expect(result.priceCalls?.map((c) => c.outcome)).toEqual(['quote']);
   });
 });
 
@@ -310,6 +315,7 @@ describe('Agent SDK path', () => {
     expect(texts[1]).toContain('Rp 9.000.000');
     expect(result.message).toBe(REPLY.message);
     expect(result.toolFigures).toEqual(expect.arrayContaining([...SUPREME_FIGURES, ...BOX_FIGURES]));
+    expect(result.priceCalls?.map((c) => c.outcome)).toEqual(['quote', 'quote']);
   });
 
   it('keeps the first run\'s figures when the reply only comes from the retry', async () => {

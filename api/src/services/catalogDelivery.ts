@@ -29,7 +29,7 @@ import { CATALOG_SENT_MARKER } from '../domain/constants.js';
 import { BRAND_NAMES, type BrandSlug } from '../domain/orderProfile.js';
 
 export interface CatalogDelivery {
-  files: { url: string; filename: string }[];
+  files: { url: string; filename: string; brand: string }[];
   /** Appended to the customer block so the model says what actually happened. */
   note: string;
 }
@@ -151,7 +151,7 @@ export async function resolveCatalogDelivery(
       continue;
     }
     if (contactId && !preview) sentPriceLists.add(key);
-    files.push({ url, filename: `Daftar Harga ${name}.pdf` });
+    files.push({ url, filename: `Daftar Harga ${name}.pdf`, brand: name });
     sentNow.push(name);
   }
 

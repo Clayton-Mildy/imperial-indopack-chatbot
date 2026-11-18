@@ -35,6 +35,8 @@ export async function recordOutboundMedia(opts: {
   /** null = the bot; a staff name for a dashboard upload. */
   senderName?: string | null;
   source: string;
+  /** Extra metadata beside `source` (a price list's brand, a reference photo's product). */
+  extra?: Record<string, unknown>;
 }): Promise<void> {
   const placeholder = opts.kind === 'image' ? '[Foto]' : '[Dokumen]';
   try {
@@ -51,6 +53,7 @@ export async function recordOutboundMedia(opts: {
         attachmentType: opts.kind,
         mediaUrl: storedMediaUrl(opts.link),
         ...(opts.filename && { filename: opts.filename }),
+        ...opts.extra,
       },
     });
   } catch (err) {

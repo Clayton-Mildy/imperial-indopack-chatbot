@@ -8,6 +8,7 @@ export type StockStatus = 'normal' | 'no_stock' | 'price_rise' | 'price_drop';
 
 import type { PriceTier } from './pricing.js';
 import type { BrandSlug, OrderItem } from './orderProfile.js';
+import type { PriceToolCall } from '../services/priceTool.js';
 
 export type Brand = {
   id: string;
@@ -410,6 +411,8 @@ export interface AIResponse {
    * nothing" from "the tool was not called" - and after the former no price may be quoted at all.
    */
   priceToolRan?: boolean;
+  /** Every hitung_harga call that executed this turn, in order, for the reply row's metadata. */
+  priceCalls?: PriceToolCall[];
 }
 
 export interface ApiEnvelope<T> {

@@ -17,7 +17,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { normalizeSize } from '../domain/orderProfile.js';
-import { quotePrice, toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
+import { quotePrice, toPcs, type PriceQuote, type PriceTier, type QtyUnit } from '../domain/pricing.js';
 import type { Product, ProductVariant } from '../domain/types.js';
 import { getCatalogProducts } from './ragQuery.js';
 
@@ -59,9 +59,27 @@ export const PRICE_TOOL: Anthropic.Tool = {
 
 export { normalizeSize };
 
+/**
+ * What a call came to, for the dashboard. `not_in_catalog` is every result the bot hands to the team
+ * without a price and that is neither a minimum nor above-top-tier: no product match, an unknown size,
+ * a variant with no tiers, an out-of-stock size, duplicate sizes, or a catalog that failed to load.
+ */
+export type PriceOutcome = 'quote' | 'below_minimum' | 'above_top_tier' | 'not_in_catalog';
+
+export interface PriceToolCall {
+  input: PriceToolInputType;
+  outcome: PriceOutcome;
+  productId: string | null;
+  productName: string | null;
+  variantName: string | null;
+  /** The quote behind a `quote`, `below_minimum` or `above_top_tier` call; null for `not_in_catalog`. */
+  quote: Exclude<PriceQuote, { kind: 'no_tiers' }> | null;
+}
+
 export interface PriceToolResult {
   text: string;
   figures: number[];
+  call: PriceToolCall;
 }
 
 const num = (n: number): string => n.toLocaleString('id-ID');
@@ -135,7 +153,9 @@ function readySizes(active: ProductVariant[]): string[] {
   }
   return ready;
 }
-const notInCatalog = (reason: string): PriceToolResult => ({ text: `TIDAK_ADA_DI_KATALOG: ${reason} ${NO_PRICE}`, figures: [] });
+const notInCatalogCall = (input: PriceToolInputType, product: Product | null = null, variant: ProductVariant | null = null): PriceToolCall => ({
+  input, outcome: 'not_in_catalog', productId: product?.id ?? null, productName: product?.name ?? null, variantName: variant?.name ?? null, quote: null,
+});
 
 export async function runPriceTool(input: PriceToolInputType, catalog?: Product[]): Promise<PriceToolResult> {
   let source: Product[];
@@ -145,10 +165,13 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
     // One place for both call paths: an unreadable catalog prices nothing, but must not fail the
     // whole turn - the model hands this item to the team and answers the rest.
     console.error('[priceTool] catalog load failed:', err instanceof Error ? err.message : err);
-    return { text: `TIDAK_ADA_DI_KATALOG: Harga tidak bisa dihitung saat ini (katalog gagal dimuat). ${NO_PRICE}`, figures: [] };
+    return { text: `TIDAK_ADA_DI_KATALOG: Harga tidak bisa dihitung saat ini (katalog gagal dimuat). ${NO_PRICE}`, figures: [], call: notInCatalogCall(input) };
   }
   // Same universe as the catalog block the model reads: only products with an active variant.
   const products = source.filter((p) => (p.variants ?? []).some((v) => v.isActive));
+
+  const notInCatalog = (reason: string, p: Product | null = null, v: ProductVariant | null = null): PriceToolResult =>
+    ({ text: `TIDAK_ADA_DI_KATALOG: ${reason} ${NO_PRICE}`, figures: [], call: notInCatalogCall(input, p, v) });
 
   const match = matchProduct(products, input.product);
   if (Array.isArray(match)) {
@@ -167,11 +190,11 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
   if (sizes.length > 1) {
     // Two variants the import let through with one size (e.g. "30 x 30 cm" and "30x30"): which
     // tiers are right is the team's call, never a guess.
-    return notInCatalog(`${product.name} punya lebih dari satu varian dengan ukuran "${input.size}" (${sizes.map((v) => v.name).join('; ')}); tim kami perlu memeriksanya.`);
+    return notInCatalog(`${product.name} punya lebih dari satu varian dengan ukuran "${input.size}" (${sizes.map((v) => v.name).join('; ')}); tim kami perlu memeriksanya.`, product);
   }
   if (sizes.length === 0) {
     const ready = readySizes(active);
-    return notInCatalog(`${product.name} ukuran "${input.size}" tidak ada di katalog.${ready.length ? ` Ukuran yang ada: ${ready.join(', ')}.` : ''}`);
+    return notInCatalog(`${product.name} ukuran "${input.size}" tidak ada di katalog.${ready.length ? ` Ukuran yang ada: ${ready.join(', ')}.` : ''}`, product);
   }
   const variant: ProductVariant = sizes[0]!;
   const item = `${product.name} ukuran ${variant.name}`;
@@ -184,22 +207,27 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
     return {
       text: `TIDAK_ADA_DI_KATALOG: ${item} sedang kosong (stok habis).${ready.length ? ` Ukuran yang ready: ${ready.join(', ')}.` : ''} Jangan sebut harga untuk ukuran ini; ${ready.length ? 'tawarkan dulu ukuran yang ready' : 'sampaikan kosong'}, dan serahkan ke tim hanya kalau pelanggan tetap mau ukuran ini.`,
       figures: [],
+      call: notInCatalogCall(input, product, variant),
     };
   }
 
   const quote = quotePrice(variant.priceTiers ?? [], input.qty, input.unit);
+  const callOf = (outcome: PriceOutcome, q: Exclude<PriceQuote, { kind: 'no_tiers' }>): PriceToolCall =>
+    ({ input, outcome, productId: product.id, productName: product.name, variantName: variant.name, quote: q });
   switch (quote.kind) {
     case 'no_tiers':
-      return notInCatalog(`${item} belum punya harga di katalog.`);
+      return notInCatalog(`${item} belum punya harga di katalog.`, product, variant);
     case 'below_minimum':
       return {
         text: `DI_BAWAH_MINIMUM: Minimal pemesanan ${item} adalah ${qtyText(quote.minimum.minQty, quote.minimum.qtyUnit)}; ${qtyText(input.qty, input.unit)} belum mencapai minimal itu. Jelaskan minimalnya ke pelanggan, jangan sebut harga.`,
         figures: [],
+        call: callOf('below_minimum', quote),
       };
     case 'above_top_tier':
       return {
         text: `DI_ATAS_TINGKAT_TERATAS: Pesanan ${qtyText(input.qty, input.unit)} ${item} melebihi tingkat harga teratas di katalog, yaitu ${qtyText(quote.top.minQty, quote.top.qtyUnit)}. Harga untuk jumlah sebesar ini dihitung tim kami; jangan sebut harga.`,
         figures: [],
+        call: callOf('above_top_tier', quote),
       };
     case 'quote': {
       const { tier, nextTier } = quote;
@@ -216,6 +244,7 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
       return {
         text: lines.join('\n'),
         figures: [quote.unitPriceIdr, quote.totalIdr, ...(nextTier ? [nextTier.priceIdr] : [])],
+        call: callOf('quote', quote),
       };
     }
   }
