@@ -5,7 +5,6 @@ import { getConfig } from '../config.js';
 
 // Meta WhatsApp Cloud API client — same positional signatures as chakraClient's send
 // fns, plus downloadMedia for inbound image handling.
-// Ported from the original pre-monorepo legacy-api Meta implementation.
 
 const META_API_BASE = 'https://graph.facebook.com';
 

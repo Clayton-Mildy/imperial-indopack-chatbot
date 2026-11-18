@@ -5,7 +5,7 @@ import { products, productVariants } from '../db/schema.js';
 
 /**
  * Bulk import of catalog photos: the team picks a folder of images named after the product
- * ("GEMBOK BULAT PUTIH.jpg") or the variant code ("LS2140 L.jpg", "HP8250.png"), and each file is
+ * ("BOX KUE IVORY 20X20.jpg") or the variant code ("BK2020.jpg", "KS3030.png"), and each file is
  * matched, shrunk and set as that product's or variant's image_url.
  *
  * Matching is by name, never fuzzy: a file that fits nothing, or fits more than one row, is

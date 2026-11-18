@@ -200,13 +200,13 @@ it('tells the model to hand off, not re-explain, when a customer insists on a va
   expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).toMatch(/LEBIH DARI SATU produk/);
 });
 
-// Team, 2026-11-08: the name asked again after "Dengan Jovi ka".
+// Team, 2026-11-08: the name asked again after "Dengan Rudi ka".
 describe('the name the customer already gave', () => {
   const asked = { role: 'assistant', content: 'Halo Kak 😊 Sebelumnya, dengan siapa saya terhubung ya?' };
 
   it.each([
-    ['Dengan Jovi ka', 'Jovi'],
-    ['Baik\nSaya Bang Al dari probolinggo', 'Al'],
+    ['Dengan Rudi ka', 'Rudi'],
+    ['Baik\nSaya Bang Andi dari Sidoarjo', 'Andi'],
     ['nama saya Budi kak', 'Budi'],
     ['oh iya, sama Dewi', 'Dewi'],
   ])('reads %j as a name', (answer, name) => {
@@ -219,7 +219,7 @@ describe('the name the customer already gave', () => {
     });
 
   it('only counts an answer to the name question', () => {
-    expect(nameGivenIn([{ role: 'user', content: 'Dengan Jovi ka' }, asked])).toBeNull();
+    expect(nameGivenIn([{ role: 'user', content: 'Dengan Rudi ka' }, asked])).toBeNull();
   });
 
   it('recognises "Boleh tahu nama kakak siapa?" as a name question', () => {
@@ -237,8 +237,8 @@ describe('the name the customer already gave', () => {
   });
 
   it('repairs a reply that asks it again', () => {
-    expect(verifyReplyNameRepeat('Baik kak, di Malang ya 😊 Boleh tahu nama kakak siapa?', 'Jovi')).toMatchObject({ ok: false, soft: true });
-    expect(verifyReplyNameRepeat('Salam kenal, Kak Jovi 😊 Kemasannya untuk jualan apa kak?', 'Jovi').ok).toBe(true);
+    expect(verifyReplyNameRepeat('Baik kak, di Malang ya 😊 Boleh tahu nama kakak siapa?', 'Rudi')).toMatchObject({ ok: false, soft: true });
+    expect(verifyReplyNameRepeat('Salam kenal, Kak Rudi 😊 Kemasannya untuk jualan apa kak?', 'Rudi').ok).toBe(true);
     expect(verifyReplyNameRepeat('Boleh tahu nama kakak siapa?', null).ok).toBe(true);
   });
 });

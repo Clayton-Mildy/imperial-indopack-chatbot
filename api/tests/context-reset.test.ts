@@ -128,7 +128,7 @@ describe('context reset', () => {
   });
 
   it('clears the summary, which no floor could hide', async () => {
-    await updateConversationSummary(convId, 'pembeli reseller, sudah ditawar 90.000', new Date());
+    await updateConversationSummary(convId, 'pembeli katering, sudah ditawar 90.000', new Date());
     await resetConversationContext(convId);
     expect((await findConversationById(convId))?.conversationSummary).toBeNull();
   });

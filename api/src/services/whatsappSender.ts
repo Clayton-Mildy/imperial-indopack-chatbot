@@ -24,7 +24,7 @@ async function logFailure<T>(kind: string, to: string, send: () => Promise<T>): 
 
 /**
  * WhatsApp bold is *one* asterisk; Markdown's is two. The model writes Markdown - the prompt asks
- * for bold without ever naming a syntax - so `**Engsel**` shipped to customers with the asterisks
+ * for bold without ever naming a syntax - so `**Box Nasi**` shipped to customers with the asterisks
  * showing (live 2026-09-09). Fixed here rather than in the prompt because this is the one point
  * every outbound message passes through, and because a prompt rule would need a reseed to reach a
  * live number and would still only be a request.
@@ -40,11 +40,11 @@ export function toWhatsAppMarkup(text: string): string {
     // A literal backslash-n: the model double-escaped a newline inside its tool JSON, and customers
     // saw "...dibagikan.\\n\\nYang bisa..." (UAT F-13, intermittent).
     .replace(/\\n/g, '\n')
-    // Same double-escaping, on quotes: 'grendel 4\\"' reached the customer (UAT Run 2 D-07).
+    // Same double-escaping, on quotes: 'box 20x20 \\"ivory\\"' must not reach the customer.
     .replace(/\\"/g, '"')
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
-    // WhatsApp shows Markdown links raw: "[www.previous-client.example](https://www.previous-client.example)" (Run 2
-    // D-01). It links a bare url by itself.
+    // WhatsApp shows Markdown links raw: "[www.example.co.id](https://www.example.co.id)". It links
+    // a bare url by itself.
     .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, label: string, url: string) =>
       bareHost(label) === bareHost(url) ? url : `${label} ${url}`)
     // Em/en dashes read as machine-written in a WhatsApp chat (UAT F-04), and the prompt itself is

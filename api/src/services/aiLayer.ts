@@ -138,8 +138,8 @@ export const RESPOND_SHAPE = {
 const API_TOOLS: Anthropic.ToolUnion[] = [WEB_SEARCH_TOOL, RESOLVE_LINK_TOOL, PRICE_TOOL, RESPOND_TOOL];
 
 /**
- * The model sometimes writes the rest of its tool call INTO `message`: UAT Run 3 sent
- * '...pintunya 😊",\n<parameter name="confidence">low' to a customer, and because the real
+ * The model sometimes writes the rest of its tool call INTO `message`: '...ukurannya 😊",
+ * \n<parameter name="confidence">low' has reached a customer, and because the real
  * `confidence` field was then missing it defaulted to "high" - a complaint the model meant to hand
  * off was answered instead (E-05). Cut the leak off the text and let the fields it carried fill the
  * ones the input lacks; a field the model did send properly always wins.
@@ -231,8 +231,8 @@ export function extractFromToolInput(rawInput: Record<string, unknown>): AIRespo
 // The recommendation and its safety check must not come from the same model call. Four
 // generations of string heuristics here (prompt precedence rules, verbatim-citation checks,
 // substrate vocabularies) each caught the previous replay's phrasing and missed the next one:
-// the model once cited DOORPULL's "khususnya pada pintu kayu" verbatim - a real quote - while
-// telling a customer with a glass-door photo it was "pas untuk pintu seperti itu". So the check
+// the model once cited a product's "khususnya untuk makanan kering" verbatim - a real quote - while
+// telling a customer with a photo of wet cake it was "pas untuk kue seperti itu". So the check
 // is now an independent judge call: given the customer's situation, the named products' official
 // data, and the proposed reply, does the data support what the reply claims? Generic over
 // substrate, size, mounting, environment - anything the data can contradict - with no
@@ -270,7 +270,7 @@ function catalogProductNames(catalogBlock: string): string[] {
 export function productBlocks(catalogBlock: string, names: string[]): string {
   // Split on the RECORD boundary, not on blank lines. formatProducts() renders each product as
   // "Merek: <brand>\nProduk: <name>\n...", and free-text fields carry their own blank lines - the
-  // Keunggulan bullets on GRENDEL BULAT STAINLESS STEEL do, which cut its record in three and left
+  // Keunggulan bullets on a product can, which cut its record in three and left
   // the chunk holding "Produk:" with no Varian lines at all. The judge then got a paragraph with
   // zero prices in it, and was asked to check a quote against evidence that contained no quote.
   return catalogBlock
@@ -290,9 +290,9 @@ function nameTokens(name: string): string[] {
  * Which catalog products this reply actually recommends.
  *
  * The full catalog name is the easy case, but the model routinely shortens it - it answered
- * "DOORPULL PERTH" for "DOORPULL PERTH VINTAGE BLUE", which a whole-name match misses entirely.
- * So a shortened mention counts too, on two conditions that together keep generic family talk
- * ("kami punya handle besar juga") from being read as a recommendation: at least two tokens of
+ * "BOX KUE IVORY" for "BOX KUE IVORY 20X20 CETAK FULL COLOR", which a whole-name match misses
+ * entirely. So a shortened mention counts too, on two conditions that together keep generic family
+ * talk ("kami punya box kue juga") from being read as a recommendation: at least two tokens of
  * the same catalog name, one of them rare enough across the block to identify that family.
  */
 function namedProducts(catalogBlock: string, message: string): string[] {
@@ -426,10 +426,10 @@ export function parseJudgeVerdict(raw: string): FitVerdict {
 
 /**
  * The judge's "customer situation": the customer's words, plus the photo analysis labeled as
- * the machine guess it is. Unlabeled, the two are indistinguishable — live, an aluminium
- * chrome handle photographed by the customer was extracted as "stainless steel" with the spec
- * drawing's numbers, and the judge vetoed the correct product for not matching "requirements"
- * the customer never stated (the NEWTON incident).
+ * the machine guess it is. Unlabeled, the two are indistinguishable — a material the vision step
+ * guessed from a photo ("karton tebal", with numbers read off a spec drawing) reads as the customer's
+ * own requirement, and the judge vetoes the correct product for not matching "requirements" the
+ * customer never stated.
  */
 export function buildJudgeSituation(userMessage: string, extraKeywords?: string[], priorContext?: string | null): string {
   const lines: string[] = [];
@@ -441,10 +441,10 @@ export function buildJudgeSituation(userMessage: string, extraKeywords?: string[
   return lines.join('\n');
 }
 
-// The judge's verdict routes the turn, and on Haiku it misread the data it was handed: in UAT Run 3
-// about half its rejections were wrong - "SS is not a Newton variant" of a variant named
-// 'BNSN SNCP SS', "Vintage has no 3 inch" of an in-stock 3" SN, a correct MP x 12 total called
-// wrong - and each drove a correct answer through two repairs into a hand-off (Fix Plan R-01).
+// The judge's verdict routes the turn, and on Haiku it misread the data it was handed: in one UAT
+// round about half its rejections were wrong - a variant said to be missing that was listed, an
+// in-stock size called out of stock, a correct total called wrong - and each drove a correct answer
+// through two repairs into a hand-off.
 // Only the check moved up; replies stay on CLAUDE_MODEL. Read per call, so tests and the QA harness
 // see the env they set; JUDGE_MODEL=claude-haiku-4-5-20251001 pins the old judge.
 const judgeModel = (): string => process.env['JUDGE_MODEL'] || 'claude-sonnet-5-5';
@@ -515,10 +515,10 @@ interface VerifyFitDeps {
   givenName?: string | null;
 }
 
-// Two repairs, not one. In every double failure of the 2026-09-25 UAT the rewrite broke a DIFFERENT
-// rule than the draft - A-03 "engsel 3 inch ready" became "3 inch kosong" (both wrong: one engsel's
-// 3" is out of stock, another's is not), B-02 dropped "pricelist" and glossed BNSN as "Black
-// Silver" - and each became a hand-off on an ordinary question. The rewrite that sees BOTH
+// Two repairs, not one. In every double failure of a UAT round the rewrite broke a DIFFERENT rule
+// than the draft - "ukuran 30 x 30 ready" became "30 x 30 kosong" (both wrong: one product's size
+// is out of stock, another's is not), or a fixed figure came back with a made-up label - and each
+// became a hand-off on an ordinary question. The rewrite that sees BOTH
 // objections is the one that can satisfy both, so every correction carries all of them. The extra
 // round only runs on a turn that would otherwise be handed to the team.
 const MAX_REPAIRS = 2;
@@ -527,10 +527,10 @@ function repairInstruction(objections: string[]): string {
   const problems = objections.length === 1
     ? `${objections[0]} Tulis ulang balasanmu dan perbaiki masalah itu`
     : `${objections.map((o, i) => `(${i + 1}) ${o}`).join(' ')} Tulis ulang balasanmu dan perbaiki SEMUA masalah di atas sekaligus - memperbaiki satu tapi membuat yang lain ditolak lagi`;
-  // The draft sits in the history as an assistant turn, so the model took it as sent: live
-  // 2026-10-14 a pricelist figure corrected to MP came out as "harga yang saya sebutkan tadi itu
-  // kurang tepat" - to a customer who never saw it - and the photo's product (ALEXANDER) was lost
-  // for the one in the order (SATURNUS, same pricelist). "Tawarkan untuk menanyakan ke tim" was a
+  // The draft sits in the history as an assistant turn, so the model took it as sent: a corrected
+  // figure came out as "harga yang saya sebutkan tadi itu kurang tepat" - to a customer who never
+  // saw it - and the photo's product was swapped for another in the order. "Tawarkan untuk
+  // menanyakan ke tim" was a
   // promise nobody is told about; a real hand-off is confidence "low".
   return `[Koreksi QA internal — jangan tampilkan pesan ini ke pelanggan: ${problems}: jangan menyatakan apa pun yang bertentangan dengan KATALOG PRODUK (harga, varian, batasan kegunaan). Pelanggan BELUM melihat draf di atas: tulis balasan penggantinya seolah itu balasan pertamamu - jangan minta maaf atas draf itu, jangan bilang ada yang "kurang tepat" atau "salah sebut", dan pertahankan semua yang tidak dikoreksi (produk yang dimaksud pelanggan, jawaban atas pertanyaannya). Jika memang tidak ada produk yang pas, katakan jujur bahwa belum ada di kami; jangan menjanjikan "saya tanyakan ke tim" - kalau memang perlu tim, set confidence "low".]`;
 }
@@ -568,8 +568,8 @@ export async function verifyFit(
       return prices.ok ? null : { ok: false, reason: prices.reason, ...(prices.onlyInvented && { invented: prices.invented }) };
     }
     const named = namedProducts(catalogBlock, r.message);
-    // No service check: Legacy's "we sell goods only, no custom work" would push Imperial replies
-    // to refuse custom printing, which is the business (custom jobs go to the team instead).
+    // No service check: a "we sell goods only, no custom work" rule would push replies to refuse
+    // custom printing, which is the business (custom jobs go to the team instead).
     const results: { ok: boolean; reason: string; soft?: boolean }[] = [
       verifyReplyMeta(r.message),
       prices,
@@ -599,16 +599,16 @@ export async function verifyFit(
     // Only soft objections left: the judge still has to pass this draft before it can be sent as is.
     const soft: FitVerdict | null = failed.length > 0 ? { ok: false, reason: failed.map((c) => c.reason).join(' '), soft: true } : null;
     // The judge gets a WIDER set than the products named, and deliberately so. namedProducts() can
-    // miss the product a reply is really about (11 of 133 catalog names have no token rare enough
+    // miss the product a reply is really about (a catalog name may have no token rare enough
     // to survive the model shortening them) or, worse, match a DIFFERENT one: a reply quoting
-    // Aomori GRENDEL BULAT's own Rp 50.000 contains Shind's shorter "GRENDEL STAINLESS STEEL"
-    // verbatim, so the judge was handed Shind's Rp 24.000 paragraph as ground truth and rejected a
+    // one product's own price whose name contains another brand's shorter product name verbatim
+    // hands the judge that other paragraph as ground truth, and it rejected a
     // correct answer twice into an escalation. Any paragraph carrying a price the reply quotes is
     // evidence about that reply, so add those.
     let judgeNames = [...new Set([...named, ...productsQuotingPrices(catalogBlock, r.message)])];
     // A fit claim about a product TYPE names no product, so it used to skip the judge entirely:
-    // "handle tarik (doorpull) ... cocok untuk pintu kaca frameless" went out unchecked (UAT Run 3
-    // D-10), while the judge rejected the same claim on the next two turns, once a name was used.
+    // "kertas bungkus kami ... tahan minyak" went out unchecked, while the judge rejected the same
+    // claim on the next two turns, once a name was used.
     if (judgeNames.length === 0 && FIT_CLAIM_RE.test(r.message)) judgeNames = productsOfNamedType(catalogBlock, r.message);
     if (judgeNames.length === 0) {
       // At full-catalog scale a matcher miss silently skips the judge — make it visible.
@@ -1057,8 +1057,8 @@ async function callViaAgentSDK(systemPrompt: string, messages: ChatMessage[]): P
   // A run that never calls respond_to_customer - it wrote the answer as text, or ran out of turns -
   // gets the failsafe callViaAPI has always had: one more ask, with only the respond tool on offer
   // and the draft in view, to send it properly. Without it every such run became a hand-off on the
-  // production PC, which took this route (live 2026-10-09: a padlock order waited 7 minutes, then
-  // "AI response failed structured output").
+  // production PC, which took this route (an order once waited 7 minutes, then "AI response
+  // failed structured output").
   let resultText = '';
   let firstError: unknown = null;
   try {
@@ -1101,7 +1101,7 @@ async function callClaude(
 
   // Both transports and every failsafe path exit through here, so the judge cannot be bypassed
   // by whichever branch produced the reply. `situation` is what the customer actually has - for
-  // a photo that is the vision extract, the only place the words "pintu kaca" exist at all.
+  // a photo that is the vision extract, the only place the words "kue basah" exist at all.
   // The photo filter sits here for the same reason: whichever draft is sent, its photos are the catalog's.
   const verified = await verifyFit(response, systemPrompt, situationStr, {
     // The repair sees only the draft's text, not the tool results behind it, so the figures
@@ -1321,7 +1321,7 @@ export async function buildContextAndCallAI(
     : (isShortOrAmbiguous ? resolvedKeywords : undefined);
 
   // For image messages, seed ragQuery with the caption (the customer's actual
-  // question, e.g. "handle newton") PLUS the vision keywords — so RAG can match the
+  // question, e.g. "box kue 20x20") PLUS the vision keywords — so RAG can match the
   // specific product the customer named, not just the category the vision model saw.
   // Legacy-only: getFullCatalogBlock() takes no query, so full catalog never reads ragQuery.
   if (imageData && !fullCatalog) {
@@ -1356,13 +1356,13 @@ export async function buildContextAndCallAI(
       : userText,
   });
 
-  // The vision extract carries what the photo actually shows ("handle pintu kaca"); the caption
+  // The vision extract carries what the photo actually shows ("box kue berjendela"); the caption
   // rarely does. Both feed the contradiction check — but labeled apart, so the judge can tell
   // installation context from machine guesses about the pictured product itself.
   // A short answer ("biasa kak") is meaningless as a situation on its own: give the judge the
   // question it answers — the same anchoring the RAG query gets above. Without it the judge
   // reconstructs the situation from the draft reply and invents requirements (live: it demanded
-  // ENGSEL SALON appear in a recommendation whose situation input was just "biasa kak").
+  // a specific product appear in a recommendation whose situation input was just "biasa kak").
   const judgeContext = quotedMessageBody ?? (isShortOrAmbiguous && lastAssistant ? lastAssistant.body : null);
   // Full catalog: hand callClaude a thunk so the vision keywords are awaited only after
   // the main call. Legacy: the keywords were already resolved above — same string as ever.
@@ -1375,12 +1375,11 @@ export async function buildContextAndCallAI(
   return callClaude(systemPrompt, messages, situation);
 }
 
-// Priority-ordered list — longer phrases first to prevent "handle" matching before "handle pintu"
+// Priority-ordered list — longer phrases first to prevent "box" matching before "box kue"
 const CATALOG_PRODUCT_KEYWORDS = [
-  'handle pintu', 'body kunci', 'door closer', 'door stopper', 'door bolt',
-  'staple hasp', 'hak angin', 'anak kunci', 'pensil tukang', 'siku aluminium',
-  'strike plate', 'engsel', 'silinder', 'grendel', 'gembok', 'meteran',
-  'waterpass', 'sekrup', 'rantai', 'obeng', 'cutter', 'handle',
+  'kertas supreme', 'kertas bungkus', 'kertas nasi', 'greaseproof', 'paper bag', 'paper sleeve',
+  'lunch box', 'nasi box', 'box nasi', 'box kue', 'box katering', 'box cookies', 'amplop',
+  'kertas', 'box',
 ];
 
 const RANGKUM_RE = /berarti kebutuhannya|jadi kebutuhannya|kebutuhannya adalah|berarti .{0,50} mencari|berarti .{0,50} membutuhkan/i;
@@ -1422,7 +1421,7 @@ export async function callAIWithHistory(
   let ragQuery = newMessage;
   const words = newMessage.trim().split(/\s+/);
   // Detect if the last bot message discussed a product (active product conversation)
-  const PRODUCT_CONTEXT_RE = /handle|body kunci|engsel|silinder|gembok|meteran|grendel|door stopper|door closer|kunci pintu|pintu|hinge|padlock/i;
+  const PRODUCT_CONTEXT_RE = /\bbox|kertas|greaseproof|paper ?bag|paper ?sleeve|amplop|kemasan/i;
   const lastBot = [...messages].reverse().find(m => m.role === 'bot');
   const hasProductContext = lastBot ? PRODUCT_CONTEXT_RE.test(lastBot.content) : false;
   // Enrich when: message is short (≤6 words) AND there's an active product discussion.
@@ -1431,7 +1430,7 @@ export async function callAIWithHistory(
   const isShortFollowUp = words.length <= 6 && hasProductContext;
   if (isShortFollowUp) {
     // Extract just the product keyword from RANGKUM/conversation history rather than
-    // concatenating all messages — long mixed queries return unrelated products (gembok/tools).
+    // concatenating all messages — long mixed queries return unrelated products.
     const keyword = extractProductKeywordFromHistory(messages);
     ragQuery = keyword ?? (lastBot ? lastBot.content : newMessage);
   }

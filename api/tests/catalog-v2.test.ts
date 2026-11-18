@@ -1,11 +1,11 @@
 /**
  * catalog-v2.test.ts
  * kwMatch unit tests: verify that the pv.description ILIKE clause finds variants
- * by description content, covering Vane's LOTUS MSN 60cm example.
+ * by description content, covering a 60cm paper bag variant example.
  *
  * Variant descriptions now carry the per-variant specs that regroup-catalog.py
  * rescues from the Excel when a family merge would otherwise flatten them
- * ("Bahan: Stainless Steel"), so this search path still matters.
+ * ("Bahan: Kertas kraft"), so this search path still matters.
  *
  * The reseed-v2 integration checks were removed with the website-scrape pipeline —
  * the catalog is sourced solely from the Excel price list.
@@ -36,31 +36,31 @@ describe('kwMatch — variant description ILIKE clause', () => {
       .returning({ id: brands.id });
     testBrandId = brand!.id;
 
-    // Product with two variants: MSN has "60cm" in description, GOTHIC has only "45cm"
+    // Product with two variants: KRAFT has "60cm" in description, PUTIH has only "45cm"
     const [product] = await db
       .insert(products)
       .values({
         brandId: testBrandId,
-        name: `${TEST_PREFIX}Door Pull Vintage`,
+        name: `${TEST_PREFIX}Paper Bag Tali`,
         description: null, // no product-level description — hits must come from pv.description
       })
       .returning({ id: products.id });
     testProductId = product!.id;
 
-    // LOTUS MSN: 60cm in description
+    // KRAFT: 60cm in description
     await db.insert(productVariants).values({
       productId: testProductId,
-      name: 'LOTUS MSN',
-      description: 'Tinggi: 60cm\nWarna: MSN\nBahan: Logam',
+      name: 'KRAFT TALI',
+      description: 'Tinggi: 60cm\nWarna: Cokelat\nBahan: Kertas kraft',
       isActive: true,
       stockStatus: 'normal',
     });
 
-    // LOTUS GOTHIC: only 45cm in description
+    // PUTIH: only 45cm in description
     await db.insert(productVariants).values({
       productId: testProductId,
-      name: 'LOTUS GOTHIC',
-      description: 'Tinggi: 45cm\nWarna: Gothic\nBahan: Logam',
+      name: 'PUTIH TALI',
+      description: 'Tinggi: 45cm\nWarna: Putih\nBahan: Kertas',
       isActive: true,
       stockStatus: 'normal',
     });
@@ -94,7 +94,7 @@ describe('kwMatch — variant description ILIKE clause', () => {
     await db.delete(brands).where(eq(brands.id, testBrandId));
   });
 
-  it('kwMatch("60cm") returns the test product (MSN variant has 60cm in description)', async () => {
+  it('kwMatch("60cm") returns the test product (KRAFT variant has 60cm in description)', async () => {
     const results = await searchActiveProducts({
       keywords: ['60cm'],
       brandFilter: `${TEST_PREFIX}brand`,
@@ -124,7 +124,7 @@ describe('kwMatch — variant description ILIKE clause', () => {
     expect(results.some((p) => p.id === only45cmProductId)).toBe(false);
   });
 
-  it('kwMatch("45cm") finds the test product (GOTHIC variant has 45cm in description)', async () => {
+  it('kwMatch("45cm") finds the test product (PUTIH variant has 45cm in description)', async () => {
     const results = await searchActiveProducts({
       keywords: ['45cm'],
       brandFilter: `${TEST_PREFIX}brand`,

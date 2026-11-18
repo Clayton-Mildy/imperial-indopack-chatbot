@@ -29,16 +29,16 @@ import {
 
 // ─── parser ─────────────────────────────────────────────────────────────────
 
-// Verbatim from the production dump.
-const PROD_TEMPLATE = `Legacy
+// A landing-page template in the shape marketing's forms send (synthetic).
+const FORM_TEMPLATE = `Imperial Indopack
 
 Nama: budi
 Nomor WhatsApp: 081200000001
-Apa Yang Anda Butuhkan?: saya mau kulak gembok yang murah , untuk saya jual lagi. apakah gembok merk HS rekomen yaaa ?
+Apa Yang Anda Butuhkan?: saya mau box nasi cetak logo , untuk katering. apakah bisa 2 warna yaaa ?
 Area: saya lokasi di Kota Malang
 Budget: menyesuaikan , pembayaran bisa qris ?
 
-Request ID: ada4cdd9-085f-43f2-8629-a55a84600cef`;
+Request ID: 3f1c2b7e-5d4a-4c8e-9a61-0b2d7e4f8c13`;
 
 // The other live shape: the customer typed something before the template pasted itself in.
 const GREETING_PREFIXED = `Hallo selamat sore...boleh min
@@ -46,42 +46,42 @@ const GREETING_PREFIXED = `Hallo selamat sore...boleh min
 Nama: Ar
 Nomor WhatsApp: 081200000002
 
-Request ID: 8266d121-a5d4-4ee5-914f-e24502f3f869`;
+Request ID: 9b7e2d41-6c3a-4f15-8e2b-5a0d9c1e7f36`;
 
 describe('extractRequestId', () => {
-  it('pulls the id out of the production template', () => {
-    expect(extractRequestId(PROD_TEMPLATE)).toBe('ada4cdd9-085f-43f2-8629-a55a84600cef');
+  it('pulls the id out of the form template', () => {
+    expect(extractRequestId(FORM_TEMPLATE)).toBe('3f1c2b7e-5d4a-4c8e-9a61-0b2d7e4f8c13');
   });
 
   it('still matches when the customer typed something first', () => {
-    expect(extractRequestId(GREETING_PREFIXED)).toBe('8266d121-a5d4-4ee5-914f-e24502f3f869');
+    expect(extractRequestId(GREETING_PREFIXED)).toBe('9b7e2d41-6c3a-4f15-8e2b-5a0d9c1e7f36');
   });
 
   it('survives WhatsApp bold and odd spacing', () => {
-    expect(extractRequestId('*Request ID:* ada4cdd9-085f-43f2-8629-a55a84600cef')).toBe(
-      'ada4cdd9-085f-43f2-8629-a55a84600cef'
+    expect(extractRequestId('*Request ID:* 3f1c2b7e-5d4a-4c8e-9a61-0b2d7e4f8c13')).toBe(
+      '3f1c2b7e-5d4a-4c8e-9a61-0b2d7e4f8c13'
     );
-    expect(extractRequestId('request  id - ADA4CDD9-085F-43F2-8629-A55A84600CEF')).toBe(
-      'ada4cdd9-085f-43f2-8629-a55a84600cef'
+    expect(extractRequestId('request  id - 3F1C2B7E-5D4A-4C8E-9A61-0B2D7E4F8C13')).toBe(
+      '3f1c2b7e-5d4a-4c8e-9a61-0b2d7e4f8c13'
     );
   });
 
   it('ignores a bare uuid with no label — that would invent campaign leads', () => {
-    expect(extractRequestId('ada4cdd9-085f-43f2-8629-a55a84600cef')).toBeNull();
+    expect(extractRequestId('3f1c2b7e-5d4a-4c8e-9a61-0b2d7e4f8c13')).toBeNull();
   });
 
   it('returns null for an ordinary message', () => {
-    expect(extractRequestId('Halo kak, ada gembok?')).toBeNull();
+    expect(extractRequestId('Halo kak, ada box nasi?')).toBeNull();
   });
 });
 
 describe('extractFormFields', () => {
   it('takes whatever labels the form used', () => {
-    expect(extractFormFields(PROD_TEMPLATE)).toEqual({
+    expect(extractFormFields(FORM_TEMPLATE)).toEqual({
       nama: 'budi',
       nomor_whatsapp: '081200000001',
       apa_yang_anda_butuhkan:
-        'saya mau kulak gembok yang murah , untuk saya jual lagi. apakah gembok merk HS rekomen yaaa ?',
+        'saya mau box nasi cetak logo , untuk katering. apakah bisa 2 warna yaaa ?',
       area: 'saya lokasi di Kota Malang',
       budget: 'menyesuaikan , pembayaran bisa qris ?',
     });
@@ -95,7 +95,7 @@ describe('extractFormFields', () => {
   });
 
   it('reads the other form shape marketing sent (different labels entirely)', () => {
-    const smartIt = `SMART IT
+    const otherForm = `KERTAS SUPREME PROMO
 
 Nama: yo
 No WhatsApp: yo
@@ -103,8 +103,8 @@ Nama Perusahaan: yo
 Deadline Penyelesaian: 6-12 months
 Catatan: test
 
-Request ID: 3280e4c8-9902-495e-b70b-d106bbb1f06a`;
-    expect(extractFormFields(smartIt)).toEqual({
+Request ID: c4d2a8f0-1b3e-4a7c-9d5f-2e8b6a0c3d17`;
+    expect(extractFormFields(otherForm)).toEqual({
       nama: 'yo',
       no_whatsapp: 'yo',
       nama_perusahaan: 'yo',
@@ -114,7 +114,7 @@ Request ID: 3280e4c8-9902-495e-b70b-d106bbb1f06a`;
   });
 
   it('never keeps the Request ID line itself as a field', () => {
-    expect(extractFormFields(PROD_TEMPLATE)).not.toHaveProperty('request_id');
+    expect(extractFormFields(FORM_TEMPLATE)).not.toHaveProperty('request_id');
   });
 });
 
@@ -178,7 +178,7 @@ describe('leads upserts — either order, never clobbering', () => {
       requestId: RID_IMPORT_FIRST,
       utmSource: 'instagram',
       utmCampaign: 'testingcookie',
-      payload: { form_name: 'Legacy' },
+      payload: { form_name: 'Imperial Indopack' },
     });
     await claimLeadByRequestId(RID_IMPORT_FIRST, contactA, { nama: 'budi' }, new Date());
 
@@ -187,7 +187,7 @@ describe('leads upserts — either order, never clobbering', () => {
     expect(row?.contactId).toBe(contactA);
     expect(row?.matchedAt).not.toBeNull();
     // Both writers contribute to the same jsonb bag rather than replacing it.
-    expect(row?.payload).toEqual({ form_name: 'Legacy', nama: 'budi' });
+    expect(row?.payload).toEqual({ form_name: 'Imperial Indopack', nama: 'budi' });
   });
 
   it('WhatsApp then import: same end state, and the match is not wiped', async () => {
@@ -418,22 +418,22 @@ describe('applyAiLeadUpdate — the human edit wins', () => {
       ?? (await db.execute<{ id: string }>(sql`SELECT id FROM conversations WHERE contact_id = ${contactId} LIMIT 1`)).rows[0]!.id;
     const msg = async (body: string) => (await db.execute<{ id: string }>(sql`
       INSERT INTO messages (conversation_id, role, body) VALUES (${convId}, 'user', ${body}) RETURNING id`)).rows[0]!.id;
-    const m1 = await msg('Pesan Grendel vintage 2 dos');
-    const m2 = await msg('oke saya ambil 20 set');
+    const m1 = await msg('Pesan box nasi 20x20 2000 pcs');
+    const m2 = await msg('oke saya ambil 20 rim');
 
     const lead = await readLead();
-    expect(await recordLeadOrders(lead.id, [{ messageId: m1, evidence: 'Pesan Grendel vintage 2 dos' }])).toBe(1);
+    expect(await recordLeadOrders(lead.id, [{ messageId: m1, evidence: 'Pesan box nasi 20x20 2000 pcs' }])).toBe(1);
     // The same message again is the same order.
-    expect(await recordLeadOrders(lead.id, [{ messageId: m1, evidence: 'Pesan Grendel vintage 2 dos' }])).toBe(0);
+    expect(await recordLeadOrders(lead.id, [{ messageId: m1, evidence: 'Pesan box nasi 20x20 2000 pcs' }])).toBe(0);
     expect((await readLead()).totalOrders).toBe(1);
 
     await patchLead(lead.id, { totalOrders: 9 });
-    expect(await recordLeadOrders(lead.id, [{ messageId: m2, evidence: 'oke saya ambil 20 set' }])).toBe(1);
+    expect(await recordLeadOrders(lead.id, [{ messageId: m2, evidence: 'oke saya ambil 20 rim' }])).toBe(1);
     const row = await readLead();
     expect(row.totalOrders).toBe(9);
     expect(row.totalOrdersSetAt).not.toBeNull();
     expect(row.humanUpdatedAt).toBeNull(); // the status stays the AI's
-    expect((await listLeadOrders(lead.id)).map((o) => o.evidence)).toEqual(['Pesan Grendel vintage 2 dos', 'oke saya ambil 20 set']);
+    expect((await listLeadOrders(lead.id)).map((o) => o.evidence)).toEqual(['Pesan box nasi 20x20 2000 pcs', 'oke saya ambil 20 rim']);
   });
 
   it('a staff status locks the status only', async () => {

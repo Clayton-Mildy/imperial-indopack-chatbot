@@ -87,7 +87,7 @@ describe('lead-insights pass, one chat failing', () => {
       await db.execute(sql`UPDATE leads SET lead_temperature = NULL WHERE contact_id = ${c.contactId}`);
       await deleteContactProfile(c.contactId);
       // The first chat is the newer one, so the sweep (newest first) reaches it first.
-      await insertMessage({ conversationId: c.convId, role: 'user', body: 'ada engsel tanam 3D? mau order', createdAt: minutesAgo(10 + i * 5) });
+      await insertMessage({ conversationId: c.convId, role: 'user', body: 'ada box nasi 20x20? mau order', createdAt: minutesAgo(10 + i * 5) });
     }
   });
 

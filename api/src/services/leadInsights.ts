@@ -17,8 +17,8 @@ import type { BrandSlug, OrderItem } from '../domain/orderProfile.js';
  *
  * Those fields used to come only from the live bot's own turns, and only when the model chose to
  * report them that turn. So a contact with AI replies switched off never got any, nor did a chat
- * whose turn ended in a fixed hand-off, nor one where the model just left them out: the 6 Okt
- * leads list was mostly dashes, including a "Proyek" customer asking for a Dorma floor hinge.
+ * whose turn ended in a fixed hand-off, nor one where the model just left them out: the leads
+ * list was mostly dashes.
  *
  * It only ever FILLS. whatever the live
  * bot wrote was read mid-conversation with the catalog in view, so neither is overwritten.
@@ -260,13 +260,13 @@ function planKindAndStage(
   const orderHits = insights.lead_kind === 'lead' || insights.lead_kind === 'status_pesanan'
     ? userRows.filter((m) => orderIds.has(m.id))
     : [];
-  // A customer who places orders is a buyer, whatever else the chat is about. A repeat reseller's chat
-  // is mostly orders, invoices and deliveries, and Haiku labelled it status_pesanan (production
-  // 2026-11-10, 9 order messages since June) - which would also have taken him out of /leads.
+  // A customer who places orders is a buyer, whatever else the chat is about. A repeat buyer's chat
+  // is mostly orders, invoices and deliveries, and Haiku can label it status_pesanan - which would
+  // also take them out of /leads.
   const kind: LeadKind | null = insights.lead_kind === 'status_pesanan' && orderHits.length > 0 ? 'lead' : insights.lead_kind;
   // A repeat buyer the model filed as status_pesanan gets no stage at all - asked for one it leaves it
-  // null - though every order it placed is the "clearly agrees to buy" Won stands for (dry run
-  // 2026-11-13: 5 resellers with 1-24 verified orders each, none Won). Their latest order is the proof.
+  // null - though every order it placed is the "clearly agrees to buy" Won stands for (repeat buyers
+  // with verified orders came out with no Won at all). Their latest order is the proof.
   const wonByOrders = insights.lead_kind === 'status_pesanan' && orderHits.length > 0 && insights.stage !== 'lost';
   const stage = wonByOrders ? 'won' : insights.stage;
   // Every step a message proves is dated by that message (applyLeadStage), so the messages are

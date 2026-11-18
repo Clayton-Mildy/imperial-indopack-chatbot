@@ -45,21 +45,21 @@ describe('leadStages', () => {
 
   it('matchEvidence finds a normalised substring in a customer message', () => {
     expect(
-      matchEvidence('saya ambil 2 lusin', [{ id: 'm1', body: 'Oke kak, saya ambil 2 lusin ya!' }])?.id,
+      matchEvidence('saya ambil 10 rim', [{ id: 'm1', body: 'Oke kak, saya ambil 10 rim ya!' }])?.id,
     ).toBe('m1');
   });
 
   it('matchEvidence returns the first matching message', () => {
-    const hit = matchEvidence('ambil 2 lusin', [
+    const hit = matchEvidence('ambil 10 rim', [
       { id: 'm1', body: 'tanya dulu' },
-      { id: 'm2', body: 'ambil 2 lusin' },
-      { id: 'm3', body: 'ambil 2 lusin juga' },
+      { id: 'm2', body: 'ambil 10 rim' },
+      { id: 'm3', body: 'ambil 10 rim juga' },
     ]);
     expect(hit?.id).toBe('m2');
   });
 
   it('matchEvidence returns null when the evidence is not in any message', () => {
-    expect(matchEvidence('saya ambil 3 karton', [{ id: 'm1', body: 'saya ambil 2 lusin' }])).toBeNull();
+    expect(matchEvidence('saya ambil 3 karton', [{ id: 'm1', body: 'saya ambil 10 rim' }])).toBeNull();
   });
 
   it('matchEvidence returns null for evidence under 4 normalised chars', () => {
@@ -68,8 +68,8 @@ describe('leadStages', () => {
   });
 
   it('matchEvidence looks only at the messages passed in', () => {
-    expect(matchEvidence('saya ambil 2 lusin', [])).toBeNull();
-    expect(matchEvidence('saya ambil 2 lusin', [{ id: 'm1', body: 'tanya harga' }])).toBeNull();
+    expect(matchEvidence('saya ambil 10 rim', [])).toBeNull();
+    expect(matchEvidence('saya ambil 10 rim', [{ id: 'm1', body: 'tanya harga' }])).toBeNull();
   });
 
   it('hasPriceFigure detects an Rp figure', () => {

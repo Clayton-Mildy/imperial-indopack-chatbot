@@ -23,44 +23,44 @@ import { buildImageIndex, imageKey, importCatalogImages, matchImageFile } from '
 describe('matching a file name to a product or variant', () => {
   const index = buildImageIndex({
     products: [
-      { id: 'p1', name: 'GEMBOK BULAT PUTIH' },
-      { id: 'p2', name: 'GEMBOK KOTAK CHROME PANJANG' },
-      { id: 'p3', name: 'GEMBOK BESI KUNING KUNCI C – S.H' },
+      { id: 'p1', name: 'BOX KUE IVORY 20X20' },
+      { id: 'p2', name: 'LUNCH BOX KRAFT SEKAT' },
+      { id: 'p3', name: 'PAPER BAG KRAFT TALI – UK. M' },
     ],
     variants: [
-      { id: 'v1', name: 'HP8250 - 50MM', sku: null, productName: 'GEMBOK BULAT PUTIH' },
-      { id: 'v2', name: 'LS2140 L - 40MM', sku: null, productName: 'GEMBOK KOTAK CHROME PANJANG' },
-      { id: 'v3', name: 'UK 32 MM', sku: null, productName: 'GEMBOK BESI KUNING KUNCI C – S.H' },
-      { id: 'v4', name: 'UK 32 MM', sku: null, productName: 'GEMBOK LAIN' },
-      { id: 'v5', name: 'Hitam Doff', sku: 'SKU-777', productName: 'HANDLE X' },
+      { id: 'v1', name: 'BK2020 - 20X20', sku: null, productName: 'BOX KUE IVORY 20X20' },
+      { id: 'v2', name: 'LB1812 K - 18X12', sku: null, productName: 'LUNCH BOX KRAFT SEKAT' },
+      { id: 'v3', name: 'UK 30 X 30', sku: null, productName: 'PAPER BAG KRAFT TALI – UK. M' },
+      { id: 'v4', name: 'UK 30 X 30', sku: null, productName: 'KERTAS LAIN' },
+      { id: 'v5', name: 'Cokelat Doff', sku: 'SKU-777', productName: 'BOX X' },
     ],
   });
 
   it('ignores case, spaces, dashes and the extension', () => {
-    expect(imageKey('ls2140-l')).toBe(imageKey('LS2140 L'));
-    expect(matchImageFile('ls2140-l.JPG', index)).toMatchObject({ status: 'matched', target: { kind: 'variant', id: 'v2' } });
+    expect(imageKey('lb1812-k')).toBe(imageKey('LB1812 K'));
+    expect(matchImageFile('lb1812-k.JPG', index)).toMatchObject({ status: 'matched', target: { kind: 'variant', id: 'v2' } });
   });
 
   it('matches a product by its name, punctuation and all', () => {
-    expect(matchImageFile('Gembok Bulat Putih.png', index)).toMatchObject({ status: 'matched', target: { kind: 'product', id: 'p1' } });
-    expect(matchImageFile('GEMBOK BESI KUNING KUNCI C - S.H.jpg', index)).toMatchObject({ status: 'matched', target: { id: 'p3' } });
+    expect(matchImageFile('Box Kue Ivory 20x20.png', index)).toMatchObject({ status: 'matched', target: { kind: 'product', id: 'p1' } });
+    expect(matchImageFile('PAPER BAG KRAFT TALI - UK. M.jpg', index)).toMatchObject({ status: 'matched', target: { id: 'p3' } });
   });
 
   it('matches a variant by its code, its full name, or its SKU', () => {
-    expect(matchImageFile('HP8250.jpg', index)).toMatchObject({ status: 'matched', target: { id: 'v1' } });
-    expect(matchImageFile('HP8250 - 50MM.jpeg', index)).toMatchObject({ status: 'matched', target: { id: 'v1' } });
+    expect(matchImageFile('BK2020.jpg', index)).toMatchObject({ status: 'matched', target: { id: 'v1' } });
+    expect(matchImageFile('BK2020 - 20X20.jpeg', index)).toMatchObject({ status: 'matched', target: { id: 'v1' } });
     expect(matchImageFile('sku-777.webp', index)).toMatchObject({ status: 'matched', target: { id: 'v5' } });
   });
 
   it('reports a name two rows share instead of guessing', () => {
-    const r = matchImageFile('UK 32 MM.jpg', index);
+    const r = matchImageFile('UK 30 X 30.jpg', index);
     expect(r.status).toBe('ambiguous');
     expect(r.status === 'ambiguous' && r.options).toHaveLength(2);
   });
 
   it('reports a name that fits nothing', () => {
     expect(matchImageFile('IMG_20261009_101112.jpg', index).status).toBe('unmatched');
-    expect(matchImageFile('GEMBOK BULAT PUTIH (1).jpg', index).status).toBe('unmatched');
+    expect(matchImageFile('BOX KUE IVORY 20X20 (1).jpg', index).status).toBe('unmatched');
   });
 });
 
@@ -74,7 +74,7 @@ describe('importing the files', () => {
   beforeAll(async () => {
     const db = getDb();
     const [brand] = await db.insert(brands).values({ name: `${P}brand` }).returning();
-    const [product] = await db.insert(products).values({ brandId: brand!.id, name: `${P}GEMBOK TEST` }).returning();
+    const [product] = await db.insert(products).values({ brandId: brand!.id, name: `${P}BOX TEST` }).returning();
     productId = product!.id;
     const [variant] = await db.insert(productVariants).values({ productId, name: `${P}ZZ9040 L - 40MM`, isActive: true, priceIdr: '1000' }).returning();
     variantId = variant!.id;
@@ -90,10 +90,10 @@ describe('importing the files', () => {
 
   it('sets the product and variant photos, shrunk to JPEG, and reports the rest', async () => {
     const results = await importCatalogImages([
-      { filename: `${P}GEMBOK TEST.png`, buffer: await png() },
+      { filename: `${P}BOX TEST.png`, buffer: await png() },
       { filename: `${P}ZZ9040 L.png`, buffer: await png() },
       { filename: 'tidak-ada-yang-cocok.png', buffer: await png() },
-      { filename: `${P}GEMBOK TEST.jpg`, buffer: Buffer.from('not an image') },
+      { filename: `${P}BOX TEST.jpg`, buffer: Buffer.from('not an image') },
     ]);
     expect(results.map((r) => r.status)).toEqual(['matched', 'matched', 'unmatched', 'rejected']);
 

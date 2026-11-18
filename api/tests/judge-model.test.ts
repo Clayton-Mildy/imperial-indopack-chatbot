@@ -22,16 +22,15 @@ vi.mock('../src/services/claude.js', () => ({
 import { verifyFit } from '../src/services/aiLayer.js';
 
 const PROMPT = `--- KATALOG PRODUK ---
-Merek: Vintage
-Kategori: Door Pull
-Produk: DOORPULL 35CM VINTAGE BLUE PERTH
-[DATA KATALOG RESMI - otoritatif untuk kecocokan]
-Fungsi: Sebagai pegangan pintu, khususnya pada pintu kayu.
+Merek: Imperial Indopack
+Kategori: Lunch Box
+Produk: NASI BOX KRAFT SEKAT 3
+Kegunaan: Sebagai kemasan nasi kotak, khususnya makanan kering.
 Varian:
-  - BLACK/CP , SC/CP: Rp 105.000/Set | MP: Rp 147.000/Set
+  - 20 x 20 cm: Rp 2.500/pcs
 --- AKHIR KATALOG ---`;
 
-const draft = { message: 'DOORPULL 35CM VINTAGE BLUE PERTH ada kak, Rp 147.000/Set.', confidence: 'high' as const, customerType: 'end_user' as const };
+const draft = { message: 'NASI BOX KRAFT SEKAT 3 ada kak, Rp 2.500/pcs.', confidence: 'high' as const };
 const noRepair = { regenerate: async () => { throw new Error('no repair expected'); } };
 const approve = { content: [{ type: 'text', text: '{"ok": true, "reason": ""}' }], usage: { input_tokens: 1, output_tokens: 1 } };
 const rateLimited = () => new Anthropic.RateLimitError(429, { type: 'error', error: { type: 'rate_limit_error' } }, 'Error', new Headers());
@@ -41,7 +40,7 @@ describe('judge model', () => {
 
   it('judges on Sonnet 5 without temperature (it rejects sampling params) and with thinking off', async () => {
     create.mockResolvedValueOnce(approve);
-    await verifyFit(draft, PROMPT, 'handle pintu kayu', noRepair);
+    await verifyFit(draft, PROMPT, 'nasi box untuk katering', noRepair);
     const [params, options] = create.mock.calls[0]!;
     expect(params.model).toBe('claude-sonnet-5-5');
     expect(params).not.toHaveProperty('temperature');
@@ -51,12 +50,12 @@ describe('judge model', () => {
 
   it('falls back to the reply model at once when the judge model is refused, then leaves it alone', async () => {
     create.mockRejectedValueOnce(rateLimited()).mockResolvedValue(approve);
-    const out = await verifyFit(draft, PROMPT, 'handle pintu kayu', noRepair);
+    const out = await verifyFit(draft, PROMPT, 'nasi box untuk katering', noRepair);
     expect(out.confidence).toBe('high');
     expect(create.mock.calls.map(([p]) => p.model)).toEqual(['claude-sonnet-5-5', 'claude-haiku-4-5-20251001']);
     expect(create.mock.calls[1]![0].temperature).toBe(0);
 
-    await verifyFit(draft, PROMPT, 'handle pintu kayu', noRepair);
+    await verifyFit(draft, PROMPT, 'nasi box untuk katering', noRepair);
     expect(create.mock.calls.map(([p]) => p.model).slice(2)).toEqual(['claude-haiku-4-5-20251001']);
   });
 });

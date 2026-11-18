@@ -217,8 +217,8 @@ describe('chakraSync.runChakraSync', () => {
     expect(byId['wamid.A']!['senderName']).toBeNull();
   });
 
-  // Live 2026-10-08: staff told Ika "kami tidak menyediakan" from the phone; it was stored as
-  // "AI", and the model read it back as its own words.
+  // Staff can tell a customer "kami tidak menyediakan" from the phone; stored as "AI", the model
+  // would read it back as its own words.
   describe('who wrote an outbound message', () => {
     const outbound = (over: Record<string, unknown>) => ({
       id: 'o1', externalId: 'wamid.O1', direction: 'OUTBOUND', dataType: 'text',
@@ -226,7 +226,7 @@ describe('chakraSync.runChakraSync', () => {
     });
 
     // The bot stores every file it sends under its wamid (outboundMedia.ts), so like a text, a file
-    // the sync still finds new was sent off the phone. Live: an invoice photo to pak Ferry read "AI".
+    // the sync still finds new was sent off the phone. Live: an invoice photo sent by staff read "AI".
     it('labels a photo or document sent off the phone as a person\'s', async () => {
       messageFixture = [
         outbound({ id: 'o1', externalId: 'wamid.O1', dataType: 'image', text: null, body: { image: { id: 'MEDIA-1', caption: 'Izin menginfokan tagihan' } } }),
@@ -241,14 +241,14 @@ describe('chakraSync.runChakraSync', () => {
     it('leaves a file sent by link unlabeled and shows it from that link, without a download', async () => {
       cfg['PUBLIC_BASE_URL'] = 'https://bot.example.com';
       messageFixture = [
-        outbound({ id: 'o1', externalId: 'wamid.O1', dataType: 'image', text: null, body: { image: { link: 'https://bot.example.com/uploads/products/saturnus.jpg', caption: '' } } }),
-        outbound({ id: 'o2', externalId: 'wamid.O2', dataType: 'document', text: null, body: { document: { link: 'https://cdn.chakrahq.com/katalog.pdf', filename: 'KATALOG LEGACY 2026.pdf' } } }),
+        outbound({ id: 'o1', externalId: 'wamid.O1', dataType: 'image', text: null, body: { image: { link: 'https://bot.example.com/uploads/products/box-kue.jpg', caption: '' } } }),
+        outbound({ id: 'o2', externalId: 'wamid.O2', dataType: 'document', text: null, body: { document: { link: 'https://cdn.chakrahq.com/katalog.pdf', filename: 'Daftar Harga Kertas Supreme.pdf' } } }),
       ];
       const { runChakraSync } = await importSync();
       await runChakraSync();
       expect(inserted.map((m) => m['senderName'])).toEqual([null, null]);
       const meta = inserted.map((m) => m['metadata'] as Record<string, unknown>);
-      expect(meta[0]).toMatchObject({ attachmentType: 'image', mediaUrl: '/uploads/products/saturnus.jpg' });
+      expect(meta[0]).toMatchObject({ attachmentType: 'image', mediaUrl: '/uploads/products/box-kue.jpg' });
       expect(meta[1]).toMatchObject({ attachmentType: 'document', mediaUrl: 'https://cdn.chakrahq.com/katalog.pdf' });
       expect(meta[0]).not.toHaveProperty('sentByLink');
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/media/'))).toBe(false);

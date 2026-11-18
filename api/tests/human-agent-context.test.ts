@@ -34,7 +34,7 @@ vi.mock('../src/services/ragQuery.js', () => ({
   buildCatalogContext: mockBuildCatalogContext,
 }));
 vi.mock('../src/repositories/appSettings.js', () => ({
-  getDefaultPromptSections: vi.fn(async () => [{ name: 'Identitas', content: 'CS Legacy' }]),
+  getDefaultPromptSections: vi.fn(async () => [{ name: 'Identitas', content: 'Admin Imperial Indopack' }]),
 }));
 vi.mock('../src/repositories/products.js', () => ({ listBrands: vi.fn(async () => []) }));
 vi.mock('../src/repositories/conversations.js', () => ({
@@ -62,8 +62,8 @@ vi.mock('../src/services/replyChecks.js', () => ({
 
 const { buildContext, buildContextAndCallAI } = await import('../src/services/aiLayer.js');
 
-// The message that actually caused the incident.
-const STRAY = 'kunci pintu wide yang alicante gun blaclk di retur karena minta @ 1dos';
+// A colleague's note in the shape of the one that caused the incident.
+const STRAY = 'box ivory 20x20 yang kemarin di retur karena minta @ 1dus';
 
 function row(role: string, body: string, senderName: string | null = null) {
   return { role, body, senderName };
@@ -72,7 +72,7 @@ function row(role: string, body: string, senderName: string | null = null) {
 describe('buildContext', () => {
   it('labels a human-authored assistant turn instead of replaying it as the bot\'s own', () => {
     const built = buildContext(
-      [row('user', 'halo'), row('assistant', STRAY, 'Agen ChakraHQ'), row('user', 'toko saya Jaya Karya')],
+      [row('user', 'halo'), row('assistant', STRAY, 'Agen ChakraHQ'), row('user', 'usaha saya RM Jaya Rasa')],
       null
     );
     expect(built[1]).toEqual({ role: 'assistant', body: `[Rekan tim CS menulis: ${STRAY}]` });
@@ -100,13 +100,13 @@ describe('buildContext', () => {
     const img = (body: string, photoContext?: string) =>
       ({ role: 'user', body, senderName: null, metadata: { attachmentType: 'image', ...(photoContext && { photoContext }) } });
     const built = buildContext([
-      img('yang kaya gini ada ga?', 'produk kami HANDLE KECIL + BODY GUANGZHOU (foto sama)'),
-      img('[Pelanggan mengirim foto — analisis gambar terlampir]', 'isi foto: engsel, pintu'),
+      img('yang kaya gini ada ga?', 'produk kami LUNCH BOX KRAFT (foto sama)'),
+      img('[Pelanggan mengirim foto — analisis gambar terlampir]', 'isi foto: box, kraft'),
       img('[Pelanggan mengirim foto — analisis gambar terlampir]'),
     ], null);
     expect(built.map((m) => m.body)).toEqual([
-      '[Pelanggan mengirim foto: produk kami HANDLE KECIL + BODY GUANGZHOU (foto sama)] yang kaya gini ada ga?',
-      '[Pelanggan mengirim foto: isi foto: engsel, pintu]',
+      '[Pelanggan mengirim foto: produk kami LUNCH BOX KRAFT (foto sama)] yang kaya gini ada ga?',
+      '[Pelanggan mengirim foto: isi foto: box, kraft]',
       '[Pelanggan mengirim foto]',
     ]);
   });
@@ -131,23 +131,23 @@ describe('lastAssistant anchor', () => {
   // onto the wrong topic - the same bug as above, one layer down, where a label would not help.
   it('skips a human-authored message when seeding the RAG query for a short reply', async () => {
     mockGetLastNMessages.mockResolvedValue([
-      row('assistant', 'Mau cari handle pintu yang seperti apa kak?'),
+      row('assistant', 'Mau cari box nasi yang seperti apa kak?'),
       row('assistant', STRAY, 'Agen ChakraHQ'),
     ]);
     await buildContextAndCallAI('conv-1', 'mau');
     const ragQuery = mockBuildCatalogContext.mock.calls[0]![0] as unknown as string;
-    expect(ragQuery).toContain('handle pintu');
+    expect(ragQuery).toContain('box nasi');
     expect(ragQuery).not.toContain('retur');
   });
 
-  // Live 2026-10-14: SATURNUS earlier in the chat, then an ALEXANDER photo whose verdict sat only in
-  // the system prompt - the reply followed the earlier photo's note in the history.
+  // One product's photo earlier in the chat, then another photo whose verdict sat only in the
+  // system prompt - the reply followed the earlier photo's note in the history.
   it('puts the photo verdict on the photo\'s own turn', async () => {
     mockGetLastNMessages.mockResolvedValue([]);
-    const note = 'PERBANDINGAN FOTO: foto pelanggan SAMA dengan foto produk kami HANDLE BESAR + BODY KUNCI VINTAGE ALEXANDER.';
+    const note = 'PERBANDINGAN FOTO: foto pelanggan SAMA dengan foto produk kami BOX KUE IVORY 20X20.';
     await buildContextAndCallAI('conv-1', 'kalau ini apa ya?', undefined, [], { base64: 'QUJD', mimeType: 'image/jpeg' }, null, { photoNote: note });
     const sent = mockCreate.mock.calls[0]![0].messages as { role: string; content: unknown }[];
-    expect(JSON.stringify(sent[sent.length - 1]!.content)).toContain('foto produk kami HANDLE BESAR + BODY KUNCI VINTAGE ALEXANDER');
+    expect(JSON.stringify(sent[sent.length - 1]!.content)).toContain('foto produk kami BOX KUE IVORY 20X20');
   });
 
   // Photos sent together reach the model in one turn, each lettered so its verdict can name it.
@@ -163,8 +163,8 @@ describe('lastAssistant anchor', () => {
   });
 
   it('still anchors on the bot\'s own last message when there is no human turn', async () => {
-    mockGetLastNMessages.mockResolvedValue([row('assistant', 'Mau cari handle pintu yang seperti apa kak?')]);
+    mockGetLastNMessages.mockResolvedValue([row('assistant', 'Mau cari box nasi yang seperti apa kak?')]);
     await buildContextAndCallAI('conv-1', 'mau');
-    expect(mockBuildCatalogContext.mock.calls[0]![0]).toContain('handle pintu');
+    expect(mockBuildCatalogContext.mock.calls[0]![0]).toContain('box nasi');
   });
 });

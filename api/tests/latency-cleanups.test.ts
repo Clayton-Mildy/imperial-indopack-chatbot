@@ -1,8 +1,8 @@
 /**
  * latency-cleanups.test.ts
  * Regression checks for the response-time cleanups: the single-round-trip
- * contact-profile upsert, and listProducts' COUNT skip at limit 0. Real DB
- * (legacy_regression), following catalog-v2.test.ts's prefix-and-cleanup pattern.
+ * contact-profile upsert, and listProducts' COUNT skip at limit 0. Real DB, following
+ * catalog-v2.test.ts's prefix-and-cleanup pattern.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -35,18 +35,18 @@ describe('upsertContactProfile — create then merge', () => {
 
   it('creates on first call, merges the jsonb patch and preserves fields on the second', async () => {
     const created = await upsertContactProfile(contactId, {
-      customerType: 'end_user',
+      followUpStatus: 'needs_followup',
       profilePatch: { name: 'Budi', quantity: 12 },
     });
-    expect(created.customerType).toBe('end_user');
+    expect(created.followUpStatus).toBe('needs_followup');
     expect(created.profile).toMatchObject({ name: 'Budi', quantity: 12 });
 
-    // Second turn: patch one key, add another, say nothing about customerType.
+    // Second turn: patch one key, add another, say nothing about followUpStatus.
     const updated = await upsertContactProfile(contactId, {
       profilePatch: { quantity: 24, budget: '100rb' },
       followUpNotes: 'tunggu foto',
     });
-    expect(updated.customerType).toBe('end_user'); // preserved, not nulled
+    expect(updated.followUpStatus).toBe('needs_followup'); // preserved, not reset
     expect(updated.profile).toMatchObject({ name: 'Budi', quantity: 24, budget: '100rb' }); // merged
     expect(updated.followUpNotes).toBe('tunggu foto');
 

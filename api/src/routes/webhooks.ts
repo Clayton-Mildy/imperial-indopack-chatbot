@@ -123,7 +123,7 @@ async function toInboundPayload(msg: MetaMessage, value: MetaValue, log: Fastify
     // and a placeholder row that cannot say which of those it was cannot be diagnosed afterwards.
     providerType: msg.type,
     // Capture the caption on image/document messages — otherwise the customer's
-    // actual question (e.g. "ada handle newton? butuh 12 pcs") is lost and the AI
+    // actual question (e.g. "ada box seperti ini? butuh 2000 pcs") is lost and the AI
     // can only react to the picture.
     text: msg.text?.body ?? msg.image?.caption ?? msg.document?.caption ?? null,
     media,

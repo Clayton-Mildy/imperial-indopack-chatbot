@@ -33,9 +33,9 @@ export const SECTIONS_NOT_SYNCED: Record<string, string> = {
 };
 
 /**
- * Legacy's sections, which a database seeded before the Imperial Indopack prompt still holds. Every
- * sync removes them, edited or not: each one states rules (buyer types, reseller prices, discounts,
- * hardware playbooks) that contradict the shipped prompt.
+ * Sections of the prompt this bot was ported from, which a database seeded before the Imperial
+ * Indopack prompt still holds. Every sync removes them, edited or not: each one states rules (buyer
+ * types, two price tiers, volume discounts, product playbooks) that contradict the shipped prompt.
  */
 export const SECTIONS_RETIRED = [
   'Conversation Objective',

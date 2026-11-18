@@ -496,8 +496,8 @@ export async function resetConversationToActive(id: string): Promise<Conversatio
 /**
  * `at`: the floor. Pass the /new message's own WhatsApp send time: created_at is backdated to that
  * clock for every inbound message, so a floor at processing time put a message sent a second
- * AFTER /new - but timestamped before the command was processed - under it (UAT Run 2: the setup
- * line "halo, saya Budi, dipakai sendiri buat rumah" vanished from the next turn's history).
+ * AFTER /new - but timestamped before the command was processed - under it (a setup line like
+ * "halo, saya Budi, mau box nasi" vanished from the next turn's history).
  */
 export async function resetConversationContext(id: string, at?: Date): Promise<void> {
   const db = getDb();

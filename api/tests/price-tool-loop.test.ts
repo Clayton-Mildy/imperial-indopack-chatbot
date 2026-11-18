@@ -217,7 +217,7 @@ describe('API path', () => {
 
   it('a call to a tool the bot no longer has still gets a result, so the next request is valid', async () => {
     mockCreate
-      .mockResolvedValueOnce(toolTurn({ type: 'tool_use', id: 't1', name: 'search_legacy_website', input: { query: 'box' } }))
+      .mockResolvedValueOnce(toolTurn({ type: 'tool_use', id: 't1', name: 'search_website', input: { query: 'box' } }))
       .mockResolvedValueOnce(respondTurn());
 
     await callAIWithHistory(HISTORY, ASK);

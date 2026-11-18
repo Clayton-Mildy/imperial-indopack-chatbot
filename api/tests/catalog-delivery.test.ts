@@ -142,7 +142,7 @@ describe('the price list goes to a price question, by brand', () => {
     const { resolveCatalogDelivery } = await load();
     withFacts({ brands: 'kertas_supreme', items: 'banyak' });
     expect((await resolveCatalogDelivery(C, 'berapa harganya?')).note).toContain(UNKNOWN_BRAND_NOTE);
-    withFacts({ brands: ['legacy', 42, null] });
+    withFacts({ brands: ['brand_lain', 42, null] });
     expect((await resolveCatalogDelivery(C, 'berapa harganya?')).note).toContain(UNKNOWN_BRAND_NOTE);
   });
 });

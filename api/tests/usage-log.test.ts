@@ -15,7 +15,7 @@ describe('usage log', () => {
   });
 
   const tmp = (): string => {
-    const d = mkdtempSync(path.join(tmpdir(), 'legacy-usage-'));
+    const d = mkdtempSync(path.join(tmpdir(), 'imperial-usage-'));
     dirs.push(d);
     return d;
   };

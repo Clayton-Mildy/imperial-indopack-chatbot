@@ -44,7 +44,7 @@ function configured(extra: Record<string, string> = {}) {
     VAPID_PUBLIC_KEY: 'pub',
     VAPID_PRIVATE_KEY: 'priv',
     VAPID_SUBJECT: 'mailto:a@b.c',
-    PUBLIC_BASE_URL: 'https://dashboard.previous-client.example',
+    PUBLIC_BASE_URL: 'https://dashboard.example.co.id',
     ESCALATION_NOTIFY_WA: '',
     ...extra,
   };
@@ -68,7 +68,7 @@ describe('notifyStaff', () => {
     // The dashboard is proxied under /app on this same origin, so PUBLIC_BASE_URL is the whole
     // address - there is no second hostname to keep in sync.
     expect(JSON.parse(payload as string).url).toBe(
-      'https://dashboard.previous-client.example/app/conversations/c1'
+      'https://dashboard.example.co.id/app/conversations/c1'
     );
   });
 

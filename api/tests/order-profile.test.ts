@@ -28,7 +28,7 @@ describe('mergeOrderFacts', () => {
     expect(r).toEqual({ name: 'B', business_name: 'X' });
   });
   it('ignores a brand that is not a known slug', () =>
-    expect(mergeOrderFacts({}, { brands: ['legacy'] }).brands).toEqual([]));
+    expect(mergeOrderFacts({}, { brands: ['brand_lain'] }).brands).toEqual([]));
   it('does not mutate its inputs', () => {
     const existing = { items: [{ ...SUPREME_30 }] };
     mergeOrderFacts(existing, { items: [{ product: 'Kertas Supreme 64 gsm', size: '30x30', qty: 99 }] });

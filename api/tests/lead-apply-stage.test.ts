@@ -71,7 +71,7 @@ describe('lead stage writes', () => {
     const old = await insertMessage({
       conversationId: conv.id,
       role: 'user',
-      body: 'oke saya ambil 2 lusin',
+      body: 'oke saya ambil 10 rim',
       createdAt: new Date(Date.now() - 40 * 86_400_000),
     });
     oldMessageId = old.id;
@@ -86,9 +86,9 @@ describe('lead stage writes', () => {
   afterAll(cleanup);
 
   it('advances and records an event', async () => {
-    expect(await applyLeadStage(leadId, { status: 'contacted', actor: 'ai', evidence: 'ada handle?' })).toBe(true);
+    expect(await applyLeadStage(leadId, { status: 'contacted', actor: 'ai', evidence: 'ada box?' })).toBe(true);
     const ev = await listLeadEvents(leadId);
-    expect(ev.at(-1)).toMatchObject({ fromStatus: 'new', toStatus: 'contacted', actor: 'ai', evidence: 'ada handle?' });
+    expect(ev.at(-1)).toMatchObject({ fromStatus: 'new', toStatus: 'contacted', actor: 'ai', evidence: 'ada box?' });
   });
 
   it('never moves backwards and never touches won', async () => {
@@ -103,7 +103,7 @@ describe('lead stage writes', () => {
   });
 
   it('dates an outcome by its evidence message, not the run day', async () => {
-    await applyLeadStage(leadId, { status: 'won', actor: 'ai', evidence: 'saya ambil 2 lusin', messageId: oldMessageId });
+    await applyLeadStage(leadId, { status: 'won', actor: 'ai', evidence: 'saya ambil 10 rim', messageId: oldMessageId });
     const l = await getLead(leadId);
     expect(l.closedAt?.getTime()).toBe(oldMessageAt.getTime());
     const won = (await listLeadEvents(leadId)).find((e) => e.toStatus === 'won');
@@ -148,7 +148,7 @@ describe('lead stage writes', () => {
   });
 
   it('a staff status change clears the AI outcome it replaces', async () => {
-    await applyLeadStage(leadId, { status: 'won', actor: 'ai', evidence: 'saya ambil 2 lusin', messageId: oldMessageId });
+    await applyLeadStage(leadId, { status: 'won', actor: 'ai', evidence: 'saya ambil 10 rim', messageId: oldMessageId });
     const t0 = Date.now();
     await patchLead(leadId, { status: 'lost', staffId });
     let l = await getLead(leadId);
@@ -200,7 +200,7 @@ describe('lead stage writes', () => {
   it('reopens inside the window, renews after it', async () => {
     const daysAgo = (n: number) => sql`now() - make_interval(days => ${n})`;
     await getDb().execute(sql`UPDATE leads SET status = 'lost', lost_reason = 'harga', outcome_evidence = 'x', closed_at = ${daysAgo(10)} WHERE id = ${leadId}`);
-    const evidence = { body: 'masih ada handle tadi?', messageId };
+    const evidence = { body: 'masih ada box tadi?', messageId };
     const reopened = await reopenOrRenewLostLead((await findCurrentLeadForContact(contactId))!, 30, evidence);
     expect(reopened.id).toBe(leadId);
     expect(reopened).toMatchObject({ status: 'contacted', closedAt: null, lostReason: null, outcomeEvidence: null });
@@ -252,7 +252,7 @@ describe('lead stage writes', () => {
     (await getDb().execute<{ same: boolean }>(sql`SELECT ${a} = ${b} AS same`)).rows[0]!.same;
 
   it('measures the reopen window from the close to the return message, not to now', async () => {
-    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'engsel yang kemarin masih ada?', createdAt: daysAgo(10) });
+    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'box nasi yang kemarin masih ada?', createdAt: daysAgo(10) });
     // Closed exactly 30 days before the return message - 40 days before now.
     await getDb().execute(sql`UPDATE leads SET status = 'lost', lost_reason = 'harga',
       closed_at = (SELECT created_at - interval '30 days' FROM messages WHERE id = ${back.id}) WHERE id = ${leadId}`);
@@ -269,8 +269,8 @@ describe('lead stage writes', () => {
 
   it('starts a backfilled renewal at the return message, so time to close is never negative', async () => {
     await getDb().execute(sql`UPDATE leads SET status = 'lost', lost_reason = 'harga', closed_at = now() - interval '60 days' WHERE id = ${leadId}`);
-    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'mau order engsel lagi kak', createdAt: daysAgo(20) });
-    const said = await insertMessage({ conversationId: convId, role: 'user', body: 'oke saya ambil 3 lusin', createdAt: daysAgo(19) });
+    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'mau order box nasi lagi kak', createdAt: daysAgo(20) });
+    const said = await insertMessage({ conversationId: convId, role: 'user', body: 'oke saya ambil 5 rim', createdAt: daysAgo(19) });
     const renewed = await reopenOrRenewLostLead((await findCurrentLeadForContact(contactId))!, 30, { body: back.body, messageId: back.id });
     expect(renewed.id).not.toBe(leadId);
     const msgAt = sql`(SELECT created_at FROM messages WHERE id = ${back.id})`;

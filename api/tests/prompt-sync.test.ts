@@ -54,25 +54,25 @@ describe('syncPromptSections', () => {
   });
 });
 
-// A database seeded before the Imperial Indopack prompt still holds Legacy's sections: on deploy they
-// go, and the new ones take their place in the shipped order.
-describe('syncPromptSections - the Legacy prompt replaced', () => {
-  const LEGACY = ['Identity', 'Mission', 'Tone', 'Conversation Objective', 'Decision Principles', 'Rules',
+// A database seeded before the Imperial Indopack prompt still holds the ported prompt's sections: on
+// deploy they go, and the new ones take their place in the shipped order.
+describe('syncPromptSections - the ported prompt replaced', () => {
+  const OLD_PROMPT = ['Identity', 'Mission', 'Tone', 'Conversation Objective', 'Decision Principles', 'Rules',
     'Playbook Rekomendasi per Kategori', 'Scope', 'Product Recommendation Format', 'Kebijakan Reseller/Agen',
-    'Kebijakan Harga', 'Kebijakan Diskon Reseller', 'Escalation'].map((name) => ({ name, content: `${name} legacy` }));
+    'Kebijakan Harga', 'Kebijakan Diskon Reseller', 'Escalation'].map((name) => ({ name, content: `${name} lama` }));
 
   it('removes every retired section, even one staff edited, and reports it', () => {
-    const { patched, actions } = syncPromptSections(LEGACY, SYSTEM_PROMPT_SECTIONS, {});
+    const { patched, actions } = syncPromptSections(OLD_PROMPT, SYSTEM_PROMPT_SECTIONS, {});
     for (const name of SECTIONS_RETIRED) {
       expect(patched.map((s) => s.name)).not.toContain(name);
-      if (LEGACY.some((s) => s.name === name)) expect(actions[name]).toBe('removed');
+      if (OLD_PROMPT.some((s) => s.name === name)) expect(actions[name]).toBe('removed');
     }
   });
 
   it('ends in the shipped order, with the per-number Identity kept', () => {
-    const { patched } = syncPromptSections(LEGACY, SYSTEM_PROMPT_SECTIONS, {});
+    const { patched } = syncPromptSections(OLD_PROMPT, SYSTEM_PROMPT_SECTIONS, {});
     expect(patched.map((s) => s.name)).toEqual(SYSTEM_PROMPT_SECTIONS.map((s) => s.name));
-    expect(patched[0]).toEqual({ name: 'Identity', content: 'Identity legacy' });
+    expect(patched[0]).toEqual({ name: 'Identity', content: 'Identity lama' });
   });
 
   it('keeps a section staff added that was never shipped', () => {

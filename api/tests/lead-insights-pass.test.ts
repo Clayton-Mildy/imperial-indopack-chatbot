@@ -411,7 +411,7 @@ describe('lead-insights pass', () => {
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'Mohon maaf, styrofoam belum ada di kami ya', createdAt: minutesAgo(29) });
     await insertMessage({ conversationId: convId, role: 'user', body: 'Baik kk', createdAt: minutesAgo(28) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'Boleh tahu nama kakak?', createdAt: minutesAgo(27) });
-    await insertMessage({ conversationId: convId, role: 'user', body: 'Saya Bang Al dari probolinggo, buat katering', createdAt: minutesAgo(26) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'Saya Bang Andi dari Sidoarjo, buat katering', createdAt: minutesAgo(26) });
     answer({ lead_kind: 'lead', stage: 'lost', evidence: 'Baik kk', lost_reason: 'barang_tidak_ada' });
 
     await runLeadInsightsPass(1, only());

@@ -26,7 +26,7 @@ vi.mock('../src/services/ragQuery.js', () => ({
   buildCatalogContext: vi.fn(async () => ''),
 }));
 vi.mock('../src/repositories/appSettings.js', () => ({
-  getDefaultPromptSections: vi.fn(async () => [{ name: 'Identitas', content: 'CS Legacy' }]),
+  getDefaultPromptSections: vi.fn(async () => [{ name: 'Identitas', content: 'Admin Imperial Indopack' }]),
 }));
 vi.mock('../src/repositories/products.js', () => ({ listBrands: vi.fn(async () => []) }));
 vi.mock('../src/repositories/conversations.js', () => ({
@@ -78,7 +78,7 @@ describe('free text instead of respond_to_customer', () => {
       .mockResolvedValueOnce({
         content: [{
           type: 'tool_use', id: 't1', name: 'respond_to_customer',
-          input: { message: 'Sama-sama kak 🙏', confidence: 'high', fit_basis: [], customer_type: 'unknown' },
+          input: { message: 'Sama-sama kak 🙏', confidence: 'high', fit_basis: [] },
         }],
         stop_reason: 'tool_use',
         usage: {},
@@ -103,22 +103,22 @@ describe('free text instead of respond_to_customer', () => {
 });
 
 // The Agent SDK route had no failsafe call, so on the production PC (which ran on it) every answer
-// written as text instead of through respond_to_customer became a hand-off. Live 2026-10-09: a padlock
+// written as text instead of through respond_to_customer became a hand-off. Live 2026-10-09: an
 // order waited 7 minutes, then got "Kita coba cek dengan tim dulu" - "AI response failed structured output".
 describe('Agent SDK path: the failsafe the API path always had', () => {
   type Tool = { name: string; handler: (args: Record<string, unknown>, extra: unknown) => Promise<unknown> };
   const callRespond = (opts: { tools?: Tool[] }, input: Record<string, unknown>) =>
     opts.tools!.find((t) => t.name === 'respond_to_customer')!.handler(input, {});
-  const REPLY = { message: 'Mohon maaf kak, untuk gembok putih di kami adanya ukuran 40, 50, dan 60mm ya kak.', confidence: 'high', customer_type: 'end_user' };
+  const REPLY = { message: 'Mohon maaf kak, untuk box putih di kami adanya ukuran 20x20 dan 25x25 ya kak.', confidence: 'high' };
 
   beforeEach(() => mockIsDevMode.mockReturnValue(true));
 
   it('asks once more, with only the respond tool and the draft in view, and sends what comes back', async () => {
     mockAgentQuery
-      .mockResolvedValueOnce('Mohon maaf kak, untuk gembok putih di kami adanya ukuran 40, 50, dan 60mm ya kak.')
+      .mockResolvedValueOnce('Mohon maaf kak, untuk box putih di kami adanya ukuran 20x20 dan 25x25 ya kak.')
       .mockImplementationOnce(async (opts) => { await callRespond(opts, REPLY); return ''; });
 
-    const r = await callAIWithHistory([], 'yang leher panjang 2, yang pendek 2');
+    const r = await callAIWithHistory([], 'yang 20x20 2000, yang 25x25 1000');
 
     expect(r).toMatchObject({ message: REPLY.message, confidence: 'high' });
     const retry = mockAgentQuery.mock.calls[1]![0];
@@ -134,7 +134,7 @@ describe('Agent SDK path: the failsafe the API path always had', () => {
       .mockRejectedValueOnce(new Error('Claude Code returned an error result: Reached maximum number of turns (8)'))
       .mockImplementationOnce(async (opts) => { await callRespond(opts, REPLY); return ''; });
 
-    const r = await callAIWithHistory([], 'yang leher panjang 2, yang pendek 2');
+    const r = await callAIWithHistory([], 'yang 20x20 2000, yang 25x25 1000');
     expect(r.message).toBe(REPLY.message);
   });
 
@@ -157,7 +157,7 @@ describe('Agent SDK path: the failsafe the API path always had', () => {
 // reason to write its reasoning as text.
 describe('total_for_team', () => {
   it('is read off the tool call, and only as true', () => {
-    const base = { message: 'Engsel 4": Rp 42.000/Set', confidence: 'high', fit_basis: [], customer_type: 'project' };
+    const base = { message: 'Box nasi 20x20: Rp 1.800/pcs', confidence: 'high', fit_basis: [] };
     expect(extractFromToolInput({ ...base, total_for_team: true }).totalForTeam).toBe(true);
     expect(extractFromToolInput({ ...base, total_for_team: 'ya' }).totalForTeam).toBeUndefined();
     expect(extractFromToolInput(base).totalForTeam).toBeUndefined();
@@ -166,7 +166,7 @@ describe('total_for_team', () => {
 
 describe('no_reply', () => {
   const input = (over: Record<string, unknown>) =>
-    ({ message: '', confidence: 'high', fit_basis: [], customer_type: 'project', ...over });
+    ({ message: '', confidence: 'high', fit_basis: [], ...over });
 
   it('a bare no_reply call is a "send nothing" response', () => {
     const r = extractFromToolInput(input({ no_reply: true }));

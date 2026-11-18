@@ -10,10 +10,10 @@ import { describe, it, expect } from 'vitest';
 import { mapsPlaceNameFromUrl, titleFromHtml, descriptionFromHtml } from '../src/services/linkResolver.js';
 
 describe('mapsPlaceNameFromUrl', () => {
-  it('reads the place name from a resolved maps URL (the live JAYAMOTOR case)', () => {
+  it('reads the place name from a resolved maps URL', () => {
     const url =
-      'https://www.google.com/maps/place/Bengkel+JAYAMOTOR+(Honda,+Yamaha,+Suzuki,+Kawasaki)/@-6.2367633,106.6253828,1281m/data=!3m2!1e3!4b1';
-    expect(mapsPlaceNameFromUrl(url)).toBe('Bengkel JAYAMOTOR (Honda, Yamaha, Suzuki, Kawasaki)');
+      'https://www.google.com/maps/place/RM+Padang+Sederhana+(Cabang+Pusat,+Buka+24+Jam)/@-6.2000000,106.6000000,1281m/data=!3m2!1e3!4b1';
+    expect(mapsPlaceNameFromUrl(url)).toBe('RM Padang Sederhana (Cabang Pusat, Buka 24 Jam)');
   });
 
   it('decodes URI-encoded segments', () => {
@@ -29,12 +29,12 @@ describe('mapsPlaceNameFromUrl', () => {
 
 describe('titleFromHtml', () => {
   it('prefers og:title over <title>', () => {
-    const html = '<head><title>Tokopedia</title><meta property="og:title" content="Sinar Jaya Bangunan | Tokopedia"/></head>';
-    expect(titleFromHtml(html)).toBe('Sinar Jaya Bangunan | Tokopedia');
+    const html = '<head><title>Tokopedia</title><meta property="og:title" content="Sinar Jaya Kemasan | Tokopedia"/></head>';
+    expect(titleFromHtml(html)).toBe('Sinar Jaya Kemasan | Tokopedia');
   });
 
   it('falls back to <title>, and handles attribute order both ways', () => {
-    expect(titleFromHtml('<title>Charles Hardware Surabaya</title>')).toBe('Charles Hardware Surabaya');
+    expect(titleFromHtml('<title>Charles Bakery Surabaya</title>')).toBe('Charles Bakery Surabaya');
     const reversed = '<meta content="Toko ABC" property="og:title">';
     expect(titleFromHtml(reversed)).toBe('Toko ABC');
   });

@@ -388,8 +388,8 @@ function notifyEscalatedTurnAnswered(conversationId: string, text: string): void
 
 /**
  * The customer wrote again while this turn's reply was being written, so the draft answers a
- * conversation that has moved on. Live 2026-10-06: "Saya yan" was answered with "untuk proyek atau
- * dijual lagi?" a moment after the customer had typed "Untuk proyek sih kak". Nothing has been sent
+ * conversation that has moved on: a reply asking "untuk jualan apa kak?" a moment after the customer
+ * had typed "untuk nasi padang kak" reads as not listening. Nothing has been sent
  * yet, so drop the draft and fold this batch into the waiting one: the next turn answers everything
  * at once (its texts, not just the new ones, so detectHumanRequest and the PPN gate still see them).
  *
@@ -540,8 +540,8 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
       if (conv.status === 'escalated') {
         console.warn(`[messageRouter] escalated conversation ${conversationId}: low-confidence turn → still-checking ack`);
         // Keep the banner on THIS turn's reason. Without it the team reads whatever first
-        // escalated the conversation - live, a padlock objection sat on the banner of a
-        // conversation that had moved on to cement trowels eighteen days earlier.
+        // escalated the conversation - live, a price objection sat on the banner of a
+        // conversation that had moved on to another product eighteen days earlier.
         await updateConversationStatus(conversationId, 'escalated', reason)
           .catch((err) => console.warn('[messageRouter] escalated-status refresh failed:', err instanceof Error ? err.message : err));
         // The hand-off notification only fires once, on the first escalation - but the
@@ -567,7 +567,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     }
 
     // Again, right before sending: the first check runs as the AI call returns, and a message that
-    // lands during the escalation checks and staff sync above was missed (live 2026-11-08: "Dengan Jovi
+    // lands during the escalation checks and staff sync above was missed (live 2026-11-08: "Dengan Rudi
     // ka" typed as a reply about Malang was being sent, which then asked the name again).
     if (supersedeStaleTurn(entry, filesSent)) return;
     const { followUp, poForm } = await onceOnlyFollowUp(conversationId, aiResponse, combinedText);
@@ -641,7 +641,7 @@ async function firePhotoBatch(conversationId: string): Promise<void> {
  * yakin itu gambar apa, dan sesuai dg punya kita, bru bisa tawarkan." Only a "same" verdict is that
  * certainty. A "mirip" used to become "apakah yang dimaksud X?", and no verdict at all (nothing to compare,
  * a timeout, a failed call) or "none" left the model to judge the photo from the catalog by itself -
- * which is how a customer's photo got the Graham handle offered.
+ * which is how a customer's photo got an unrelated product offered.
  */
 function photoUnsureReason(matches: (PhotoMatch | null)[]): string | null {
   const why = matches.map((m, i) => {
@@ -708,8 +708,8 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     return;
   }
   // The customer wrote again while these photos were being answered - the text path's
-  // supersedeStaleTurn, for photos. Live 2026-10-12: "sendiri" typed during the photo turn,
-  // and the photo's reply asked "dipakai sendiri, proyek, atau dijual lagi?" again. Nothing is
+  // supersedeStaleTurn, for photos: an answer typed during the photo turn must not be followed by
+  // the photo's reply asking the same question again. Nothing is
   // sent yet: hand the photos' question to the waiting text batch, which answers both. It
   // knows what each photo was from the note stored on its message (aiLayer.historyBody).
   const waiting = textDebounceMap.get(conv.id);
@@ -884,7 +884,7 @@ const CATALOG_NOUNS = [
   'katalog', 'catalog', 'brosur', 'daftar harga', 'price list', 'pricelist',
   'product list', 'daftar produk',
 ];
-// ...but "berapa daftar harga handle newton?" is a price question, not a request for the file,
+// ...but "berapa daftar harga box nasi 20x20?" is a price question, not a request for the file,
 // and the file is now a PRICELIST document. So a bare noun no longer fires: either the message
 // asks for it ("minta katalog", "ada brosur?"), or it is essentially just the noun on its own.
 const CATALOG_VERBS = /\b(minta|mau|boleh|bisa|kirim|share|send|ada|punya|lihat|liat|tolong|info|infokan|pdf|file)\b/i;
@@ -1196,7 +1196,7 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
     return;
   }
   // An image WITH a caption but no downloadable media falls through to the text path below,
-  // so the caption (e.g. "ada handle newton? butuh 12 pcs") still drives a normal RAG answer.
+  // so the caption (e.g. "ada box seperti ini? butuh 2000 pcs") still drives a normal RAG answer.
 
   // Text path — debounce AI call per conversation to avoid spam on rapid messages
   const textBody = payload.text ?? body;

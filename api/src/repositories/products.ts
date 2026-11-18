@@ -601,12 +601,12 @@ export async function searchActiveProducts(params: {
       ? sql`${brandClause} AND (${scoreExpr}) > 0${photoClause}`
       : sql`(${scoreExpr}) > 0${photoClause}`;
     // Color/type variants are modeled as separate products sharing identical
-    // `fungsi` text (~100 handle sets), so without a per-family cap one family
-    // fills the whole window and crowds out functional alternatives (e.g.
-    // doorpull for a glass-door query). Cap identical-fungsi groups; NULL
+    // `fungsi` text (one print or colour per product), so without a per-family cap
+    // one family fills the whole window and crowds out functional alternatives
+    // (e.g. a paper bag for a takeaway query). Cap identical-fungsi groups; NULL
     // fungsi products each count as their own family.
     // ponytail: fungsi-equality as family key; a real family/category column if the catalog ever gets one
-    // Not for photo matching: there the same-family handles are exactly the look-alikes to compare.
+    // Not for photo matching: there the same-family products are exactly the look-alikes to compare.
     const FAMILY_CAP = withPhoto ? limit : 8;
     const rankedIds = await db.execute<{ id: string }>(sql`
       SELECT id FROM (

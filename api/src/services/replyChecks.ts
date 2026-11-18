@@ -99,7 +99,7 @@ export function verifyReplyPhotoClaim(message: string, systemPrompt: string): { 
 // the open question is what the client asked for (2026-11-02).
 const OPEN_QUESTION_RE = /\bada\s+yang\s+bisa\s+(?:saya|aku|kami|kita)\s+bantu/i;
 // "Boleh tahu nama kakak siapa?" is a name question too (live 2026-11-08, asked right after "Dengan
-// Jovi ka") - the old pattern knew only "dengan siapa" / "siapa nama". So is the hand-off's own
+// Rudi ka") - the old pattern knew only "dengan siapa" / "siapa nama". So is the hand-off's own
 // "dengan kakak siapa saya bicara?". "Boleh tahu nama usahanya?" is not: that is the business name.
 export const ASKS_NAME_RE = /dengan\s+(?:(?:kakak|kak|bapak|ibu|mas|mbak)\s+)?siapa|siapa\s+nama(?!\s+(?:usaha|toko)\w*)|\bnama\s+(?:kakak|kak|bapak|ibu|anda|mas|mbak)\s+siapa|\b(?:boleh|bisa)\s+(?:saya\s+|aku\s+)?(?:tahu|tau|kenal)\s+(?:dengan\s+)?nama(?!\s+(?:usaha|toko)\w*)/i;
 // The first order question (Order Details): what they pack or sell.
@@ -287,9 +287,9 @@ export function verifyReplyTieredPrices(
   return { ok: false, reason, invented, onlyInvented: invented.length > 0 && !offTotalLine };
 }
 
-// The customer answering the name question: "Dengan Jovi ka", "Saya Bang Al dari probolinggo",
+// The customer answering the name question: "Dengan Rudi ka", "Saya Bang Andi dari Sidoarjo",
 // "nama saya Budi". The name must be capitalised, and is checked against words customers start a
-// sentence with ("Saya Mau tanya"), so a request never reads as a name. A bare "Jovi" is not caught:
+// sentence with ("Saya Mau tanya"), so a request never reads as a name. A bare "Rudi" is not caught:
 // "Baik kk" has the same shape.
 const NAME_ANSWER_RE = /(?:^|[\s,.!])(?:dengan|sama|saya|aku|nama\s+saya|namaku|panggil(?:\s+saja)?)\s+(?:(?:pak|bu|bang|kak|mas|mbak|ibu|bapak|ko|ci|cik|om|tante)\s+)?(\p{Lu}[\p{L}'-]*)/iu;
 const NOT_A_NAME = new Set(['mau', 'ingin', 'pengen', 'cari', 'butuh', 'tanya', 'lagi', 'sudah', 'udah', 'mohon', 'minta', 'pesan', 'order', 'beli', 'dari', 'di', 'yang', 'ini', 'itu', 'tidak', 'belum', 'baik', 'oke', 'ok', 'siap', 'kak', 'kakak', 'admin', 'sendiri', 'reseller', 'proyek']);
@@ -323,7 +323,7 @@ export function nameGivenIn(history: { role: string; content: unknown }[]): stri
 
 /**
  * The customer already told us their name and the reply asks for it again. Live 2026-11-08: "Dengan
- * Jovi ka" was answered "Baik kak, di Malang ya 😊 Boleh tahu nama kakak siapa?". Soft.
+ * Rudi ka" was answered "Baik kak, di Malang ya 😊 Boleh tahu nama kakak siapa?". Soft.
  */
 export function verifyReplyNameRepeat(message: string, givenName: string | null): { ok: boolean; reason: string; soft?: boolean } {
   if (!givenName || !ASKS_NAME_RE.test(message)) return { ok: true, reason: '' };

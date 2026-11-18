@@ -40,11 +40,11 @@ describe('POST /api/v1/catalog/images', () => {
   it('passes every image of the batch to the importer and refreshes the AI catalog', async () => {
     const a = await app();
     const res = await a.inject({ method: 'POST', url: '/api/v1/catalog/images', ...(await multipartBody([
-      { name: 'GEMBOK BULAT PUTIH.jpg', type: 'image/jpeg' },
-      { name: 'LS2140 L.png', type: 'image/png' },
+      { name: 'BOX KUE IVORY 20X20.jpg', type: 'image/jpeg' },
+      { name: 'LB1812 K.png', type: 'image/png' },
     ])) });
     expect(res.statusCode).toBe(200);
-    expect(mockImport.mock.calls[0]![0].map((f) => f.filename)).toEqual(['GEMBOK BULAT PUTIH.jpg', 'LS2140 L.png']);
+    expect(mockImport.mock.calls[0]![0].map((f) => f.filename)).toEqual(['BOX KUE IVORY 20X20.jpg', 'LB1812 K.png']);
     expect(res.json().data.results).toHaveLength(2);
     expect(mockInvalidate).toHaveBeenCalled();
     await a.close();

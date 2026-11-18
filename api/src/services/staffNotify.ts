@@ -10,7 +10,7 @@ import { sendTextMessage } from './whatsappSender.js';
  * Before this existed, "escalation" notified nobody: escalateConversation's third argument is
  * the CUSTOMER's WhatsApp id, so the hand-off message went back to the person who was already
  * waiting, and the only staff-facing surface was an escalations queue polled by an open browser
- * tab. Live, a reseller's 3-carton order sat escalated across two days while the bot repeated
+ * tab. Live, a 3-carton order sat escalated across two days while the bot repeated
  * the same holding line and nobody knew.
  *
  * Two channels, because neither covers everyone on its own: web push needs a subscription

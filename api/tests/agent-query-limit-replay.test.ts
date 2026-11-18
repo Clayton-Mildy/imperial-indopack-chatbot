@@ -40,7 +40,7 @@ async function load() {
   vi.resetModules();
   process.env.CLAUDE_CODE_OAUTH_TOKEN_1 = 'tok-one';
   process.env.CLAUDE_CODE_OAUTH_TOKEN_2 = 'tok-two';
-  process.env.CLAUDE_USAGE_LOG_DIR = '/tmp/legacy-test-usage';
+  process.env.CLAUDE_USAGE_LOG_DIR = '/tmp/imperial-test-usage';
   return import('../src/services/claude.js');
 }
 const tokenOf = (call: number) => mockQuery.mock.calls[call]![0].options.env.CLAUDE_CODE_OAUTH_TOKEN;
@@ -129,5 +129,26 @@ describe('agentQuery on a spent subscription token', () => {
 
     await expect(agentQuery({ systemPrompt: 's', userContent: 'u' })).rejects.toThrow('weekly limit');
     expect(mockQuery).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Task 13 carry: the in-process tool server is Imperial's, and the allowed names follow it - a name
+// that does not match the server's is a tool Claude Code refuses to run.
+describe('agentQuery tool names', () => {
+  beforeEach(() => { mockQuery.mockReset(); });
+
+  it('serves the tools from the imperial MCP server and allows exactly those names', async () => {
+    const { agentQuery, MCP_SERVER, mcpToolName } = await load();
+    mockQuery.mockReturnValueOnce(answers('ok'));
+    const tools = [{ name: 'respond_to_customer' }, { name: 'hitung_harga' }] as never;
+
+    await agentQuery({ systemPrompt: 's', userContent: 'u', tools });
+
+    const options = mockQuery.mock.calls[0]![0].options;
+    expect(MCP_SERVER).toBe('imperial');
+    expect(Object.keys(options.mcpServers)).toEqual(['imperial']);
+    expect(options.allowedTools).toEqual(['mcp__imperial__respond_to_customer', 'mcp__imperial__hitung_harga']);
+    expect(mcpToolName('hitung_harga')).toBe('mcp__imperial__hitung_harga');
+    expect(JSON.stringify(options.allowedTools)).not.toMatch(/legacy/i);
   });
 });

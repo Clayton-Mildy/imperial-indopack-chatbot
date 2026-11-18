@@ -64,7 +64,7 @@ export async function getContactProfile(contactId: string): Promise<ContactProfi
 
 // Deleted, not blanked: the row holds only what the model wrote (CATAT), upsertContactProfile
 // recreates it on the next turn, and getContactProfile returning null is what makes
-// pickProfileGapQuestion ask buyer type again. listLeads/listContacts already leftJoin it.
+// pickProfileGapQuestion ask the order details again. listLeads/listContacts already leftJoin it.
 export async function deleteContactProfile(contactId: string): Promise<void> {
   const db = getDb();
   await db.delete(contactProfiles).where(eq(contactProfiles.contactId, contactId));

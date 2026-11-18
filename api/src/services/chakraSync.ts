@@ -174,8 +174,8 @@ const CHAT_MISS_TTL_MS = 10 * 60_000;
  * Imports what staff typed on the WhatsApp phone (or in Chakra's inbox) into ONE conversation,
  * right before the bot answers it. Those replies reach us only through this importer, and the
  * periodic run holds outbound texts back 2 minutes and then waits for its next tick - so live
- * 2026-10-12 the bot answered "untuk proyek mbak" with staff's "kalau yang persis belum ada, tapi
- * ada yang mirip" still missing from its context, and stuck to its own wrong product. Returns how
+ * the bot answered a customer with staff's "kalau yang persis belum ada, tapi ada yang mirip" still
+ * missing from its context, and stuck to its own wrong product. Returns how
  * many messages were added; 0 when the transport is not Chakra or the chat is not found.
  */
 export async function syncContactChat(waId: string): Promise<number> {

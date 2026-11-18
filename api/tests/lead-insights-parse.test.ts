@@ -137,7 +137,7 @@ describe('writing what was read', () => {
   });
 });
 
-it('asks about Imperial Indopack and Kertas Supreme, not Legacy hardware', async () => {
+it('asks about Imperial Indopack and Kertas Supreme, not the old hardware business', async () => {
   modelSays('{}');
   await extractLeadInsights('x');
   const system = mockCreate.mock.calls[0]![0].system as string;

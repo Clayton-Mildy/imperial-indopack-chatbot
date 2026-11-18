@@ -32,7 +32,7 @@ vi.mock('../src/services/ragQuery.js', () => ({
   buildCatalogContext: vi.fn(async () => ''),
 }));
 vi.mock('../src/repositories/appSettings.js', () => ({
-  getDefaultPromptSections: vi.fn(async () => [{ name: 'Identitas', content: 'CS Legacy' }]),
+  getDefaultPromptSections: vi.fn(async () => [{ name: 'Identitas', content: 'Admin Imperial Indopack' }]),
 }));
 vi.mock('../src/repositories/products.js', () => ({ listBrands: vi.fn(async () => []) }));
 vi.mock('../src/repositories/conversations.js', () => ({
@@ -61,7 +61,7 @@ vi.mock('../src/services/replyChecks.js', () => ({
 const { buildContextAndCallAI } = await import('../src/services/aiLayer.js');
 
 const OLD_QUOTE =
-  'Baik, Kak Dilla! Order 3 karton knob handle (150 Lsn = 1.800 pcs) kami catat. Boleh tahu nama tokonya?';
+  'Baik, Kak Sari! Order 3 karton box nasi (3 x 600 = 1.800 pcs) kami catat. Boleh tahu nama usahanya?';
 
 /** The final user turn as it is actually sent to Claude. */
 function lastUserContent(): string {
@@ -85,15 +85,15 @@ beforeEach(() => {
 
 describe('quoted reply', () => {
   it('tells the model which message the customer answered', async () => {
-    await buildContextAndCallAI('conv-1', 'Tb. Jaya karya di genteng banyuwangi', null, [], null, OLD_QUOTE);
+    await buildContextAndCallAI('conv-1', 'RM Jaya Rasa di genteng banyuwangi', null, [], null, OLD_QUOTE);
 
     const content = lastUserContent();
     expect(content).toContain('pelanggan membalas pesan ini');
     expect(content).toContain(OLD_QUOTE);
     // The customer's own words must still be there, and after the marker - the quote is
     // context for the reply, not a replacement for it.
-    expect(content).toContain('Tb. Jaya karya di genteng banyuwangi');
-    expect(content.indexOf(OLD_QUOTE)).toBeLessThan(content.indexOf('Tb. Jaya karya'));
+    expect(content).toContain('RM Jaya Rasa di genteng banyuwangi');
+    expect(content.indexOf(OLD_QUOTE)).toBeLessThan(content.indexOf('RM Jaya Rasa'));
   });
 
   // The reason this works at all for a days-old reply: the quoted text is injected into the
@@ -119,7 +119,7 @@ describe('quoted reply', () => {
   });
 
   it('says nothing about a quote when the customer did not reply to anything', async () => {
-    await buildContextAndCallAI('conv-1', 'halo ada gembok?');
+    await buildContextAndCallAI('conv-1', 'halo ada box nasi?');
 
     expect(lastUserContent()).not.toContain('membalas pesan ini');
   });

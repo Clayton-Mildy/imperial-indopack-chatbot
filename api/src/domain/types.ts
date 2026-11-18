@@ -38,7 +38,7 @@ export type ProductVariant = {
   name: string;
   sku: string | null;
   priceIdr: number | null;
-  /** Marketplace price - the figure end users are quoted. null means "tanya tim". */
+  /** Legacy marketplace price (the tiered price list replaced it). null means "tanya tim". */
   mpPriceIdr: number | null;
   isiCtn: number | null;
   isiBox: number | null;
@@ -49,7 +49,7 @@ export type ProductVariant = {
   minOrderQty: number | null;
   minOrderUomId: string | null;
   uomPrice?: Uom;
-  /** Often differs from uomPrice: a lusin-priced variant still quotes MP per piece. */
+  /** Legacy marketplace-price unit (unused by the tiered price list). */
   mpUom?: Uom;
   uomCtn?: Uom;
   uomBox?: Uom;
@@ -141,11 +141,9 @@ export interface Conversation {
 }
 
 export type ContactProfileFollowUpStatus = 'none' | 'needs_followup' | 'done';
-// 'project' buys for a construction/contractor project: an end user by behaviour, but priced
-// off the pricelist rather than at retail (see the Kebijakan Harga prompt section).
+// The contact_profiles.customer_type column and the contacts filter on it are kept for old rows;
+// the bot no longer asks or writes a buyer type (Imperial prices by quantity tier, not by buyer).
 export type CustomerType = 'reseller' | 'end_user' | 'project';
-
-export const CUSTOMER_TYPES: readonly CustomerType[] = ['reseller', 'end_user', 'project'];
 
 export interface ContactProfile {
   id: string;

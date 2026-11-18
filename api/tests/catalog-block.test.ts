@@ -47,7 +47,7 @@ describe('catalog block', () => {
     expect(block).not.toMatch(/PRICELIST|MP\b|reseller/i);
   });
 
-  it('no photos means no marker; null Legacy fields render cleanly', () => {
+  it('no photos means no marker; null legacy fields render cleanly', () => {
     const block = formatProducts([product({ fungsi: null }, [variant()])]);
     expect(block).not.toContain(REFERENCE_PHOTOS_MARKER);
     expect(block).not.toMatch(/null|undefined|Kegunaan/);
@@ -58,7 +58,7 @@ describe('catalog block', () => {
 });
 
 // The catalog search narrows to one brand by the customer's words (catalogDelivery.brandsInText), never
-// by Legacy's brand aliases.
+// by a brand alias table.
 describe('detectBrand', () => {
   it('returns the one brand a message names', () => {
     expect(detectBrand('berapa harga kertas supreme?')).toBe('kertas_supreme');
@@ -68,7 +68,7 @@ describe('detectBrand', () => {
 
   it('returns null for no brand, or both', () => {
     expect(detectBrand('halo kak')).toBeNull();
-    expect(detectBrand('handle aomori slim vintage')).toBeNull();
+    expect(detectBrand('gelas plastik ukuran 16 oz')).toBeNull();
     expect(detectBrand('box dan kertas nasi')).toBeNull();
   });
 });

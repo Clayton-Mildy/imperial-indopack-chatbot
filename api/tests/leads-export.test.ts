@@ -101,8 +101,8 @@ describe('buildLeadsSheet', () => {
   });
 
   it('falls back to the AI-extracted interest when the form asked nothing', () => {
-    expect(cell({ payload: { kebutuhan: 'Handle pintu' } }, 'kebutuhan')).toBe('Handle pintu');
-    expect(cell({ contactProfile: { product_sought: 'Engsel' } }, 'kebutuhan')).toBe('Engsel');
+    expect(cell({ payload: { kebutuhan: 'Box nasi' } }, 'kebutuhan')).toBe('Box nasi');
+    expect(cell({ contactProfile: { product_sought: 'Kertas bungkus' } }, 'kebutuhan')).toBe('Kertas bungkus');
     expect(cell({}, 'kebutuhan')).toBeNull();
   });
 

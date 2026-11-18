@@ -4,32 +4,30 @@ import { claimLeadByRequestId, ensureOrganicLead } from '../repositories/leads.j
  * Lead attribution from the inbound message itself.
  *
  * Marketing's landing-page forms hand the visitor to WhatsApp with a prefilled template
- * whose last line is the form submission's UUID. Production carries:
+ * whose last line is the form submission's UUID, e.g.:
  *
- *   Legacy
+ *   Imperial Indopack
  *
  *   Nama: budi
  *   Nomor WhatsApp: 081200000001
- *   Apa Yang Anda Butuhkan?: saya mau kulak gembok yang murah
+ *   Apa Yang Anda Butuhkan?: box nasi cetak logo
  *   Area: Kota Malang
  *   Budget: menyesuaikan
  *
- *   Request ID: ada4cdd9-085f-43f2-8629-a55a84600cef
+ *   Request ID: 3f1c2b7e-5d4a-4c8e-9a61-0b2d7e4f8c13
  *
  * The UTM data is NOT in the message - only marketing's Excel export has it, which is why
  * the two halves meet on request_id rather than arriving together.
  */
 
 // Matches anywhere in the body, tolerating WhatsApp bold (*Request ID:*) and odd spacing -
-// production has one submission with the customer's own greeting merged in front of the
-// template. Label-anchored on purpose: a bare-UUID scan would turn any UUID-shaped text a
+// a customer's own greeting can be merged in front of the template. Label-anchored on purpose: a bare-UUID scan would turn any UUID-shaped text a
 // customer pastes into a junk campaign lead.
 const REQUEST_ID_RE =
   /request\s*id\b[^0-9a-f]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 
-// The template is "Label: value" lines, and the labels vary per form - production shows
-// three different field sets across fifteen submissions, and the screenshot from marketing
-// shows a fourth. So take whatever labels are there rather than naming any of them.
+// The template is "Label: value" lines, and the labels vary per form - each landing page can
+// ask its own fields. So take whatever labels are there rather than naming any of them.
 const FIELD_RE = /^\s*([A-Za-z][A-Za-z0-9 ?/&()'-]{0,40}?)\s*:\s*(\S.*?)\s*$/;
 
 const MAX_FIELDS = 20;

@@ -173,7 +173,7 @@ describe('verifyReplyTieredPrices keeps withoutInventedTotals working', () => {
   });
 });
 
-// verifyFit runs this check in place of Legacy's tolerant one, with no buyer type anywhere: the
+// verifyFit runs this check in place of the old tolerant one, with no buyer type anywhere: the
 // price does not depend on who buys (spec 7.3), so a figure is never held back for an unknown type.
 describe('verifyFit - the strict price check in the pipeline', () => {
   const PROMPT = `## Identity\nKamu adalah CS Imperial Indopack.\n\n--- KATALOG PRODUK ---\n${formatProducts([IVORY_FIXTURE, SUPREME])}--- AKHIR KATALOG ---`;

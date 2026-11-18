@@ -135,7 +135,7 @@ vi.mock('../src/services/visionKeywords.js', () => ({
 // it. Here it resolves at once to "nothing to compare", which is a catalog with no photos yet.
 // A confirmed match by default: since 2026-11-11 any other verdict hands the photo to the team before
 // the AI runs (photoUnsureReason), and most photo tests here are about batching and timing.
-const SAME_VERDICT = { certainty: 'same', product: { name: 'HANDLE BESAR + BODY KUNCI VINTAGE GRAHAM', brand: 'Vintage', imageUrl: '/uploads/images/graham.jpg' }, compared: ['HANDLE BESAR + BODY KUNCI VINTAGE GRAHAM'], reason: 'identik' };
+const SAME_VERDICT = { certainty: 'same', product: { name: 'BOX NASI KRAFT 20X20 CETAK 1 WARNA', brand: 'Imperial Indopack', imageUrl: '/uploads/images/box-nasi.jpg' }, compared: ['BOX NASI KRAFT 20X20 CETAK 1 WARNA'], reason: 'identik' };
 const mockMatchCustomerPhoto = vi.fn(async (): Promise<unknown> => SAME_VERDICT);
 vi.mock('../src/services/photoMatch.js', async () => {
   const actual = await vi.importActual<typeof import('../src/services/photoMatch.js')>('../src/services/photoMatch.js');
@@ -290,9 +290,9 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const sentAt = new Date('2026-11-01T03:04:05.000Z');
     mockInsertMessageIfNew.mockResolvedValue({ id: 'msg-uuid', conversationId: 'conv-uuid-1', createdAt: sentAt });
 
-    await routeInboundBaileysMessage({ ...makeTextPayload('wamid-LEAD-AT', 'ada engsel?'), timestamp: sentAt.getTime() / 1000 });
+    await routeInboundBaileysMessage({ ...makeTextPayload('wamid-LEAD-AT', 'ada box nasi?'), timestamp: sentAt.getTime() / 1000 });
 
-    expect(mockRecordLeadFromMessage).toHaveBeenCalledWith('ada engsel?', 'contact-uuid-1', sentAt);
+    expect(mockRecordLeadFromMessage).toHaveBeenCalledWith('ada box nasi?', 'contact-uuid-1', sentAt);
   });
 
   // ─── AC-2: text → wait 3s → text → 2 AI calls ────────────────────────────
@@ -414,10 +414,10 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('resolves a quoted (reply-to) message and passes its body to the AI', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
 
-    const DOOR_CLOSER_BODY =
-      'Halo Kak Kevin! Door Closer Vintage kami ada 2 pilihan warna:\n1. DOORCLOSER 5100 SILVER — Rp 132.500/Set';
+    const QUOTED_BODY =
+      'Halo Kak Kevin! Box nasi kami ada 2 pilihan bahan:\n1. BOX NASI KRAFT 20X20 — Rp 1.800/pcs';
     mockFindMessageByWaMessageId.mockResolvedValue({
-      id: 'dc-msg', conversationId: 'conv-uuid-1', role: 'assistant', body: DOOR_CLOSER_BODY,
+      id: 'dc-msg', conversationId: 'conv-uuid-1', role: 'assistant', body: QUOTED_BODY,
     });
 
     // Customer quote-replies to the door-closer price message with a short comment.
@@ -428,13 +428,13 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockFindMessageByWaMessageId).toHaveBeenCalledWith('wamid-doorcloser');
     // ...and the resolved body is threaded into buildContextAndCallAI's quotedMessageBody arg (6th).
     expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(1);
-    expect(mockBuildContextAndCallAI.mock.calls[0][5]).toBe(DOOR_CLOSER_BODY);
+    expect(mockBuildContextAndCallAI.mock.calls[0][5]).toBe(QUOTED_BODY);
   });
 
   it('no quoted context → quotedMessageBody arg is null (regression)', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-Q02', 'halo ada gembok?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-Q02', 'halo ada box nasi?'));
     await vi.runAllTimersAsync();
 
     expect(mockFindMessageByWaMessageId).not.toHaveBeenCalled();
@@ -493,7 +493,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('does not notify on a normal high-confidence reply', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-E2', 'ada gembok?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-E2', 'ada box kue?'));
     await vi.runAllTimersAsync();
 
     expect(mockNotifyStaff).not.toHaveBeenCalled();
@@ -608,8 +608,8 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     delete process.env.TYPING_DEBOUNCE_MS;
   });
 
-  // Live 2026-10-06: "Saya yan" was answered with the buyer-type question a moment after the
-  // customer had typed "Untuk proyek sih kak" - the draft was written before that message existed.
+  // "Saya Tono" must not be answered with "untuk jualan apa?" a moment after the customer typed
+  // "Untuk nasi padang sih kak" - the draft was written before that message existed.
   describe('a message that arrives while the reply is being written', () => {
     function hangingTurns(n: number): ((v: unknown) => void)[] {
       const resolvers: ((v: unknown) => void)[] = [];
@@ -624,9 +624,9 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       process.env.TYPING_DEBOUNCE_MS = '1000';
       const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
       const [resolveTurn1] = hangingTurns(1);
-      await routeInboundBaileysMessage(makeTextPayload('wamid-SUP1', 'Saya yan'));
+      await routeInboundBaileysMessage(makeTextPayload('wamid-SUP1', 'Saya Tono'));
       await vi.advanceTimersByTimeAsync(1200);
-      await routeInboundBaileysMessage(makeTextPayload('wamid-SUP2', 'Untuk proyek sih kak'));
+      await routeInboundBaileysMessage(makeTextPayload('wamid-SUP2', 'Untuk nasi padang sih kak'));
       await vi.advanceTimersByTimeAsync(1200);
       resolveTurn1!(turn1);
       await vi.advanceTimersByTimeAsync(2000);
@@ -634,10 +634,10 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     }
 
     it('drops the stale draft and answers both batches in one reply', async () => {
-      await textDuringTurn({ ...BASE_AI_RESPONSE, message: 'Halo Kak Yan! Untuk proyek atau dijual lagi?' });
+      await textDuringTurn({ ...BASE_AI_RESPONSE, message: 'Halo Kak Tono! Untuk jualan apa kak?' });
 
       expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(2);
-      expect(mockBuildContextAndCallAI.mock.calls[1]![1]).toBe('Saya yan\nUntuk proyek sih kak');
+      expect(mockBuildContextAndCallAI.mock.calls[1]![1]).toBe('Saya Tono\nUntuk nasi padang sih kak');
       expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual(['jawaban lengkap']);
       // Nothing of the dropped draft is kept: not its row, not its profile facts.
       expect(mockSaveConversationInsights).toHaveBeenCalledTimes(1);
@@ -705,17 +705,17 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
         return 1;
       });
 
-      await routeInboundBaileysMessage(makeTextPayload('wamid-RACE1', 'ada handle newton?'));
+      await routeInboundBaileysMessage(makeTextPayload('wamid-RACE1', 'ada box kue 20x20?'));
       await vi.advanceTimersByTimeAsync(1200);
       expect(rows.get('wamid-RACE2')).toBe('chakra_sync');
-      await routeInboundBaileysMessage(makeTextPayload('wamid-RACE2', 'yang hitam ya kak'));
+      await routeInboundBaileysMessage(makeTextPayload('wamid-RACE2', 'yang kraft ya kak'));
       await vi.advanceTimersByTimeAsync(1200);
       resolveTurn1({ ...BASE_AI_RESPONSE, message: 'draft basi' });
       await vi.advanceTimersByTimeAsync(2000);
       delete process.env.TYPING_DEBOUNCE_MS;
 
       expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(2);
-      expect(mockBuildContextAndCallAI.mock.calls[1]![1]).toBe('ada handle newton?\nyang hitam ya kak');
+      expect(mockBuildContextAndCallAI.mock.calls[1]![1]).toBe('ada box kue 20x20?\nyang kraft ya kak');
       expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual(['jawaban lengkap']);
     });
 
@@ -798,15 +798,15 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     delete process.env.TYPING_DEBOUNCE_MS;
   });
 
-  // Live 2026-10-12: "sendiri" typed while the photo was being answered, and the photo's reply asked
-  // the buyer type again. The photo's draft is dropped; the text turn answers the photo and the text.
+  // An answer typed while the photo was being answered must not be followed by the photo's reply
+  // asking the same thing again. The photo's draft is dropped; the text turn answers the photo and the text.
   it('drops a photo draft the customer has already moved past, and answers both in one reply', async () => {
     process.env.TYPING_DEBOUNCE_MS = '1000';
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockMatchCustomerPhoto.mockResolvedValueOnce({
       certainty: 'same',
-      product: { name: 'HANDLE PISAH STAINLESS STEEL + BODY 1231 VINTAGE SATURNUS', brand: 'Vintage', imageUrl: '/s.jpg' },
-      compared: ['HANDLE PISAH STAINLESS STEEL + BODY 1231 VINTAGE SATURNUS'],
+      product: { name: 'BOX KUE IVORY 20X20 CETAK FULL COLOR', brand: 'Imperial Indopack', imageUrl: '/s.jpg' },
+      compared: ['BOX KUE IVORY 20X20 CETAK FULL COLOR'],
       reason: 'identik',
     });
     let resolveImage!: (v: unknown) => void;
@@ -819,28 +819,27 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     await routeInboundBaileysMessage(makeTextPayload('wamid-SP02', 'sendiri'));
     await vi.advanceTimersByTimeAsync(1200);
 
-    resolveImage({ ...BASE_AI_RESPONSE, message: 'Boleh tahu, dipakai sendiri, proyek, atau dijual lagi?' });
+    resolveImage({ ...BASE_AI_RESPONSE, message: 'Boleh tahu, untuk jualan apa kak?' });
     await vi.advanceTimersByTimeAsync(2000);
     await imagePromise;
 
     expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual(['jawaban gabungan']);
     expect(mockBuildContextAndCallAI.mock.calls[1][1]).toContain(
-      '[Pelanggan mengirim foto: produk kami HANDLE PISAH STAINLESS STEEL + BODY 1231 VINTAGE SATURNUS (foto sama)] mau tanya product ini ada ga ya?'
+      '[Pelanggan mengirim foto: produk kami BOX KUE IVORY 20X20 CETAK FULL COLOR (foto sama)] mau tanya product ini ada ga ya?'
     );
     expect(mockBuildContextAndCallAI.mock.calls[1][1]).toContain('sendiri');
 
     delete process.env.TYPING_DEBOUNCE_MS;
   });
 
-  // Live 2026-10-12: the bot answered "untuk proyek mbak" without staff's phone reply a minute
-  // earlier. Each reply pulls the chat first - and a hanging Chakra costs at most 5 s, never the reply.
+  // The bot must not answer without staff's phone reply from a minute earlier. Each reply pulls the chat first - and a hanging Chakra costs at most 5 s, never the reply.
   it('pulls staff replies into the chat before answering, without waiting on a hanging sync', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const order: string[] = [];
     mockSyncContactChat.mockImplementationOnce(async () => { order.push('sync'); return 2; });
     mockBuildContextAndCallAI.mockImplementationOnce(async () => { order.push('ai'); return { ...BASE_AI_RESPONSE }; });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-SY1', 'untuk proyek mbak'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-SY1', 'untuk katering mbak'));
     await vi.runAllTimersAsync();
     expect(order).toEqual(['sync', 'ai']);
     expect(mockSyncContactChat.mock.calls[0]![0]).toContain('628111000001');
@@ -862,9 +861,9 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation.mock.calls[0][1]).toContain('Pembayaran / status pesanan');
   });
 
-  // Live 2026-10-25 Kak Dikman sent five marketplace screenshots at once as one request ("foto
-  // rekomendasi seperti di atas"). Each photo was its own turn: one reply about one photo at 19.15,
-  // another about a different photo 18 minutes later. Photos sent together now get one turn.
+  // A customer can send five marketplace screenshots at once as one request ("foto rekomendasi
+  // seperti di atas"). Each photo used to be its own turn: one reply about one photo, another about
+  // a different photo 18 minutes later. Photos sent together now get one turn.
   it('answers photos sent together in one turn that sees every image', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
 
@@ -888,15 +887,15 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
   it('tells the reply which verdict belongs to which photo', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    const verdictFor = (name: string) => ({ certainty: 'same', product: { name, brand: 'Vintage', imageUrl: '/x.jpg' }, compared: [name], reason: 'x' });
-    mockMatchCustomerPhoto.mockResolvedValueOnce(verdictFor('GEMBOK HITAM')).mockResolvedValueOnce(verdictFor('GRENDEL STAINLESS STEEL'));
+    const verdictFor = (name: string) => ({ certainty: 'same', product: { name, brand: 'Imperial Indopack', imageUrl: '/x.jpg' }, compared: [name], reason: 'x' });
+    mockMatchCustomerPhoto.mockResolvedValueOnce(verdictFor('LUNCH BOX KRAFT')).mockResolvedValueOnce(verdictFor('PAPER BAG KRAFT TALI'));
 
     await routeInboundBaileysMessage({ ...makeImagePayload('wamid-NOTE1'), timestamp: 100 });
     await routeInboundBaileysMessage({ ...makeImagePayload('wamid-NOTE2'), timestamp: 101 });
     await vi.runAllTimersAsync();
 
     const note = (mockBuildContextAndCallAI.mock.calls[0][6] as { photoNote: string }).photoNote;
-    expect(note).toMatch(/FOTO 1:[^]*GEMBOK HITAM[^]*FOTO 2:[^]*GRENDEL STAINLESS STEEL/);
+    expect(note).toMatch(/FOTO 1:[^]*LUNCH BOX KRAFT[^]*FOTO 2:[^]*PAPER BAG KRAFT TALI/);
   });
 
   // The photos of one album can reach us further apart than the quiet window: each webhook downloads
@@ -950,7 +949,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('no-media image does not cancel a pending text debounce (texts still answered)', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-NM01', 'ada gembok?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-NM01', 'ada box kue?'));
     // Image without downloadable media arrives inside the debounce window.
     await routeInboundBaileysMessage({ ...makeImagePayload('wamid-NM02'), media: undefined });
 
@@ -1020,10 +1019,10 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockBuildContextAndCallAI.mockResolvedValue({
       ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: 'no fit',
-      profileUpdate: { customer_type: 'end_user' },
+      profileUpdate: { business_type: 'katering' },
     });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-INS1', 'pintu kaca 800mm ada?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-INS1', 'box ukuran 50x50 ada?'));
     await vi.runAllTimersAsync();
 
     expect(mockSaveConversationInsights).toHaveBeenCalledTimes(1);
@@ -1039,7 +1038,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockBuildContextAndCallAI.mockResolvedValue({
       ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: 'no fit',
-      profileUpdate: { customer_type: 'end_user' },
+      profileUpdate: { business_type: 'katering' },
     });
 
     await routeInboundBaileysMessage(makeImagePayload('wamid-INS2'));
@@ -1082,7 +1081,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     mockDetectHumanRequest.mockReturnValue(true);
     mockBuildContextAndCallAI.mockResolvedValue({
       ...BASE_AI_RESPONSE,
-      message: 'Itu engsel Vintage 4 inci kak, harganya Rp 42.000/Set.',
+      message: 'Itu box nasi kraft 20x20 kak, harganya Rp 1.800/pcs.',
       confidence: 'high',
     });
 
@@ -1137,7 +1136,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('starts over for a new hand-off, whatever an older one left behind', async () => {
     const { CANNED_STILL_CHECKING_REPLY, ESCALATION_FOLLOWUP_ACKS } = await import('../src/domain/constants.js');
     const old = [handoffRow(), ackRow(ESCALATION_FOLLOWUP_ACKS[2]!), ackRow(ESCALATION_FOLLOWUP_ACKS[3]!)];
-    const [first] = await acksFor([...old, userRow('ada gembok?'), handoffRow()], 1);
+    const [first] = await acksFor([...old, userRow('ada box kue?'), handoffRow()], 1);
     expect(first).toBe(CANNED_STILL_CHECKING_REPLY);
   });
 
@@ -1241,7 +1240,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(1);
   });
 
-  it('answers an unreadable, uncaptioned photo in Rina\'s voice', async () => {
+  it('answers an unreadable, uncaptioned photo in the bot\'s voice', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_IMAGE_UNREADABLE_REPLY } = await import('../src/domain/constants.js');
 
@@ -1254,7 +1253,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
   it('still answers ordinary text through the AI', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    await routeInboundBaileysMessage(makeTextPayload('wamid-VN2', 'ada engsel kak?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-VN2', 'ada box kue kak?'));
     await vi.runAllTimersAsync();
     expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(1);
   });
@@ -1881,21 +1880,18 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   });
 
   it('escalated + high-confidence reply WITH a price → still sent; escalation does not gag the AI', async () => {
-    // Escalation notifies a human; it must not change what the customer is told. This used to
-    // hold any Rp-bearing reply while escalated, after a bengkel motor restated its shop name
-    // an hour post-escalation and got the reseller pricelist (2026-08-20). That hold was blunt
-    // enough to eat prices for unrelated products - live, a single bad figure on a padlock
-    // silenced every price in the conversation for twenty hours, across a different product,
-    // while the customer asked "kok lama ya". Removed deliberately. The tier leak it was
-    // guarding belongs to a customerType-aware price check (see CLAUDE.md), not to a
-    // conversation-wide gag.
+    // Escalation notifies a human; it must not change what the customer is told. Holding any
+    // Rp-bearing reply while escalated is blunt enough to eat prices for unrelated products - a
+    // single bad figure would silence every price in the conversation for hours, across a
+    // different product, while the customer asks "kok lama ya". The price check guards the
+    // figures; escalation is not a conversation-wide gag.
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_STILL_CHECKING_REPLY } = await import('../src/domain/constants.js');
     mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated' });
-    const reply = 'Bengkel Jaya Motor sudah terdaftar 😊 Harganya Rp 116.000/Set, minimum 3 set.';
+    const reply = 'RM Padang Jaya sudah saya catat 😊 Harganya Rp 185.000/rim, minimal 5 rim.';
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: reply, confidence: 'high' });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-HOLD1', 'bengkel jaya motor kak nama tokonya'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-HOLD1', 'rm padang jaya kak nama usahanya'));
     await vi.runAllTimersAsync();
 
     expect(mockSendTextMessage).toHaveBeenCalledTimes(1);
@@ -1908,31 +1904,31 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated' });
     mockBuildContextAndCallAI.mockResolvedValue({
-      ...BASE_AI_RESPONSE, message: 'Ini Rp 42.000/Set ya kak.', confidence: 'high',
+      ...BASE_AI_RESPONSE, message: 'Ini Rp 1.800/pcs ya kak.', confidence: 'high',
     });
 
     await routeInboundBaileysMessage(makeImagePayload('wamid-HOLD2', 'ini fotonya, harganya berapa?'));
     await vi.runAllTimersAsync();
 
     expect(mockSendTextMessage).toHaveBeenCalledTimes(1);
-    expect(mockSendTextMessage.mock.calls[0][2]).toBe('Ini Rp 42.000/Set ya kak.');
+    expect(mockSendTextMessage.mock.calls[0][2]).toBe('Ini Rp 1.800/pcs ya kak.');
   });
 
   it('already-escalated + NEW reason → escalation_reason is refreshed, not left stale', async () => {
-    // The banner used to show whatever first escalated the conversation: live, an objection
-    // about a padlock sat on a conversation that had moved on to cement trowels 18 days later,
-    // so the team had nothing actionable to pick up.
+    // The banner used to show whatever first escalated the conversation: live, a price objection
+    // sat on a conversation that had moved on to another product 18 days later, so the team had
+    // nothing actionable to pick up.
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated' });
     mockBuildContextAndCallAI.mockResolvedValue({
-      ...BASE_AI_RESPONSE, confidence: 'low', escalationReason: 'Cetok oval - ukuran tidak ada di katalog',
+      ...BASE_AI_RESPONSE, confidence: 'low', escalationReason: 'Box 50x50 - ukuran tidak ada di katalog',
     });
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-STALE1', 'yg biasanya aja, yg oval'));
     await vi.runAllTimersAsync();
 
     expect(mockUpdateConversationStatus).toHaveBeenCalledWith(
-      'conv-uuid-1', 'escalated', 'Cetok oval - ukuran tidak ada di katalog'
+      'conv-uuid-1', 'escalated', 'Box 50x50 - ukuran tidak ada di katalog'
     );
     expect(mockEscalateConversation).not.toHaveBeenCalled();
   });
@@ -1968,7 +1964,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockSendTextMessage.mock.calls[0][2]).toBe(CANNED_STILL_CHECKING_REPLY);
   });
 
-  // UAT F-06: the buyer type was asked four times after "sendiri" - the answer never reached the
+  // A gap question asked four times after the customer answered it - the answer never reached the
   // profile, and the ack asked on. Once is enough; the next rung (or nothing) comes after.
   it('never repeats a gap question the conversation already asked', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
@@ -1988,7 +1984,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockSendTextMessage.mock.calls[0][2]).toBe(`${CANNED_STILL_CHECKING_REPLY} ${ESCALATION_ASK_SIZE}`);
   });
 
-  // UAT E-05: "engsel yang saya beli bulan lalu sudah berkarat" got "kira-kira kebutuhannya berapa
+  // A complaint ("box yang saya pesan bulan lalu banyak yang rusak") must not get "kira-kira kebutuhannya berapa
   // banyak ya kak?" appended to the hand-off.
   it('a complaint hand-off opens with an apology and asks no sales question', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
@@ -2003,8 +1999,8 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation.mock.calls[0][5]).toBe(CANNED_COMPLAINT_REPLY);
   });
 
-  // Live 2026-10-12: "grab / mau ambil pesanan" was asked "dipakai sendiri, untuk proyek, atau dijual
-  // lagi?". This number is also the marketplace sender number; couriers go to the team as they are.
+  // "grab / mau ambil pesanan" must not get a sales question. This number is also the marketplace
+  // sender number; couriers go to the team as they are.
   it('hands a courier to the team without an AI call or a sales question', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_NON_SALES_REPLY } = await import('../src/domain/constants.js');
@@ -2039,7 +2035,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('asks a supplier the model handed off no sales question, on the hand-off or the acks after it', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_NON_SALES_REPLY, CANNED_STILL_CHECKING_REPLY } = await import('../src/domain/constants.js');
-    const reason = 'Penawaran menjadi supplier/kerja sama produk plastik - keluar dari scope hardware.';
+    const reason = 'Penawaran menjadi supplier/kerja sama produk plastik - bukan pembelian kemasan.';
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: reason });
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-SUP1', 'Kami dari pabrik plastik kantongan, shrink, stretch film'));
@@ -2061,7 +2057,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const { CANNED_NON_SALES_REPLY } = await import('../src/domain/constants.js');
     mockGetLastNMessages.mockResolvedValue([
       { role: 'user', body: 'Kami dari pabrik plastik kantongan, shrink, stretch film', createdAt: new Date() },
-      { role: 'assistant', body: 'Baik Bu Windy, ada yang bisa saya bantu?', createdAt: new Date() },
+      { role: 'assistant', body: 'Baik Bu Sari, ada yang bisa saya bantu?', createdAt: new Date() },
     ]);
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-SUP3', 'Terkait dengan kebutuhan plastik kami bisa menghubungi kemana ya kak?'));
@@ -2072,8 +2068,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation.mock.calls[0][5]).toBe(CANNED_NON_SALES_REPLY);
   });
 
-  // UAT Run 2 G-07: a job seeker was asked whether it was "untuk dipakai sendiri, proyek, atau
-  // dijual lagi" - on the hand-off, and again on every ack while waiting.
+  // A job seeker must get no sales question - on the hand-off, or on any ack while waiting.
   it('asks a job seeker no sales question, on the hand-off or the acks after it', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_STILL_CHECKING_REPLY } = await import('../src/domain/constants.js');
@@ -2119,24 +2114,24 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   });
 
   // The bot answering an escalated chat must not hide it from the team working the hand-off (a
-  // RAB, a discount): "butuh 50 engsel" is exactly what they need to see.
+  // big order, a discount): "butuh 2000 box nasi" is exactly what they need to see.
   it('still notifies staff when the bot answers inside an escalated chat', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated' });
-    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Engsel 4" Rp 59.000/Set kak.', confidence: 'high' });
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Box nasi 20x20 Rp 1.800/pcs kak.', confidence: 'high' });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-ESC3', 'butuh 50 engsel'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-ESC3', 'butuh 2000 box nasi'));
     await vi.runAllTimersAsync();
 
-    expect(mockSendTextMessage.mock.calls[0][2]).toBe('Engsel 4" Rp 59.000/Set kak.');
+    expect(mockSendTextMessage.mock.calls[0][2]).toBe('Box nasi 20x20 Rp 1.800/pcs kak.');
     expect(mockNotifyStaff).toHaveBeenCalledTimes(1);
-    expect((mockNotifyStaff.mock.calls[0]![0] as { body: string }).body).toContain('butuh 50 engsel');
+    expect((mockNotifyStaff.mock.calls[0]![0] as { body: string }).body).toContain('butuh 2000 box nasi');
   });
 
   it('does not notify staff for an ordinary answered turn outside an escalation', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-ESC4', 'ada engsel 4 inch?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-ESC4', 'ada box nasi 20x20?'));
     await vi.runAllTimersAsync();
 
     expect(mockSendTextMessage).toHaveBeenCalledTimes(1);
@@ -2149,7 +2144,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockGetAiEnabledDefault.mockResolvedValue(false);
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-OFF1', 'Halo ada handle newton?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-OFF1', 'Halo ada box kue 20x20?'));
     await vi.runAllTimersAsync();
 
     expect(mockInsertMessageIfNew).toHaveBeenCalledTimes(1); // still recorded for CRM
@@ -2162,7 +2157,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     mockGetAiEnabledDefault.mockResolvedValue(false);
     mockUpsertContact.mockResolvedValue({ ...BASE_CONTACT, aiEnabled: true });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-ON1', 'Halo ada handle newton?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-ON1', 'Halo ada box kue 20x20?'));
     await vi.runAllTimersAsync();
 
     expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(1);
@@ -2174,7 +2169,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     mockGetAiEnabledDefault.mockResolvedValue(true);
     mockUpsertContact.mockResolvedValue({ ...BASE_CONTACT, aiEnabled: false });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-OFF2', 'Halo ada handle newton?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-OFF2', 'Halo ada box kue 20x20?'));
     await vi.runAllTimersAsync();
 
     expect(mockInsertMessageIfNew).toHaveBeenCalledTimes(1);
@@ -2201,7 +2196,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     process.env.TYPING_DEBOUNCE_FIRST_MS = '2000';
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-F01', 'ada gembok?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-F01', 'ada box kue?'));
 
     await vi.advanceTimersByTimeAsync(1900);
     expect(mockBuildContextAndCallAI).not.toHaveBeenCalled();
@@ -2259,7 +2254,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockBuildContextAndCallAI.mockRejectedValue(new Error('Request timed out'));
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-ERR1', 'ada handle newton?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-ERR1', 'ada box kue 20x20?'));
     await vi.runAllTimersAsync();
 
     expect(mockEscalateConversation).toHaveBeenCalledTimes(1);
@@ -2315,8 +2310,8 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const { CANNED_PHOTO_CHECK_REPLY, PHOTO_UNSURE_REASON } = await import('../src/domain/constants.js');
     mockMatchCustomerPhoto.mockResolvedValueOnce({
       certainty: 'similar',
-      product: { name: 'GEMBOK KOTAK CHROME PANJANG', brand: 'Blossom', imageUrl: '/uploads/images/kotak.jpg' },
-      compared: ['GEMBOK KOTAK CHROME PANJANG', 'GEMBOK BULAT PUTIH'],
+      product: { name: 'BOX KUE KRAFT JENDELA', brand: 'Imperial Indopack', imageUrl: '/uploads/images/box-kue.jpg' },
+      compared: ['BOX KUE KRAFT JENDELA', 'BOX KUE IVORY 20X20'],
       reason: 'bentuk kotak, leher panjang',
     });
 
@@ -2325,7 +2320,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
     expect(mockBuildContextAndCallAI).not.toHaveBeenCalled();
     const call = mockEscalateConversation.mock.calls[0]!;
-    expect(call[1]).toBe(`${PHOTO_UNSURE_REASON} (mirip GEMBOK KOTAK CHROME PANJANG, belum pasti)`);
+    expect(call[1]).toBe(`${PHOTO_UNSURE_REASON} (mirip BOX KUE KRAFT JENDELA, belum pasti)`);
     expect(call[5]).toBe(CANNED_PHOTO_CHECK_REPLY);
   });
 
@@ -2333,7 +2328,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockMatchCustomerPhoto
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ certainty: 'none', product: null, compared: ['GEMBOK BESI JACKET'], reason: 'beda' });
+      .mockResolvedValueOnce({ certainty: 'none', product: null, compared: ['PAPER BAG PUTIH'], reason: 'beda' });
 
     await routeInboundBaileysMessage({ ...makeImagePayload('wamid-PM2'), timestamp: 100 });
     await routeInboundBaileysMessage({ ...makeImagePayload('wamid-PM2b'), timestamp: 101 });
@@ -2348,15 +2343,15 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockMatchCustomerPhoto.mockResolvedValueOnce({
       certainty: 'same',
-      product: { name: 'HANDLE KECIL + BODY GUANGZHOU', brand: 'Aomori Slim', imageUrl: '/uploads/images/g.jpg' },
-      compared: ['HANDLE KECIL + BODY GUANGZHOU'],
+      product: { name: 'KERTAS SUPREME 64 GSM CETAK 1 WARNA', brand: 'Kertas Supreme', imageUrl: '/uploads/images/g.jpg' },
+      compared: ['KERTAS SUPREME 64 GSM CETAK 1 WARNA'],
       reason: 'identik',
     });
 
     await routeInboundBaileysMessage(makeImagePayload('wamid-PM3'));
     await vi.runAllTimersAsync();
 
-    expect(mockMergeMessageMetadata).toHaveBeenCalledWith('msg-uuid', { photoContext: 'produk kami HANDLE KECIL + BODY GUANGZHOU (foto sama)' });
+    expect(mockMergeMessageMetadata).toHaveBeenCalledWith('msg-uuid', { photoContext: 'produk kami KERTAS SUPREME 64 GSM CETAK 1 WARNA (foto sama)' });
   });
 
 
@@ -2364,10 +2359,10 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('adds the team line and escalates when a size question got no size', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_SIZE_FOR_TEAM } = await import('../src/domain/constants.js');
-    const answer = 'Untuk Handle Besar + Body Kunci Vintage Graham: Harga Rp 294.000/Set, warna BNSN, SNGP.';
+    const answer = 'Untuk Box Kue Ivory: Harga Rp 1.800/pcs, cetak full color.';
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: answer });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-SZ1', 'pilihan panjangnya ada berapa bu ?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-SZ1', 'pilihan ukurannya ada berapa bu ?'));
     await vi.runAllTimersAsync();
 
     expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual([`${answer}\n\n${CANNED_SIZE_FOR_TEAM}`]);
@@ -2378,7 +2373,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Ada 2 pilihan kak: besar 25 cm dan tanggung 20 cm.' });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-SZ2', 'pilihan panjangnya ada berapa bu ?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-SZ2', 'pilihan ukurannya ada berapa bu ?'));
     await vi.runAllTimersAsync();
 
     expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual(['Ada 2 pilihan kak: besar 25 cm dan tanggung 20 cm.']);
@@ -2389,12 +2384,12 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('sends the per-item answer, says the team will calculate the total, and tells the team', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_TOTAL_FOR_TEAM } = await import('../src/domain/constants.js');
-    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Engsel 4": Rp 42.000/Set', totalForTeam: true });
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Box nasi 20x20: Rp 1.800/pcs', totalForTeam: true });
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-TOT1', 'jadi total berapa'));
     await vi.runAllTimersAsync();
 
-    expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual([`Engsel 4": Rp 42.000/Set\n\n${CANNED_TOTAL_FOR_TEAM}`]);
+    expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual([`Box nasi 20x20: Rp 1.800/pcs\n\n${CANNED_TOTAL_FOR_TEAM}`]);
     expect(mockEscalateConversation).not.toHaveBeenCalled();
     expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('total'));
     expect(mockNotifyStaff).toHaveBeenCalled();
@@ -2403,7 +2398,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('does the same on a photo turn', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_TOTAL_FOR_TEAM } = await import('../src/domain/constants.js');
-    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'FOTO 1: grendel tanam Rp 112.500/Set', totalForTeam: true });
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'FOTO 1: box kue ivory Rp 2.100/pcs', totalForTeam: true });
 
     await routeInboundBaileysMessage(makeImagePayload('wamid-TOT2'));
     await vi.runAllTimersAsync();
@@ -2470,7 +2465,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
       mockBuildContextAndCallAI.mockRejectedValue(new Error('overloaded'));
 
-      await routeInboundBaileysMessage(makeTextPayload('wamid-NOC5', 'ada handle?'));
+      await routeInboundBaileysMessage(makeTextPayload('wamid-NOC5', 'ada box?'));
       await vi.runAllTimersAsync();
 
       expect(mockEscalateConversation).toHaveBeenCalledTimes(1);
@@ -2488,17 +2483,17 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation.mock.calls[0][1]).toContain('PPN');
     // The model's own answer must not be sent alongside the hand-off.
     expect(mockSendTextMessage).not.toHaveBeenCalled();
-    // Client 2026-10-26: a tax question goes to the team as it is - no "dipakai sendiri, untuk
-    // proyek, atau dijual lagi?" on the hand-off.
+    // Client 2026-10-26: a tax question goes to the team as it is - no sales question on the
+    // hand-off.
     expect(mockEscalateConversation.mock.calls[0][3]).toBe(false);
   });
 
-  // Live 2026-10-26 (PT Sinergi Multi Teknindo): the faktur question was only inside a screenshot of
-  // the customer's marketplace chat with us. The model read it and handed off, but nothing in the
-  // caption said "pajak", so the hand-off asked "dipakai sendiri, untuk proyek, atau dijual lagi?".
+  // The faktur question can be only inside a screenshot of the customer's marketplace chat with us.
+  // The model read it and handed off, but nothing in the caption said "pajak", so the hand-off asked
+  // a sales question.
   it('hands off a tax question read from a chat screenshot, with no sales question', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    mockExtractCatalogKeywords.mockResolvedValue({ chat_text: ['pembelian legacy apakah bisa dapat faktur pajak kak?'] });
+    mockExtractCatalogKeywords.mockResolvedValue({ chat_text: ['pembelian di imperial apakah bisa dapat faktur pajak kak?'] });
     // Confident: the screenshot itself has staff saying "bisa pakai faktur", which the model could repeat.
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Bisa kak, pakai faktur.' });
 
@@ -2536,7 +2531,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('leaves an ordinary product question alone', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-PPN3', 'ada handle besar yang murah?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PPN3', 'ada box besar yang murah?'));
     await vi.runAllTimersAsync();
 
     expect(mockEscalateConversation).not.toHaveBeenCalled();
@@ -2606,12 +2601,12 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       let resolveAI!: (r: unknown) => void;
       mockBuildContextAndCallAI.mockImplementation(() => new Promise((r) => { resolveAI = r; }));
 
-      await routeInboundBaileysMessage({ ...makeTextPayload('wamid-FLY1', 'engsel tipis aomori 2,5 inch berapa?'), timestamp: T - 20 });
+      await routeInboundBaileysMessage({ ...makeTextPayload('wamid-FLY1', 'kertas supreme 30x30 berapa?'), timestamp: T - 20 });
       await vi.advanceTimersByTimeAsync(10_000);
       expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(1);
 
       await routeInboundBaileysMessage({ ...makeTextPayload('wamid-FLY2', '/new'), timestamp: T });
-      resolveAI({ ...BASE_AI_RESPONSE, message: 'Engsel tipis 2½" Rp 8.000/Pcs kak.', customerType: 'end_user' });
+      resolveAI({ ...BASE_AI_RESPONSE, message: 'Kertas Supreme 30x30 Rp 185.000/rim kak.' });
       await vi.runAllTimersAsync();
 
       expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual(['Konteks direset. Percakapan berikutnya dimulai dari nol.']);

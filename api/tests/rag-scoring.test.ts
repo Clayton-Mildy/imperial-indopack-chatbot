@@ -15,8 +15,8 @@ import { eq } from 'drizzle-orm';
 
 const TEST_PREFIX = '__rag_scoring_test__';
 // Unique tokens that cannot collide with real catalog content
-const KW1 = 'zzxgagangzz';
-const KW2 = 'zzxpintuzz';
+const KW1 = 'zzxboxzz';
+const KW2 = 'zzxkertaszz';
 
 describe('searchActiveProducts — relevance scoring', () => {
   let testBrandId: string;

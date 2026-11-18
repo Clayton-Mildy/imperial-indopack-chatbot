@@ -45,7 +45,7 @@ describe('reseed-prompt-defaults.ts', () => {
   });
 });
 
-// Each rule below was broken live in Legacy's UAT and kept for this bot.
+// Each rule below was broken live in an earlier UAT and kept for this bot.
 describe('rules that stay in the prompt', () => {
   it('Tone: English in, English out', () => {
     expect(section('Tone')).toContain('kalau pelanggan menulis dalam bahasa Inggris, jawab dalam bahasa Inggris');
@@ -56,7 +56,7 @@ describe('rules that stay in the prompt', () => {
     expect(section('Escalation')).toContain('Pertanyaan apakah kamu bot atau orang');
   });
 
-  // A plastics factory greeted "salam kenal saya Windy dari PT ..." was asked sales questions before it
+  // A plastics factory greeted "salam kenal saya Sari dari PT ..." was asked sales questions before it
   // said it had come to sell to us (client, 2026-11-02).
   it('Rules: a greeting with no need gets "ada yang bisa saya bantu?" and no name question', () => {
     const rules = section('Rules');

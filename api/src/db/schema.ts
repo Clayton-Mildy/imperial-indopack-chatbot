@@ -199,9 +199,8 @@ export const productVariants = pgTable(
     name: text('name').notNull(),
     sku: text('sku'),
     priceIdr: numeric('price_idr'),
-    // The marketplace price quoted to end users. Stored, never computed: the vendor rounds it
-    // up to the nearest 500 and divides by 12 on lusin-priced rows, and it carries its own UOM
-    // because "Rp 46.000/Lsn" and "Rp 5.500/Pcs" are the same variant.
+    // Legacy marketplace price with its own UOM, from the schema this bot was ported from. Imperial
+    // Indopack's prices are quantity tiers (variant_price_tiers); nothing quotes this column.
     mpPriceIdr: numeric('mp_price_idr'),
     isiCtn: integer('isi_ctn'),
     isiBox: integer('isi_box'),

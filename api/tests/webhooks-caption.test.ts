@@ -53,7 +53,7 @@ describe('Meta webhook — image caption capture', () => {
 
   it('maps image.caption into payload.text', async () => {
     const app = await buildApp();
-    const caption = 'ada handle pintu bellucci newton? butuh 12 pcs';
+    const caption = 'ada box kue ivory 20x20? butuh 2000 pcs';
     const res = await app.inject({ method: 'POST', url: '/webhook',
       headers: { 'content-type': 'application/json' }, payload: JSON.stringify(imageBody(caption)) });
     expect(res.statusCode).toBe(200);

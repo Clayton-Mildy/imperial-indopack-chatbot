@@ -11,7 +11,7 @@ export const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
 // Usage lines get their own monthly file as well as stdout. The NSSM stdout log interleaves
 // them with every other console line and rotates by size (10MB, install.ps1), which discards
 // exactly the history you want when reconciling a month of spend. Default resolves to
-// C:\legacy\logs\claude-usage: the service's working directory is C:\legacy\api
+// <install dir>\logs\claude-usage: the service's working directory is <install dir>\api
 // (install.ps1 sets AppDirectory), so '..' lands in the same logs folder NSSM already uses.
 function usageLogDir(): string {
   return process.env.CLAUDE_USAGE_LOG_DIR ?? path.join(process.cwd(), '..', 'logs', 'claude-usage');
@@ -122,6 +122,11 @@ const LIMIT_HIT_RE = /hit your [\w ]*limit/i;
 // Tested by hand 2026-11-03, dead tokens also answer "401 OAuth access token is invalid".
 const ACCESS_REFUSED_RE = /organization has disabled|invalid api key|failed to authenticate|\b401\b|token has (?:been revoked|expired)/i;
 
+// The in-process MCP server that carries the dev-mode tools. Claude Code names each of its tools
+// mcp__<server>__<tool>, and only names in allowedTools may run - so both come from here.
+export const MCP_SERVER = 'imperial';
+export const mcpToolName = (tool: string): string => `mcp__${MCP_SERVER}__${tool}`;
+
 // Dev-mode transport. Runs one turn (plus tool-use loop) through the Agent SDK
 // with the given system prompt and optional in-process tools, and returns the
 // final assistant text. Structured output is captured by the caller inside a
@@ -182,14 +187,14 @@ export async function agentQuery(opts: {
       ...(opts.tools?.length
         ? {
             mcpServers: {
-              legacy: createSdkMcpServer({ name: 'legacy', version: '1.0.0', tools: opts.tools }),
+              [MCP_SERVER]: createSdkMcpServer({ name: MCP_SERVER, version: '1.0.0', tools: opts.tools }),
             },
           }
         : {}),
       ...((opts.tools?.length || opts.allowWebSearch)
         ? {
             allowedTools: [
-              ...(opts.tools?.map((t) => `mcp__legacy__${t.name}`) ?? []),
+              ...(opts.tools?.map((t) => mcpToolName(t.name)) ?? []),
               // Deliberately NOT 'WebFetch': in this headless harness the built-in fetch tool
               // is unreachable and the model fabricates calls ("Senayan City", 2026-08-20).
               // Customer links go through our own resolve_link custom tool instead.

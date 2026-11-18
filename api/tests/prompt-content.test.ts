@@ -2,7 +2,7 @@
  * prompt-content.test.ts
  * The shipped prompt speaks as Imperial Indopack / Kertas Supreme (spec 7.4) and states the rules
  * the code enforces: prices only from hitung_harga with "Rp" in front (the strict price check reads
- * only "Rp N" figures), the PO link and photos attached by code, and no Legacy business.
+ * only "Rp N" figures), the PO link and photos attached by code, and none of the old hardware business.
  * Reads only committed files - no DATABASE_URL, no API key.
  */
 
@@ -25,7 +25,8 @@ const section = (name: string): string => {
   expect(found, `prompt section "${name}" is missing`).toBeDefined();
   return found!.content;
 };
-const LEGACY_RE = /legacy|reseller|showroom|PRICELIST|engsel|handle pintu|dipakai sendiri/i;
+// The hardware business this bot was ported from: its brand name is checked on each line below.
+const OLD_BUSINESS_RE = /reseller|showroom|PRICELIST|engsel|handle pintu|dipakai sendiri/i;
 
 describe('Imperial Indopack prompt', () => {
   it('has the Imperial Indopack sections in order', () =>
@@ -37,18 +38,22 @@ describe('Imperial Indopack prompt', () => {
     expect(all).toContain('hitung_harga');
   });
 
-  it('carries no Legacy business', () => expect(all).not.toMatch(LEGACY_RE));
+  it('carries none of the old hardware business', () => {
+    expect(all).not.toMatch(OLD_BUSINESS_RE);
+    expect(all).not.toMatch(/legacy/i);
+  });
 
   it('carries no buyer type, MP price or discount tiers', () =>
     expect(all).not.toMatch(/tipe pembeli|dijual lagi|untuk proyek|harga MP|\bMP:|diskon reseller|pengguna akhir/i));
 
-  it('canned replies carry no Legacy business', () =>
+  it('canned replies carry none of the old hardware business', () =>
     expect([CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY].join(' ')).not.toMatch(/legacy|hardware/i));
 
   it('the term list is about paper and boxes', () => {
     expect(KAMUS_ISTILAH).toContain('rim');
     expect(KAMUS_ISTILAH).toContain('gsm');
-    expect(KAMUS_ISTILAH).not.toMatch(LEGACY_RE);
+    expect(KAMUS_ISTILAH).not.toMatch(OLD_BUSINESS_RE);
+    expect(KAMUS_ISTILAH).not.toMatch(/legacy/i);
     expect(KAMUS_ISTILAH).not.toMatch(/PELOR|TANGGUNG|SALON|DATA KATALOG RESMI/);
   });
 });
@@ -170,12 +175,13 @@ describe('the facts each section must state', () => {
 
   it('the name question has no buyer-type wording', () => {
     expect(ASK_NAME_REPLY).toMatch(/dengan siapa/);
-    expect(ASK_NAME_REPLY).not.toMatch(LEGACY_RE);
+    expect(ASK_NAME_REPLY).not.toMatch(OLD_BUSINESS_RE);
+    expect(ASK_NAME_REPLY).not.toMatch(/legacy/i);
   });
 });
 
 describe('tool and field text', () => {
-  it('search instruction keeps web_search and resolve_link, drops the website tool and the reseller check, and adds the price tool', () => {
+  it('search instruction keeps web_search and resolve_link, drops the website tool and the buyer-type check, and adds the price tool', () => {
     expect(TOOL_USE_SEARCH_INSTRUCTION).toContain('web_search');
     expect(TOOL_USE_SEARCH_INSTRUCTION).toContain('resolve_link');
     expect(TOOL_USE_SEARCH_INSTRUCTION).toContain('KALKULATOR HARGA (hitung_harga)');
@@ -187,7 +193,7 @@ describe('tool and field text', () => {
     expect(JUDGE_SYSTEM_PROMPT).not.toMatch(/toko hardware|pricelist|BNSN|Lusin/i);
   });
 
-  it('no respond_to_customer field mentions Legacy, the buyer type or the old catalog fields', () => {
+  it('no respond_to_customer field mentions the old business, the buyer type or the old catalog fields', () => {
     const fields = Object.values(RESPOND_FIELD_DESC).join('\n');
     expect(fields).not.toMatch(/legacy|reseller|end-user|project fields|DATA KATALOG RESMI|Kategori \(petunjuk pencarian\)|Playbook|Scope line/i);
     expect(RESPOND_FIELD_DESC.profile_update).toMatch(/business_name/);

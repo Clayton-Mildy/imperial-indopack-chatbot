@@ -31,7 +31,7 @@ async function embedQuery(text: string): Promise<number[] | null> {
 // ─── Indonesian stopwords + common chat words to filter out ──────────────────
 // NOTE: Do NOT add size/descriptor words like "besar", "kecil", "tipis", "slim"
 // here — they appear directly in product names and are meaningful search terms
-// (e.g. "HANDLE BESAR", "ENGSEL TIPIS").
+// (e.g. "BOX KUE BESAR", "KERTAS TIPIS").
 const STOPWORDS = new Set([
   // Question words
   'berapa', 'apa', 'apakah', 'gimana', 'bagaimana', 'kapan', 'siapa', 'kenapa',

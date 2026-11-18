@@ -287,8 +287,8 @@ export function detectCourierMessage(message: string): boolean {
  * Chats that are not about buying, which go to the team as they are - no AI call, no sales question
  * (client, 2026-10-13: "chat selain tentang orderan barang ... langsung arahkan ke tim"). Left to the
  * model, a probe of ten such first messages produced invented HR channels ("kirim CV ke tim HR lewat
- * website"), a payment confirmation acknowledged but never handed off, and a hand-off with "dipakai
- * sendiri, untuk proyek, atau dijual lagi?" tacked on. The label is the hand-off reason staff read.
+ * website"), a payment confirmation acknowledged but never handed off, and a hand-off with a sales
+ * question tacked on. The label is the hand-off reason staff read.
  *
  * `earlier` is the customer's own recent messages before this batch. Only the supplier introduction
  * is read from it, never the other topics: a customer who once wrote "sudah transfer" and now asks

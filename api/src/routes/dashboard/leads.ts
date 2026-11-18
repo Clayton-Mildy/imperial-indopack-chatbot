@@ -83,7 +83,7 @@ export async function leadRoutes(app: FastifyInstance): Promise<void> {
     const date = new Date().toISOString().slice(0, 10);
     return reply
       .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-      .header('Content-Disposition', `attachment; filename="leads-legacy-${date}.xlsx"`)
+      .header('Content-Disposition', `attachment; filename="leads-imperial-indopack-${date}.xlsx"`)
       .send(workbook);
   });
 

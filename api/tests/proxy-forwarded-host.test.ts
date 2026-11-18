@@ -7,10 +7,10 @@ import { forwardOriginalHost } from '../src/app.js';
 describe('forwardOriginalHost', () => {
   it('carries the public hostname past reply-from overwriting Host with the upstream', () => {
     const out = forwardOriginalHost(
-      { headers: { host: 'dashboard.previous-client.example', origin: 'https://dashboard.previous-client.example' } },
+      { headers: { host: 'dashboard.example.co.id', origin: 'https://dashboard.example.co.id' } },
       { host: '127.0.0.1:40050' }
     );
-    expect(out['x-forwarded-host']).toBe('dashboard.previous-client.example');
+    expect(out['x-forwarded-host']).toBe('dashboard.example.co.id');
     // The upstream still has to see the upstream in Host, or it answers for the wrong vhost.
     expect(out['host']).toBe('127.0.0.1:40050');
   });
@@ -22,9 +22,9 @@ describe('forwardOriginalHost', () => {
 
   it('overrides an x-forwarded-host the client supplied, rather than trusting it', () => {
     const out = forwardOriginalHost(
-      { headers: { host: 'dashboard.previous-client.example' } },
+      { headers: { host: 'dashboard.example.co.id' } },
       { host: '127.0.0.1:40050', 'x-forwarded-host': 'attacker.example' }
     );
-    expect(out['x-forwarded-host']).toBe('dashboard.previous-client.example');
+    expect(out['x-forwarded-host']).toBe('dashboard.example.co.id');
   });
 });
