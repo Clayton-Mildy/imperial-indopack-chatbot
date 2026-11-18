@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Leads</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&amp;family=Open+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#445428}a:hover{color:#252C30}
+</style>
+</helmet>
+<div style="box-sizing: border-box; min-height: 980px; background: #F2F5EF; color: #1F2421; font-family: 'Open Sans', Arial, sans-serif; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <aside style="flex: 1 1 240px; max-width: 100%; box-sizing: border-box; background: #F8FAF6; border-right: 1px solid #E1E7DC; display: flex; flex-direction: column">
+    <div style="height: 56px; padding: 0 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #E1E7DC">
+      <div style="width: 26px; height: 26px; border-radius: 50%; background: #ffffff; border: 1px solid #E2D3B2; color: #8A6A2A; display: flex; align-items: center; justify-content: center; font-family: Montserrat, Arial, sans-serif; font-weight: 800; font-size: 13px">S</div>
+      <span style="font-family: Montserrat, Arial, sans-serif; color: #445428; font-weight: 800; font-size: 14px; letter-spacing: 0.04em">IMPERIAL INDOPACK</span>
+    </div>
+    <nav aria-label="Menu utama" style="flex: 1; padding: 12px 8px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="padding: 0 12px 4px; font-size: 10px; font-weight: 700; color: #6B7A66; text-transform: uppercase; letter-spacing: 0.08em">Inbox</div>
+        <a href="Conversations.dc.html" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #1F2421; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6B5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12c0-4 3.5-7 9-7s9 3 9 7-3.5 7-9 7c-1.2 0-2.3-.15-3.3-.42L4 21l1.2-3.6C3.8 16.1 3 14.1 3 12z"></path></svg>Percakapan</a>
+        <a href="#" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #1F2421; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6B5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.7a2 2 0 0 1 3.4 0l8 13.3A2 2 0 0 1 20 20H4a2 2 0 0 1-1.7-3L10.3 3.7z"></path><path d="M12 9v4"></path></svg><span style="flex: 1">Eskalasi</span><span style="background: #B45309; color: #ffffff; border-radius: 9999px; font-size: 11px; font-weight: 600; min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0 5px">2</span></a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="padding: 0 12px 4px; font-size: 10px; font-weight: 700; color: #6B7A66; text-transform: uppercase; letter-spacing: 0.08em">Penjualan</div>
+        <a href="Summary.dc.html" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #1F2421; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6B5A" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 20v-8M12 20V5M18 20v-6M3 20h18"></path></svg>Ringkasan</a>
+        <a href="Leads.dc.html" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid #586B34; background: #EAF2DD; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; color: #3E4C24; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#586B34" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"></path><path d="M15 7h6v6"></path></svg>Leads</a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="padding: 0 12px 4px; font-size: 10px; font-weight: 700; color: #6B7A66; text-transform: uppercase; letter-spacing: 0.08em">Produk</div>
+        <a href="Catalog.dc.html" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #1F2421; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6B5A" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>Katalog</a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="padding: 0 12px 4px; font-size: 10px; font-weight: 700; color: #6B7A66; text-transform: uppercase; letter-spacing: 0.08em">Sistem</div>
+        <a href="#" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #1F2421; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6B5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"></path></svg>Nomor WhatsApp</a>
+        <a href="#" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #1F2421; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6B5A" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 7l5 5-5 5M12 19h8"></path></svg>Test Prompt</a>
+        <a href="#" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #1F2421; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6B5A" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg>Aktivitas</a>
+        <a href="Settings.dc.html" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #1F2421; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6B5A" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg>Pengaturan</a>
+      </div>
+    </nav>
+    <div style="padding: 10px 12px; border-top: 1px solid #E1E7DC; display: flex; align-items: center; gap: 10px">
+      <div style="width: 32px; height: 32px; border-radius: 9999px; background: #586B34; color: #ffffff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center">AD</div>
+      <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 13px; font-weight: 500">Admin</span><span style="align-self: flex-start; background: #EAF2DD; color: #3E4C24; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px">Admin</span></div>
+    </div>
+  </aside>
+
+  <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+    <header style="height: 56px; background: #ffffff; border-bottom: 1px solid #E1E7DC; padding: 0 max(16px, 32px); display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <span style="font-size: 15px; font-weight: 600">Leads</span>
+      <div style="display: flex; align-items: center; gap: 10px"><span style="font-size: 12px; font-weight: 600; color: #5F6B5A">ID | EN</span><div style="width: 28px; height: 28px; border-radius: 9999px; background: #586B34; color: #ffffff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center">AD</div></div>
+    </header>
+
+    <main style="padding: 24px max(16px, 32px) 32px; display: flex; flex-direction: column; gap: 20px">
+      <div style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 14px 16px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 4px"><label for="ld-from" style="font-size: 11px; font-weight: 600; color: #5F6B5A">Dari</label><input id="ld-from" type="text" value="01/11/2026" style="font: inherit; font-size: 13px; height: 34px; width: 120px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px"></div>
+        <div style="display: flex; flex-direction: column; gap: 4px"><label for="ld-to" style="font-size: 11px; font-weight: 600; color: #5F6B5A">Sampai</label><input id="ld-to" type="text" value="18/11/2026" style="font: inherit; font-size: 13px; height: 34px; width: 120px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px"></div>
+        <div style="display: flex; flex-direction: column; gap: 4px"><label for="ld-status" style="font-size: 11px; font-weight: 600; color: #5F6B5A">Status</label><select id="ld-status" style="font: inherit; font-size: 13px; height: 34px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>Semua Status</option></select></div>
+        <div style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 4px"><label for="ld-search" style="font-size: 11px; font-weight: 600; color: #5F6B5A">Cari</label><input id="ld-search" type="search" placeholder="Cari nama, usaha, nomor, barang..." style="font: inherit; font-size: 13px; height: 34px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px"></div>
+        <button type="button" style="font: inherit; font-size: 13px; font-weight: 500; height: 34px; padding: 0 14px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff; color: #1F2421; cursor: pointer">Reset</button>
+        <button type="button" style="font: inherit; font-size: 13px; font-weight: 600; height: 34px; padding: 0 14px; border: 0; border-radius: 6px; background: #586B34; color: #ffffff; cursor: pointer">Export Excel</button>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; overflow: hidden">
+        <div style="padding: 14px 16px; border-bottom: 1px solid #EEF2EA; font-size: 14px; font-weight: 600">Performa per Merek</div>
+        <div style="overflow-x: auto">
+          <div style="min-width: 640px; font-size: 13px; font-variant-numeric: tabular-nums">
+            <div style="display: grid; grid-template-columns: 2fr repeat(5, minmax(0, 1fr)); background: #F8FAF6; font-size: 11px; font-weight: 700; color: #5F6B5A; text-transform: uppercase; letter-spacing: 0.04em"><div style="padding: 9px 16px">Merek</div><div style="padding: 9px 16px">Leads</div><div style="padding: 9px 16px">Chat</div><div style="padding: 9px 16px">Menang</div><div style="padding: 9px 16px">Kalah</div><div style="padding: 9px 16px">% Menang</div></div>
+            <div style="display: grid; grid-template-columns: 2fr repeat(5, minmax(0, 1fr)); border-top: 1px solid #EEF2EA"><div style="padding: 10px 16px"><span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; background: #EAF2DD; color: #445428">Kertas Supreme</span></div><div style="padding: 10px 16px">[N]</div><div style="padding: 10px 16px">[N]</div><div style="padding: 10px 16px">[N]</div><div style="padding: 10px 16px">[N]</div><div style="padding: 10px 16px">[%]</div></div>
+            <div style="display: grid; grid-template-columns: 2fr repeat(5, minmax(0, 1fr)); border-top: 1px solid #EEF2EA"><div style="padding: 10px 16px"><span style="font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; background: #F4EBD8; color: #6E531E">Imperial Indopack</span></div><div style="padding: 10px 16px">[N]</div><div style="padding: 10px 16px">[N]</div><div style="padding: 10px 16px">[N]</div><div style="padding: 10px 16px">[N]</div><div style="padding: 10px 16px">[%]</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; overflow: hidden">
+        <div style="padding: 12px 16px; border-bottom: 1px solid #EEF2EA; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px">
+            <span style="font-size: 14px; font-weight: 600">Daftar Leads</span>
+            <div role="tablist" aria-label="Filter leads" style="display: flex; flex-wrap: wrap; gap: 4px">
+              <button type="button" role="tab" aria-selected="true" style="font: inherit; font-size: 12.5px; font-weight: 600; height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: #EAF2DD; color: #3E4C24; cursor: pointer">Semua</button>
+              <button type="button" role="tab" aria-selected="false" style="font: inherit; font-size: 12.5px; font-weight: 500; height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #3B4540; cursor: pointer">Kertas Supreme</button>
+              <button type="button" role="tab" aria-selected="false" style="font: inherit; font-size: 12.5px; font-weight: 500; height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #3B4540; cursor: pointer">Imperial Indopack</button>
+              <button type="button" role="tab" aria-selected="false" style="font: inherit; font-size: 12.5px; font-weight: 500; height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #3B4540; cursor: pointer">Perlu Follow-up</button>
+              <button type="button" role="tab" aria-selected="false" style="font: inherit; font-size: 12.5px; font-weight: 500; height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #3B4540; cursor: pointer">Belum Dibalas</button>
+            </div>
+          </div>
+          <a href="NonLeads.dc.html" style="font-size: 12.5px; font-weight: 600; text-decoration: none">Bukan Lead [N] →</a>
+        </div>
+        <div style="overflow-x: auto">
+          <div style="min-width: 1040px; font-size: 13px; font-variant-numeric: tabular-nums">
+            <div style="display: grid; grid-template-columns: 0.9fr 1.3fr 1.2fr 1.1fr 0.7fr 2fr 0.9fr 0.7fr 0.9fr; background: #F8FAF6; font-size: 11px; font-weight: 700; color: #5F6B5A; text-transform: uppercase; letter-spacing: 0.04em">
+              <div style="padding: 9px 14px">Mulai Chat</div><div style="padding: 9px 14px">Pelanggan</div><div style="padding: 9px 14px">Usaha</div><div style="padding: 9px 14px">Merek</div><div style="padding: 9px 14px">Hot / Cold</div><div style="padding: 9px 14px">Barang &amp; Jumlah</div><div style="padding: 9px 14px">Status</div><div style="padding: 9px 14px">Total Order</div><div style="padding: 9px 14px">Chat Terakhir</div>
+            </div>
+
+            <a href="LeadDetail.dc.html" style="display: grid; grid-template-columns: 0.9fr 1.3fr 1.2fr 1.1fr 0.7fr 2fr 0.9fr 0.7fr 0.9fr; align-items: center; border-top: 1px solid #EEF2EA; color: #1F2421; text-decoration: none">
+              <div style="padding: 11px 14px; color: #5F6B5A">17 Nov</div>
+              <div style="padding: 11px 14px; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Dewi</span><span style="font-size: 11.5px; color: #5F6B5A">0812-0000-0011</span></div>
+              <div style="padding: 11px 14px">RM Contoh Minang</div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; background: #EAF2DD; color: #445428">Kertas Supreme</span></div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; background: #FBE3DA; color: #9A2E12">Hot</span></div>
+              <div style="padding: 11px 14px">Supreme 64 gsm 30×30 · 12 rim</div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #DCFCE7; color: #15803D">Menang</span></div>
+              <div style="padding: 11px 14px">1</div>
+              <div style="padding: 11px 14px; color: #5F6B5A">10 mnt lalu</div>
+            </a>
+
+            <div style="display: grid; grid-template-columns: 0.9fr 1.3fr 1.2fr 1.1fr 0.7fr 2fr 0.9fr 0.7fr 0.9fr; align-items: center; border-top: 1px solid #EEF2EA">
+              <div style="padding: 11px 14px; color: #5F6B5A">16 Nov</div>
+              <div style="padding: 11px 14px; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Andi</span><span style="font-size: 11.5px; color: #5F6B5A">0812-0000-0012</span></div>
+              <div style="padding: 11px 14px">Katering Contoh Sehat</div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; background: #F4EBD8; color: #6E531E">Imperial Indopack</span></div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; background: #FBE3DA; color: #9A2E12">Hot</span></div>
+              <div style="padding: 11px 14px">Box ivory 20×20×7,5 · 5.000 pcs</div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #E0F2FE; color: #0369A1">Penawaran</span></div>
+              <div style="padding: 11px 14px">0</div>
+              <div style="padding: 11px 14px; display: flex; flex-direction: column; gap: 3px"><span style="color: #5F6B5A">1 jam lalu</span><span style="align-self: flex-start; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: #FEF3C7; color: #92400E">belum dibalas · 1 j</span></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 0.9fr 1.3fr 1.2fr 1.1fr 0.7fr 2fr 0.9fr 0.7fr 0.9fr; align-items: center; border-top: 1px solid #EEF2EA">
+              <div style="padding: 11px 14px; color: #5F6B5A">15 Nov</div>
+              <div style="padding: 11px 14px; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Sari</span><span style="font-size: 11.5px; color: #5F6B5A">0812-0000-0013</span></div>
+              <div style="padding: 11px 14px">Kebab Contoh 88</div>
+              <div style="padding: 11px 14px; display: flex; flex-wrap: wrap; gap: 4px"><span style="font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; background: #EAF2DD; color: #445428">Kertas Supreme</span><span style="font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; background: #F4EBD8; color: #6E531E">Imperial Indopack</span></div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; background: #FBE3DA; color: #9A2E12">Hot</span></div>
+              <div style="padding: 11px 14px; line-height: 1.5">Supreme 64 gsm 35×35 · 10 rim<br>Box kebab 25×8×6 · 2.500 pcs</div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #F1F5F1; color: #3B4540">Dihubungi</span></div>
+              <div style="padding: 11px 14px">0</div>
+              <div style="padding: 11px 14px; color: #5F6B5A">kemarin</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 0.9fr 1.3fr 1.2fr 1.1fr 0.7fr 2fr 0.9fr 0.7fr 0.9fr; align-items: center; border-top: 1px solid #EEF2EA">
+              <div style="padding: 11px 14px; color: #5F6B5A">14 Nov</div>
+              <div style="padding: 11px 14px; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Budi</span><span style="font-size: 11.5px; color: #5F6B5A">0812-0000-0014</span></div>
+              <div style="padding: 11px 14px">Toko Kue Contoh</div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; background: #F4EBD8; color: #6E531E">Imperial Indopack</span></div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; background: #E2EAF2; color: #2F4A66">Cold</span></div>
+              <div style="padding: 11px 14px">Box ivory 21×14×5 · <span style="color: #5F6B5A">jumlah belum ada</span></div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #F1F5F1; color: #3B4540">Baru</span></div>
+              <div style="padding: 11px 14px">0</div>
+              <div style="padding: 11px 14px; color: #5F6B5A">3 hari lalu</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 0.9fr 1.3fr 1.2fr 1.1fr 0.7fr 2fr 0.9fr 0.7fr 0.9fr; align-items: center; border-top: 1px solid #EEF2EA">
+              <div style="padding: 11px 14px; color: #5F6B5A">02 Okt</div>
+              <div style="padding: 11px 14px; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Yusuf</span><span style="font-size: 11.5px; color: #5F6B5A">0812-0000-0015</span></div>
+              <div style="padding: 11px 14px">Burger Contoh</div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; background: #EAF2DD; color: #445428">Kertas Supreme</span></div>
+              <div style="padding: 11px 14px"><span style="font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; background: #E2EAF2; color: #2F4A66">Cold</span></div>
+              <div style="padding: 11px 14px">Greaseproof 40 gsm 30×30 · 5 rim</div>
+              <div style="padding: 11px 14px; display: flex; flex-direction: column; gap: 3px"><span style="align-self: flex-start; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #FEE2E2; color: #B91C1C">Kalah</span><span style="font-size: 11px; color: #5F6B5A">AI · tidak ada respon</span></div>
+              <div style="padding: 11px 14px">0</div>
+              <div style="padding: 11px 14px; color: #5F6B5A">35 hari lalu</div>
+            </div>
+          </div>
+        </div>
+        <div style="padding: 10px 16px; border-top: 1px solid #EEF2EA; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; font-size: 12.5px; color: #5F6B5A">
+          <span>Halaman 1 dari [N] · [N] lead · contoh data</span>
+          <div style="display: flex; gap: 6px"><button type="button" style="font: inherit; font-size: 12.5px; height: 30px; padding: 0 12px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff; color: #5F6B5A; cursor: pointer">← Sebelumnya</button><button type="button" style="font: inherit; font-size: 12.5px; height: 30px; padding: 0 12px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff; color: #1F2421; cursor: pointer">Berikutnya →</button></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

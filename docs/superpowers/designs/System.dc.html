@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>System map</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&amp;family=Open+Sans:wght@400;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#586B34}a:hover{color:#252C30}
+</style>
+</helmet>
+<div style="width: 1200px; height: 820px; box-sizing: border-box; padding: 44px 52px; background: #ffffff; color: #252C30; font-family: 'Open Sans', Arial, sans-serif; display: flex; flex-direction: column; gap: 22px">
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <div style="font-family: Montserrat, Arial, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #586B34">System · adapted from the Legacy engine</div>
+    <h2 style="margin: 0; font-family: Montserrat, Arial, sans-serif; font-size: 32px; font-weight: 800">From a WhatsApp message to a lead</h2>
+  </div>
+
+  <div style="display: flex; align-items: stretch; gap: 10px">
+    <div style="flex: 1 1 0; background: #252C30; color: #ffffff; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+      <span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">WhatsApp</span>
+      <span style="font-size: 12.5px; line-height: 1.5; color: #D3DACF">One shared number for both brands. Provider (ChakraHQ or Meta) still to decide.</span>
+    </div>
+    <div style="display: flex; align-items: center; color: #586B34"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></div>
+    <div style="flex: 1 1 0; background: #F5F8F2; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+      <span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Message router</span>
+      <span style="font-size: 12.5px; line-height: 1.5; color: #3B4540">Merges quick texts (8 s), checks staff takeover, routes couriers, suppliers and job seekers to Bukan Lead.</span>
+    </div>
+    <div style="display: flex; align-items: center; color: #586B34"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></div>
+    <div style="flex: 1.3 1 0; background: #F5F8F2; border: 2px solid #88B44E; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+      <span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">AI turn (Claude)</span>
+      <span style="font-size: 12.5px; line-height: 1.5; color: #3B4540">Prompt + full catalog with tiers. Tools: <code>hitung_harga</code>, resolve_link, web_search. Answers through respond_to_customer.</span>
+    </div>
+    <div style="display: flex; align-items: center; color: #586B34"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></div>
+    <div style="flex: 1 1 0; background: #F5F8F2; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+      <span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Reply checks</span>
+      <span style="font-size: 12.5px; line-height: 1.5; color: #3B4540">Strict price check, tone, catalog claims, fit judge. Fails → redo, then handoff.</span>
+    </div>
+    <div style="display: flex; align-items: center; color: #586B34"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></div>
+    <div style="flex: 1 1 0; background: #252C30; color: #ffffff; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+      <span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Send</span>
+      <span style="font-size: 12.5px; line-height: 1.5; color: #D3DACF">Text, up to 3 reference photos, price list file, PO form link. Code attaches every link.</span>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+    <div style="border: 1px solid #DDE5D6; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">After each turn</span>
+      <span style="font-size: 13px; line-height: 1.6; color: #3B4540">The customer's details merge into their profile: name, business, brands (union), items keyed by product + size, so moving from paper to boxes keeps both.</span>
+    </div>
+    <div style="border: 1px solid #DDE5D6; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Handoff to staff</span>
+      <span style="font-size: 13px; line-height: 1.6; color: #3B4540">Custom jobs, design files, "mau bicara dengan orang". The bot asks the next missing detail while staff get a push alert with all six details.</span>
+    </div>
+    <div style="border: 1px solid #DDE5D6; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Lead pass, every 10 minutes</span>
+      <span style="font-size: 13px; line-height: 1.6; color: #3B4540">Reads quiet chats: lead or not, stage (Baru → Dihubungi → Penawaran → Menang / Kalah), Hot/Cold, brands, items. Won/Lost need a quoted customer message.</span>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+    <div style="background: #F5F8F2; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+      <span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Data (Postgres)</span>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; font-family: ui-monospace, Menlo, monospace">
+        <span style="background: #ffffff; padding: 4px 9px; border-radius: 6px">brands</span>
+        <span style="background: #ffffff; padding: 4px 9px; border-radius: 6px">products</span>
+        <span style="background: #ffffff; padding: 4px 9px; border-radius: 6px">product_variants</span>
+        <span style="background: #ffffff; padding: 4px 9px; border-radius: 6px; border: 1px solid #88B44E">variant_price_tiers</span>
+        <span style="background: #ffffff; padding: 4px 9px; border-radius: 6px; border: 1px solid #88B44E">product_reference_images</span>
+        <span style="background: #ffffff; padding: 4px 9px; border-radius: 6px">contact_profiles</span>
+        <span style="background: #ffffff; padding: 4px 9px; border-radius: 6px">leads (+ brands, items)</span>
+        <span style="background: #ffffff; padding: 4px 9px; border-radius: 6px">lead_events</span>
+        <span style="background: #ffffff; padding: 4px 9px; border-radius: 6px">app_settings</span>
+      </div>
+      <span style="font-size: 12px; color: #4A5550">Green outline = new in migration 0026</span>
+    </div>
+    <div style="background: #F7F1E4; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+      <span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Dashboard (plan 2)</span>
+      <span style="font-size: 13px; line-height: 1.6; color: #3B4540">Copied from Legacy's: Leads with brand filter, Bukan Lead, Ringkasan, Percakapan, Katalog (tiers + reference photos, Excel import), Pengaturan (PO form link, return window in months, silence days, prompt).</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

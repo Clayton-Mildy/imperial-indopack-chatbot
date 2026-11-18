@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chatbot overview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&amp;family=Open+Sans:wght@400;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#586B34}a:hover{color:#252C30}
+</style>
+</helmet>
+<div style="width: 1200px; height: 900px; box-sizing: border-box; padding: 56px 64px; background: #F5F8F2; color: #252C30; font-family: 'Open Sans', Arial, sans-serif; display: flex; flex-direction: column; gap: 32px">
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 24px">
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <div style="font-family: Montserrat, Arial, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #586B34">WhatsApp sales agent · design v1 · 18 Nov 2026</div>
+      <h1 style="margin: 0; font-family: Montserrat, Arial, sans-serif; font-size: 52px; line-height: 1.05; font-weight: 800; color: #252C30; text-wrap: balance">One number, two brands,<br>every order detail collected.</h1>
+    </div>
+    <div style="display: flex; gap: 10px; flex-shrink: 0">
+      <span style="padding: 8px 16px; border-radius: 800px; background: #586B34; color: #ffffff; font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 14px">Kertas Supreme</span>
+      <span style="padding: 8px 16px; border-radius: 800px; background: #8A6A2A; color: #ffffff; font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 14px">Imperial Indopack</span>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+    <div style="background: #ffffff; border-radius: 16px; padding: 28px; display: flex; flex-direction: column; gap: 12px">
+      <div style="font-family: Montserrat, Arial, sans-serif; font-size: 20px; font-weight: 700; color: #586B34">Kertas Supreme</div>
+      <p style="margin: 0; font-size: 15px; line-height: 1.6">Food-grade laminated wrapping paper (62 / 64 / 67 gsm), printed with the customer's logo repeated across the sheet. Nasi padang, kebab, burger. Plus greaseproof, paper bags, sleeves and envelopes.</p>
+      <div style="font-size: 13px; color: #586B34">Priced per rim = 500 sheets of the cut size · plano 79×109, 90×120, 65×100</div>
+    </div>
+    <div style="background: #ffffff; border-radius: 16px; padding: 28px; display: flex; flex-direction: column; gap: 12px">
+      <div style="font-family: Montserrat, Arial, sans-serif; font-size: 20px; font-weight: 700; color: #8A6A2A">Imperial Indopack</div>
+      <p style="margin: 0; font-size: 15px; line-height: 1.6">Thick printed karton boxes (ivory, kraft, 250–400 gsm) for catering, lunch, cookies and more. Full-colour or 1–2 colour print, laminated or not.</p>
+      <div style="font-size: 13px; color: #8A6A2A">Priced per pcs in quantity tiers · 1 rim = 500 pcs</div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <div style="font-family: Montserrat, Arial, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #586B34">The six details the bot collects</div>
+    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px">
+      <div style="background: #ffffff; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px"><span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Nama</span><span style="font-size: 13px; color: #4A5550">Customer name</span></div>
+      <div style="background: #ffffff; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px"><span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Usaha</span><span style="font-size: 13px; color: #4A5550">Business name</span></div>
+      <div style="background: #ffffff; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px"><span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Model</span><span style="font-size: 13px; color: #4A5550">Box or paper type</span></div>
+      <div style="background: #ffffff; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px"><span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Desain</span><span style="font-size: 13px; color: #4A5550">Has one? Else references</span></div>
+      <div style="background: #ffffff; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px"><span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Qty</span><span style="font-size: 13px; color: #4A5550">Min 2.500 pcs / 5 rim</span></div>
+      <div style="background: #ffffff; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px"><span style="font-family: Montserrat, Arial, sans-serif; font-weight: 700; font-size: 15px">Ukuran</span><span style="font-size: 13px; color: #4A5550">p × l (× t for a box)</span></div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div style="font-family: Montserrat, Arial, sans-serif; font-size: 16px; font-weight: 700">Quotes from the catalog only</div>
+      <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #3B4540">Code works out the tier, unit price and total (<code>hitung_harga</code>). Custom size, model or print goes to staff with the details already collected.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div style="font-family: Montserrat, Arial, sans-serif; font-size: 16px; font-weight: 700">PO form on agreement</div>
+      <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #3B4540">When the customer agrees to a quoted price, the bot sends the Google Form link from Settings and the lead moves to Won.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div style="font-family: Montserrat, Arial, sans-serif; font-size: 16px; font-weight: 700">CRM like Legacy</div>
+      <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #3B4540">One lead per customer, tagged with one or both brands. Non-customers go to Bukan Lead. Silent 30 days → Lost; back after 3 months → new lead.</p>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

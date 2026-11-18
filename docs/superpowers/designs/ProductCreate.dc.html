@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Tambah Produk</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&amp;family=Open+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#445428}a:hover{color:#252C30}
+</style>
+</helmet>
+<div style="box-sizing: border-box; min-height: 1320px; background: #F2F5EF; color: #1F2421; font-family: 'Open Sans', Arial, sans-serif; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <aside style="flex: 1 1 240px; max-width: 100%; box-sizing: border-box; background: #F8FAF6; border-right: 1px solid #E1E7DC; display: flex; flex-direction: column">
+    <div style="height: 56px; padding: 0 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #E1E7DC">
+      <div style="width: 26px; height: 26px; border-radius: 50%; background: #ffffff; border: 1px solid #E2D3B2; color: #8A6A2A; display: flex; align-items: center; justify-content: center; font-family: Montserrat, Arial, sans-serif; font-weight: 800; font-size: 13px">S</div>
+      <span style="font-family: Montserrat, Arial, sans-serif; color: #445428; font-weight: 800; font-size: 14px; letter-spacing: 0.04em">IMPERIAL INDOPACK</span>
+    </div>
+    <nav aria-label="Menu utama" style="flex: 1; padding: 12px 8px; display: flex; flex-direction: column; gap: 14px; font-size: 13px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="padding: 0 12px 4px; font-size: 10px; font-weight: 700; color: #6B7A66; text-transform: uppercase; letter-spacing: 0.08em">Penjualan</div>
+        <a href="Summary.dc.html" style="height: 36px; padding: 0 12px; border-left: 3px solid transparent; display: flex; align-items: center; color: #1F2421; text-decoration: none; font-weight: 500">Ringkasan</a>
+        <a href="Leads.dc.html" style="height: 36px; padding: 0 12px; border-left: 3px solid transparent; display: flex; align-items: center; color: #1F2421; text-decoration: none; font-weight: 500">Leads</a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="padding: 0 12px 4px; font-size: 10px; font-weight: 700; color: #6B7A66; text-transform: uppercase; letter-spacing: 0.08em">Produk</div>
+        <a href="Catalog.dc.html" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid #586B34; background: #EAF2DD; display: flex; align-items: center; color: #3E4C24; text-decoration: none; font-weight: 600">Katalog</a>
+      </div>
+    </nav>
+  </aside>
+
+  <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+    <header style="min-height: 56px; background: #ffffff; border-bottom: 1px solid #E1E7DC; padding: 8px 32px; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+      <span style="display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600"><a href="Catalog.dc.html" style="color: #5F6B5A; font-size: 14px; font-weight: 500; text-decoration: none">← Katalog</a><span style="color: #C5CFC0">/</span>Tambah Produk</span>
+      <div style="display: flex; gap: 8px"><a href="Catalog.dc.html" style="font-size: 13px; font-weight: 500; height: 34px; padding: 0 14px; border: 1px solid #D5DECF; border-radius: 6px; color: #1F2421; text-decoration: none; display: inline-flex; align-items: center">Batal</a><a href="Catalog.dc.html" style="font-size: 13px; font-weight: 600; height: 34px; padding: 0 14px; border-radius: 6px; background: #586B34; color: #ffffff; text-decoration: none; display: inline-flex; align-items: center">Simpan Produk</a></div>
+    </header>
+
+    <main style="padding: 24px 32px 32px; display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+      <form style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+
+        <section style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+          <span style="font-size: 15px; font-weight: 700">1 · Produk</span>
+          <fieldset style="border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px">
+            <legend style="font-size: 12px; font-weight: 600; color: #3B4540; padding: 0; margin-bottom: 8px">Merek</legend>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+              <label for="pc-brand-ks" style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 2px solid #586B34; border-radius: 8px; background: #F5F8F2; cursor: pointer"><input id="pc-brand-ks" type="radio" name="brand" checked style="margin-top: 3px"><span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 13.5px; font-weight: 700">Kertas Supreme</span><span style="font-size: 12px; color: #5F6B5A">Kertas bungkus, greaseproof, paper bag. Harga per rim.</span></span></label>
+              <label for="pc-brand-ii" style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid #D5DECF; border-radius: 8px; cursor: pointer"><input id="pc-brand-ii" type="radio" name="brand" style="margin-top: 3px"><span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 13.5px; font-weight: 700">Imperial Indopack</span><span style="font-size: 12px; color: #5F6B5A">Box karton ivory dan kraft. Harga per pcs.</span></span></label>
+            </div>
+          </fieldset>
+          <div style="display: flex; flex-direction: column; gap: 4px"><label for="pc-name" style="font-size: 12px; font-weight: 600; color: #3B4540">Nama produk</label><input id="pc-name" type="text" value="Kertas Supreme 64 gsm cetak 1 warna" style="font: inherit; font-size: 13.5px; height: 38px; padding: 0 12px; border: 1px solid #D5DECF; border-radius: 6px"><span style="font-size: 11.5px; color: #5F6B5A">Nama ini yang disebut bot ke pelanggan.</span></div>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+            <div style="display: flex; flex-direction: column; gap: 4px"><label for="pc-gsm" style="font-size: 12px; font-weight: 600; color: #3B4540">Gramasi</label><input id="pc-gsm" type="text" value="64 gsm" style="font: inherit; font-size: 13.5px; height: 38px; padding: 0 12px; border: 1px solid #D5DECF; border-radius: 6px"></div>
+            <div style="display: flex; flex-direction: column; gap: 4px"><label for="pc-print" style="font-size: 12px; font-weight: 600; color: #3B4540">Cetak</label><select id="pc-print" style="font: inherit; font-size: 13.5px; height: 38px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>1 warna</option><option>Polos</option><option>2 warna</option><option>Full color</option></select></div>
+            <div style="display: flex; flex-direction: column; gap: 4px"><label for="pc-finish" style="font-size: 12px; font-weight: 600; color: #3B4540">Finishing</label><select id="pc-finish" style="font: inherit; font-size: 13.5px; height: 38px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>Laminasi food grade</option><option>Non laminasi</option></select></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px"><label for="pc-use" style="font-size: 12px; font-weight: 600; color: #3B4540">Kegunaan</label><textarea id="pc-use" rows="2" style="font: inherit; font-size: 13.5px; padding: 10px 12px; border: 1px solid #D5DECF; border-radius: 6px; resize: vertical">bungkus nasi padang, kebab, burger, gorengan</textarea><span style="font-size: 11.5px; color: #5F6B5A">Bot memakai ini untuk merekomendasikan produk ke pelanggan yang belum tahu mau pakai apa.</span></div>
+          <label for="pc-active" style="display: flex; align-items: center; gap: 10px; font-size: 13px"><input id="pc-active" type="checkbox" checked><span><b>Tawarkan lewat bot</b> · nonaktifkan untuk menyembunyikan dari bot tanpa menghapus</span></label>
+        </section>
+
+        <section style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+          <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px"><span style="font-size: 15px; font-weight: 700">2 · Ukuran &amp; harga</span><span style="font-size: 12px; color: #5F6B5A">1 rim = 500 lembar / pcs · bot memakai tingkat tertinggi yang tercapai</span></div>
+
+          <div style="border: 1px solid #DDE5D6; border-radius: 8px; overflow: hidden">
+            <div style="padding: 12px 14px; background: #F8FAF6; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px">
+              <div style="display: flex; flex-direction: column; gap: 4px"><label for="pc-size1" style="font-size: 12px; font-weight: 600; color: #3B4540">Ukuran</label><input id="pc-size1" type="text" value="30 x 30 cm" style="font: inherit; font-size: 13.5px; height: 36px; width: 180px; padding: 0 12px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"></div>
+              <button type="button" style="margin-left: auto; font: inherit; font-size: 12.5px; font-weight: 600; height: 32px; padding: 0 12px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff; color: #1F2421; cursor: pointer">Salin tingkat ke ukuran lain</button>
+              <button type="button" aria-label="Hapus ukuran 30 x 30 cm" style="font: inherit; font-size: 12.5px; height: 32px; padding: 0 10px; border: 1px solid #F1C9C9; border-radius: 6px; background: #ffffff; color: #B91C1C; cursor: pointer">Hapus ukuran</button>
+            </div>
+            <div style="overflow-x: auto">
+              <div style="min-width: 640px; font-size: 13px">
+                <div style="display: grid; grid-template-columns: 1fr 0.9fr 1.3fr 0.9fr 1.1fr 0.5fr; gap: 8px; padding: 8px 14px; font-size: 11px; font-weight: 700; color: #5F6B5A; text-transform: uppercase; letter-spacing: 0.04em"><span>Mulai jumlah</span><span>Satuan</span><span>Harga (Rp)</span><span>Per</span><span>Ongkir</span><span></span></div>
+                <div style="display: grid; grid-template-columns: 1fr 0.9fr 1.3fr 0.9fr 1.1fr 0.5fr; gap: 8px; padding: 6px 14px; align-items: center">
+                  <input aria-label="Mulai jumlah tingkat 1" type="text" value="5" style="font: inherit; font-size: 13px; height: 34px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px">
+                  <select aria-label="Satuan tingkat 1" style="font: inherit; font-size: 13px; height: 34px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>rim</option><option>pcs</option></select>
+                  <input aria-label="Harga tingkat 1" type="text" value="185.000" style="font: inherit; font-size: 13px; height: 34px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px">
+                  <select aria-label="Harga per, tingkat 1" style="font: inherit; font-size: 13px; height: 34px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>rim</option><option>pcs</option></select>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px"><input type="checkbox">Termasuk</label>
+                  <button type="button" aria-label="Hapus tingkat 1" style="font: inherit; height: 30px; border: 0; background: transparent; color: #8A949B; cursor: pointer">✕</button>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 0.9fr 1.3fr 0.9fr 1.1fr 0.5fr; gap: 8px; padding: 6px 14px; align-items: center">
+                  <input aria-label="Mulai jumlah tingkat 2" type="text" value="10" style="font: inherit; font-size: 13px; height: 34px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px">
+                  <select aria-label="Satuan tingkat 2" style="font: inherit; font-size: 13px; height: 34px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>rim</option></select>
+                  <input aria-label="Harga tingkat 2" type="text" value="165.000" style="font: inherit; font-size: 13px; height: 34px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px">
+                  <select aria-label="Harga per, tingkat 2" style="font: inherit; font-size: 13px; height: 34px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>rim</option></select>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px"><input type="checkbox">Termasuk</label>
+                  <button type="button" aria-label="Hapus tingkat 2" style="font: inherit; height: 30px; border: 0; background: transparent; color: #8A949B; cursor: pointer">✕</button>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 0.9fr 1.3fr 0.9fr 1.1fr 0.5fr; gap: 8px; padding: 6px 14px 12px; align-items: center">
+                  <input aria-label="Mulai jumlah tingkat 3" type="text" value="20" style="font: inherit; font-size: 13px; height: 34px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px">
+                  <select aria-label="Satuan tingkat 3" style="font: inherit; font-size: 13px; height: 34px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>rim</option></select>
+                  <input aria-label="Harga tingkat 3" type="text" value="160.000" style="font: inherit; font-size: 13px; height: 34px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px">
+                  <select aria-label="Harga per, tingkat 3" style="font: inherit; font-size: 13px; height: 34px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>rim</option></select>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px"><input type="checkbox">Termasuk</label>
+                  <button type="button" aria-label="Hapus tingkat 3" style="font: inherit; height: 30px; border: 0; background: transparent; color: #8A949B; cursor: pointer">✕</button>
+                </div>
+              </div>
+            </div>
+            <div style="padding: 0 14px 14px"><button type="button" style="font: inherit; font-size: 12.5px; font-weight: 600; height: 30px; padding: 0 10px; border: 1px dashed #B9C7AE; border-radius: 6px; background: #ffffff; color: #445428; cursor: pointer">+ Tambah tingkat</button></div>
+          </div>
+
+          <div style="border: 1px solid #E9B8B8; border-radius: 8px; overflow: hidden">
+            <div style="padding: 12px 14px; background: #FFF7F7; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px">
+              <div style="display: flex; flex-direction: column; gap: 4px"><label for="pc-size2" style="font-size: 12px; font-weight: 600; color: #3B4540">Ukuran</label><input id="pc-size2" type="text" value="35 x 35 cm" style="font: inherit; font-size: 13.5px; height: 36px; width: 180px; padding: 0 12px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"></div>
+              <span style="font-size: 12px; color: #B91C1C; font-weight: 600">Tingkat disalin dari 30 × 30 cm · lengkapi harganya</span>
+            </div>
+            <div style="padding: 10px 14px 14px; display: grid; grid-template-columns: 1fr 0.9fr 1.3fr 0.9fr 1.1fr 0.5fr; gap: 8px; align-items: start; font-size: 13px">
+              <input aria-label="Mulai jumlah, ukuran 2" type="text" value="5" style="font: inherit; font-size: 13px; height: 34px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px">
+              <select aria-label="Satuan, ukuran 2" style="font: inherit; font-size: 13px; height: 34px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>rim</option></select>
+              <div style="display: flex; flex-direction: column; gap: 4px"><input aria-label="Harga, ukuran 2" aria-invalid="true" aria-describedby="pc-err2" type="text" value="" placeholder="Rp" style="font: inherit; font-size: 13px; height: 34px; padding: 0 10px; border: 2px solid #DC2626; border-radius: 6px"><span id="pc-err2" style="font-size: 11.5px; color: #B91C1C">Isi harga untuk mulai 5 rim</span></div>
+              <select aria-label="Harga per, ukuran 2" style="font: inherit; font-size: 13px; height: 34px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>rim</option></select>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; height: 34px"><input type="checkbox">Termasuk</label>
+              <span></span>
+            </div>
+          </div>
+
+          <button type="button" style="align-self: flex-start; font: inherit; font-size: 13px; font-weight: 600; height: 36px; padding: 0 14px; border: 1px dashed #B9C7AE; border-radius: 6px; background: #ffffff; color: #445428; cursor: pointer">+ Tambah ukuran</button>
+        </section>
+
+        <section style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 700">3 · Foto referensi desain</span><span style="font-size: 12px; color: #5F6B5A">Maksimal 3. Dikirim bot ke pelanggan yang belum punya desain. Urutan = urutan kirim.</span></div>
+          <div style="display: flex; flex-wrap: wrap; gap: 12px">
+            <div style="width: 140px; display: flex; flex-direction: column; gap: 6px"><div style="height: 120px; border-radius: 8px; background: repeating-linear-gradient(45deg, #F5F8F2 0 10px, #EAF2DD 10px 20px); border: 1px solid #DDE5D6; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #445428">contoh-logo-merah.jpg</div><span style="font-size: 11.5px; color: #5F6B5A">1 · <a href="#">Hapus</a></span></div>
+            <div style="width: 140px; display: flex; flex-direction: column; gap: 6px"><div style="height: 120px; border-radius: 8px; background: repeating-linear-gradient(45deg, #F5F8F2 0 10px, #EAF2DD 10px 20px); border: 1px solid #DDE5D6; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #445428">contoh-pola-penuh.jpg</div><span style="font-size: 11.5px; color: #5F6B5A">2 · <a href="#">Hapus</a></span></div>
+            <label for="pc-photo" style="width: 140px; height: 120px; border-radius: 8px; border: 2px dashed #B9C7AE; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 12.5px; color: #445428; cursor: pointer; text-align: center"><span style="font-size: 20px; line-height: 1">+</span>Unggah foto<span style="font-size: 11px; color: #5F6B5A">JPG/PNG, maks 5 MB</span></label>
+            <input id="pc-photo" type="file" accept="image/*" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">
+          </div>
+        </section>
+      </form>
+
+      <div style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+        <div style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+          <span style="font-size: 14px; font-weight: 600">Yang dilihat bot</span>
+          <pre style="margin: 0; padding: 12px; background: #252C30; color: #E3EBD9; border-radius: 6px; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.55; white-space: pre-wrap; overflow-x: auto">Merek: Kertas Supreme
+Produk: Kertas Supreme 64 gsm cetak 1 warna
+Kegunaan: bungkus nasi padang, kebab, burger, gorengan
+Gramasi: 64 gsm · Cetak: 1 warna · Laminasi food grade
+[FOTO REFERENSI TERSEDIA]
+- Ukuran: 30 x 30 cm
+  • mulai 5 rim (2.500 pcs): Rp 185.000/rim, belum termasuk ongkir
+  • mulai 10 rim (5.000 pcs): Rp 165.000/rim, belum termasuk ongkir
+  • mulai 20 rim (10.000 pcs): Rp 160.000/rim, belum termasuk ongkir</pre>
+          <span style="font-size: 11.5px; color: #5F6B5A">Ukuran 35 × 35 cm belum muncul karena harganya belum lengkap.</span>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px; font-size: 13px">
+          <span style="font-size: 14px; font-weight: 600">Sebelum simpan</span>
+          <span style="color: #15803D">✓ Merek dan nama produk</span>
+          <span style="color: #15803D">✓ Kegunaan diisi</span>
+          <span style="color: #15803D">✓ 30 × 30 cm: 3 tingkat, naik berurutan</span>
+          <span style="color: #B91C1C">✕ 35 × 35 cm: 1 harga kosong</span>
+          <span style="color: #5F6B5A">○ Foto referensi: 2 dari 3 (opsional)</span>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1320}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

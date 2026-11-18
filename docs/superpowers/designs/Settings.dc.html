@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Pengaturan</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&amp;family=Open+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#445428}a:hover{color:#252C30}
+</style>
+</helmet>
+<div style="box-sizing: border-box; min-height: 1560px; background: #F2F5EF; color: #1F2421; font-family: 'Open Sans', Arial, sans-serif; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <aside style="flex: 1 1 240px; max-width: 100%; box-sizing: border-box; background: #F8FAF6; border-right: 1px solid #E1E7DC; display: flex; flex-direction: column">
+    <div style="height: 56px; padding: 0 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #E1E7DC">
+      <div style="width: 26px; height: 26px; border-radius: 50%; background: #ffffff; border: 1px solid #E2D3B2; color: #8A6A2A; display: flex; align-items: center; justify-content: center; font-family: Montserrat, Arial, sans-serif; font-weight: 800; font-size: 13px">S</div>
+      <span style="font-family: Montserrat, Arial, sans-serif; color: #445428; font-weight: 800; font-size: 14px; letter-spacing: 0.04em">IMPERIAL INDOPACK</span>
+    </div>
+    <nav aria-label="Menu utama" style="flex: 1; padding: 12px 8px; display: flex; flex-direction: column; gap: 14px; font-size: 13px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="padding: 0 12px 4px; font-size: 10px; font-weight: 700; color: #6B7A66; text-transform: uppercase; letter-spacing: 0.08em">Inbox</div>
+        <a href="Conversations.dc.html" style="height: 36px; padding: 0 12px; border-left: 3px solid transparent; display: flex; align-items: center; color: #1F2421; text-decoration: none; font-weight: 500">Percakapan</a>
+        <a href="TeamQueue.dc.html" style="height: 36px; padding: 0 12px; border-left: 3px solid transparent; display: flex; align-items: center; color: #1F2421; text-decoration: none; font-weight: 500">Perlu Tim</a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="padding: 0 12px 4px; font-size: 10px; font-weight: 700; color: #6B7A66; text-transform: uppercase; letter-spacing: 0.08em">Penjualan</div>
+        <a href="Summary.dc.html" style="height: 36px; padding: 0 12px; border-left: 3px solid transparent; display: flex; align-items: center; color: #1F2421; text-decoration: none; font-weight: 500">Ringkasan</a>
+        <a href="Leads.dc.html" style="height: 36px; padding: 0 12px; border-left: 3px solid transparent; display: flex; align-items: center; color: #1F2421; text-decoration: none; font-weight: 500">Leads</a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="padding: 0 12px 4px; font-size: 10px; font-weight: 700; color: #6B7A66; text-transform: uppercase; letter-spacing: 0.08em">Produk</div>
+        <a href="Catalog.dc.html" style="height: 36px; padding: 0 12px; border-left: 3px solid transparent; display: flex; align-items: center; color: #1F2421; text-decoration: none; font-weight: 500">Katalog</a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="padding: 0 12px 4px; font-size: 10px; font-weight: 700; color: #6B7A66; text-transform: uppercase; letter-spacing: 0.08em">Sistem</div>
+        <a href="Settings.dc.html" style="height: 36px; padding: 0 12px; border-radius: 6px; border-left: 3px solid #586B34; background: #EAF2DD; display: flex; align-items: center; color: #3E4C24; text-decoration: none; font-weight: 600">Pengaturan</a>
+      </div>
+    </nav>
+  </aside>
+
+  <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+    <header style="height: 56px; background: #ffffff; border-bottom: 1px solid #E1E7DC; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <span style="font-size: 15px; font-weight: 600">Pengaturan</span>
+      <span style="font-size: 12px; color: #5F6B5A">Hanya admin yang bisa mengubah</span>
+    </header>
+
+    <div role="alert" style="background: #FEF3C7; border-bottom: 1px solid #F3DC94; padding: 10px 32px; font-size: 13px; color: #78350F; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center"><b>2 hal belum siap untuk go-live</b><a href="#pemesanan" style="color: #78350F">Link form PO masih contoh</a><a href="#whatsapp" style="color: #78350F">Nomor WhatsApp belum terhubung</a></div>
+
+    <main style="padding: 24px 32px 32px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+      <nav aria-label="Bagian pengaturan" style="flex: 1 1 180px; max-width: 100%; display: flex; flex-direction: column; gap: 2px; font-size: 13px">
+        <a href="#bot" style="padding: 8px 12px; border-radius: 6px; background: #ffffff; border: 1px solid #E1E7DC; font-weight: 600; text-decoration: none; color: #3E4C24">Bot</a>
+        <a href="#pemesanan" style="padding: 8px 12px; border-radius: 6px; text-decoration: none; color: #1F2421">Pemesanan &amp; harga</a>
+        <a href="#leads" style="padding: 8px 12px; border-radius: 6px; text-decoration: none; color: #1F2421">Leads</a>
+        <a href="#tim" style="padding: 8px 12px; border-radius: 6px; text-decoration: none; color: #1F2421">Tim &amp; notifikasi</a>
+        <a href="#whatsapp" style="padding: 8px 12px; border-radius: 6px; text-decoration: none; color: #1F2421">WhatsApp</a>
+        <a href="#instruksi" style="padding: 8px 12px; border-radius: 6px; text-decoration: none; color: #1F2421">Instruksi bot</a>
+        <a href="#profil" style="padding: 8px 12px; border-radius: 6px; text-decoration: none; color: #1F2421">Profil saya</a>
+      </nav>
+
+      <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+
+        <section id="bot" style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+          <span style="font-size: 15px; font-weight: 700">Bot</span>
+          <label for="st-ai" style="display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 14px; border-radius: 8px; background: #F5F8F2; cursor: pointer"><span style="display: flex; flex-direction: column; gap: 2px"><b style="font-size: 13.5px">Balasan otomatis AI</b><span style="font-size: 12.5px; color: #3B4540">AI membalas semua percakapan baru. Matikan agar hanya tim yang membalas.</span></span><input id="st-ai" type="checkbox" checked style="width: 20px; height: 20px"></label>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+            <div style="display: flex; flex-direction: column; gap: 4px"><label for="st-name" style="font-size: 12px; font-weight: 600; color: #3B4540">Nama bot</label><input id="st-name" type="text" value="Admin" style="font: inherit; font-size: 13.5px; height: 38px; padding: 0 12px; border: 1px solid #D5DECF; border-radius: 6px"><span style="font-size: 11.5px; color: #92400E">Sementara. Klien belum memilih nama.</span></div>
+            <div style="display: flex; flex-direction: column; gap: 4px"><label for="st-sign" style="font-size: 12px; font-weight: 600; color: #3B4540">Menyebut diri dari</label><select id="st-sign" style="font: inherit; font-size: 13.5px; height: 38px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>Merek yang dibahas (Kertas Supreme / Imperial Indopack)</option><option>Selalu Imperial Indopack</option></select></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px"><label for="st-greet" style="font-size: 12px; font-weight: 600; color: #3B4540">Sapaan pertama</label><textarea id="st-greet" rows="2" style="font: inherit; font-size: 13.5px; padding: 10px 12px; border: 1px solid #D5DECF; border-radius: 6px; resize: vertical">Halo kak, terima kasih sudah menghubungi {merek}. Boleh tahu kertas atau box-nya untuk produk apa?</textarea><span style="font-size: 11.5px; color: #5F6B5A">{merek} diganti otomatis. Bot tetap menyesuaikan dengan pesan pelanggan, termasuk teks bawaan iklan.</span></div>
+        </section>
+
+        <section id="pemesanan" style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+          <span style="font-size: 15px; font-weight: 700">Pemesanan &amp; harga</span>
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <label for="st-po" style="font-size: 12px; font-weight: 600; color: #3B4540">Link Google Form PO</label>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px"><input id="st-po" type="url" value="https://forms.gle/REPLACE-ME" aria-describedby="st-po-hint" style="flex: 1 1 320px; font: inherit; font-size: 13.5px; height: 38px; padding: 0 12px; border: 2px solid #D9A93E; border-radius: 6px; background: #FFFBEB"><button type="button" style="font: inherit; font-size: 13px; font-weight: 600; height: 38px; padding: 0 16px; border: 0; border-radius: 6px; background: #586B34; color: #ffffff; cursor: pointer">Simpan</button></div>
+            <span id="st-po-hint" style="font-size: 11.5px; color: #92400E">Masih link contoh. Bot mengirim link ini saat pelanggan setuju harga. Harus diawali https://</span>
+          </div>
+          <div style="padding: 12px 14px; border-radius: 8px; background: #F8FAF6; display: flex; flex-direction: column; gap: 4px; font-size: 13px"><span style="font-size: 11.5px; font-weight: 600; color: #5F6B5A">Pesan yang dikirim bersama link</span><span>Untuk pemesanannya, silakan isi form PO berikut ya kak 🙏<br>https://forms.gle/REPLACE-ME</span></div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+            <div style="display: flex; flex-direction: column; gap: 4px"><label for="st-min" style="font-size: 12px; font-weight: 600; color: #3B4540">Minimum order (bila produk tidak punya tingkat)</label><div style="display: flex; gap: 8px; align-items: center"><input id="st-min" type="text" value="2.500" style="font: inherit; font-size: 13.5px; height: 38px; width: 120px; padding: 0 12px; border: 1px solid #D5DECF; border-radius: 6px"><span style="font-size: 13px">pcs (5 rim)</span></div></div>
+            <div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; font-weight: 600; color: #3B4540">Daftar harga per merek</span><span style="font-size: 13px; line-height: 1.6">Kertas Supreme: terunggah<br><span style="color: #92400E">Imperial Indopack: belum ada</span> · <a href="Catalog.dc.html">Atur di Katalog</a></span></div>
+          </div>
+        </section>
+
+        <section id="leads" style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+          <span style="font-size: 15px; font-weight: 700">Leads</span>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px"><label for="st-reopen">Lead kalah dihitung sebagai lead baru setelah</label><input id="st-reopen" type="text" value="3" style="font: inherit; font-size: 13.5px; height: 36px; width: 64px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px"><span>bulan</span></div>
+          <span style="font-size: 12px; color: #5F6B5A; margin-top: -8px">Banyak pelanggan pesan ulang tiap 3 bulan. Kembali sebelum itu: lead lama dibuka lagi.</span>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px"><label for="st-silence">Lead dianggap kalah bila pelanggan tidak membalas selama</label><input id="st-silence" type="text" value="30" style="font: inherit; font-size: 13.5px; height: 36px; width: 64px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px"><span>hari</span></div>
+          <span style="font-size: 12px; color: #5F6B5A; margin-top: -8px">Dihitung dari pesan terakhir kita (bot atau tim). Alasan: tidak ada respon.</span>
+          <div><button type="button" style="font: inherit; font-size: 13px; font-weight: 600; height: 36px; padding: 0 16px; border: 0; border-radius: 6px; background: #586B34; color: #ffffff; cursor: pointer">Simpan</button></div>
+        </section>
+
+        <section id="tim" style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+          <span style="font-size: 15px; font-weight: 700">Tim &amp; notifikasi</span>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px"><label for="st-nudge">Ingatkan tim bila chat Perlu Tim belum dibalas</label><input id="st-nudge" type="text" value="30" style="font: inherit; font-size: 13.5px; height: 36px; width: 64px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px"><span>menit</span></div>
+          <label for="st-push" style="display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: 13.5px"><span>Notifikasi di browser ini untuk chat yang diserahkan ke tim</span><input id="st-push" type="checkbox" checked style="width: 20px; height: 20px"></label>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px"><span style="font-size: 12px; font-weight: 600; color: #3B4540">Diserahkan ke tim bila</span><span>Harga custom · Desain masuk · Pesanan di atas tingkat teratas · Minta bicara dengan orang · Komplain · Bukan pembeli</span></div>
+        </section>
+
+        <section id="whatsapp" style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+          <span style="font-size: 15px; font-weight: 700">WhatsApp</span>
+          <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border: 1px dashed #D9C49A; border-radius: 8px; background: #FBF6EC; font-size: 13px">
+            <span style="display: flex; flex-direction: column; gap: 2px"><b>Belum terhubung</b><span style="color: #6E531E">Satu nomor untuk Kertas Supreme dan Imperial Indopack. Penyedia (ChakraHQ atau Meta) belum dipilih.</span></span>
+            <button type="button" style="font: inherit; font-size: 13px; font-weight: 600; height: 36px; padding: 0 14px; border: 0; border-radius: 6px; background: #8A6A2A; color: #ffffff; cursor: pointer">Hubungkan nomor</button>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px"><label for="st-sync">Ambil balasan tim dari HP WhatsApp tiap</label><input id="st-sync" type="text" value="2" style="font: inherit; font-size: 13.5px; height: 36px; width: 64px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px"><span>menit</span></div>
+          <span style="font-size: 12px; color: #5F6B5A; margin-top: -6px">Agar bot tahu apa yang sudah dibalas tim langsung dari HP, dan tidak membalas di atasnya.</span>
+        </section>
+
+        <section id="instruksi" style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px"><span style="font-size: 15px; font-weight: 700">Instruksi bot</span><a href="#" style="font-size: 13px; font-weight: 600">Coba di Test Prompt →</a></div>
+          <span style="font-size: 12.5px; color: #3B4540">Bagian-bagian instruksi yang dibaca bot. Ubah teksnya bila aturan bisnis berubah.</span>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-size: 13px">
+            <a href="#" style="padding: 10px 12px; border: 1px solid #E1E7DC; border-radius: 6px; text-decoration: none; color: #1F2421; display: flex; justify-content: space-between">Identitas<span style="color: #5F6B5A">Ubah</span></a>
+            <a href="#" style="padding: 10px 12px; border: 1px solid #E1E7DC; border-radius: 6px; text-decoration: none; color: #1F2421; display: flex; justify-content: space-between">Merek<span style="color: #5F6B5A">Ubah</span></a>
+            <a href="#" style="padding: 10px 12px; border: 1px solid #E1E7DC; border-radius: 6px; text-decoration: none; color: #1F2421; display: flex; justify-content: space-between">Detail pesanan<span style="color: #5F6B5A">Ubah</span></a>
+            <a href="#" style="padding: 10px 12px; border: 1px solid #E1E7DC; border-radius: 6px; text-decoration: none; color: #1F2421; display: flex; justify-content: space-between">Rekomendasi<span style="color: #5F6B5A">Ubah</span></a>
+            <a href="#" style="padding: 10px 12px; border: 1px solid #E1E7DC; border-radius: 6px; text-decoration: none; color: #1F2421; display: flex; justify-content: space-between">Harga<span style="color: #5F6B5A">Ubah</span></a>
+            <a href="#" style="padding: 10px 12px; border: 1px solid #E1E7DC; border-radius: 6px; text-decoration: none; color: #1F2421; display: flex; justify-content: space-between">Desain<span style="color: #5F6B5A">Ubah</span></a>
+            <a href="#" style="padding: 10px 12px; border: 1px solid #E1E7DC; border-radius: 6px; text-decoration: none; color: #1F2421; display: flex; justify-content: space-between">Form PO<span style="color: #5F6B5A">Ubah</span></a>
+            <a href="#" style="padding: 10px 12px; border: 1px solid #E1E7DC; border-radius: 6px; text-decoration: none; color: #1F2421; display: flex; justify-content: space-between">Aturan<span style="color: #5F6B5A">Ubah</span></a>
+            <a href="#" style="padding: 10px 12px; border: 1px solid #E1E7DC; border-radius: 6px; text-decoration: none; color: #1F2421; display: flex; justify-content: space-between">Serahkan ke tim<span style="color: #5F6B5A">Ubah</span></a>
+          </div>
+        </section>
+
+        <section id="profil" style="background: #ffffff; border: 1px solid #E1E7DC; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+          <span style="font-size: 15px; font-weight: 700">Profil saya</span>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+            <div style="display: flex; flex-direction: column; gap: 4px"><label for="st-pname" style="font-size: 12px; font-weight: 600; color: #3B4540">Nama</label><input id="st-pname" type="text" value="Admin" style="font: inherit; font-size: 13.5px; height: 38px; padding: 0 12px; border: 1px solid #D5DECF; border-radius: 6px"></div>
+            <div style="display: flex; flex-direction: column; gap: 4px"><label for="st-lang" style="font-size: 12px; font-weight: 600; color: #3B4540">Bahasa dashboard</label><select id="st-lang" style="font: inherit; font-size: 13.5px; height: 38px; padding: 0 10px; border: 1px solid #D5DECF; border-radius: 6px; background: #ffffff"><option>Bahasa Indonesia</option><option>English</option></select></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

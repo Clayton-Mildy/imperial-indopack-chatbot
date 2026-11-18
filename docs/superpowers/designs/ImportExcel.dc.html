@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Import Excel</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#445428}a:hover{color:#252C30}
+</style>
+</helmet>
+<div style="width: 640px; height: 720px; box-sizing: border-box; background: #DDE3D8; padding: 20px; font-family: 'Open Sans', Arial, sans-serif; color: #1F2421; display: flex">
+  <div role="dialog" aria-labelledby="ix-title" style="flex: 1; background: #ffffff; border-radius: 12px; box-shadow: 0 12px 32px rgba(31, 36, 33, 0.18); display: flex; flex-direction: column; overflow: hidden">
+    <div style="padding: 18px 22px; border-bottom: 1px solid #EEF2EA; display: flex; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 2px"><span id="ix-title" style="font-size: 16px; font-weight: 700">Import katalog dari Excel</span><span style="font-size: 12px; color: #5F6B5A">Satu baris = satu tingkat harga</span></div>
+      <a href="Catalog.dc.html" aria-label="Tutup" style="width: 32px; height: 32px; border-radius: 6px; color: #5F6B5A; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; font-size: 16px">✕</a>
+    </div>
+
+    <div style="flex: 1; padding: 18px 22px; display: flex; flex-direction: column; gap: 16px; overflow: hidden">
+      <div style="display: flex; gap: 12px; align-items: flex-start">
+        <span style="width: 24px; height: 24px; border-radius: 50%; background: #586B34; color: #ffffff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0">1</span>
+        <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px"><span><b>Pakai template</b> · <a href="#">Unduh template-katalog.xlsx</a></span><span style="font-size: 12px; color: #5F6B5A; line-height: 1.5">Kolom: Merek, Produk, Ukuran, Gramasi, Cetak, Finishing, Kegunaan, Min Qty, Satuan Qty, Harga, Satuan Harga, Termasuk Ongkir, Catatan</span></div>
+      </div>
+
+      <div style="display: flex; gap: 12px; align-items: flex-start">
+        <span style="width: 24px; height: 24px; border-radius: 50%; background: #586B34; color: #ffffff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0">2</span>
+        <div style="flex: 1; display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #C9D6BB; border-radius: 8px; background: #F5F8F2; font-size: 13px">
+          <span style="width: 34px; height: 40px; border-radius: 4px; background: #ffffff; border: 1px solid #C9D6BB; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #445428">XLSX</span>
+          <span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><b>katalog-november.xlsx</b><span style="font-size: 12px; color: #5F6B5A">18 KB · 24 baris</span></span>
+          <label for="ix-file" style="font-size: 12.5px; font-weight: 600; color: #445428; cursor: pointer">Ganti file</label>
+          <input id="ix-file" type="file" accept=".xlsx" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px; align-items: flex-start">
+        <span style="width: 24px; height: 24px; border-radius: 50%; background: #586B34; color: #ffffff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0">3</span>
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13px">
+          <b>Periksa sebelum diterapkan</b>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-variant-numeric: tabular-nums">
+            <div style="border: 1px solid #E1E7DC; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 20px; font-weight: 700; color: #15803D">2</span><span style="font-size: 12px; color: #5F6B5A">produk baru</span></div>
+            <div style="border: 1px solid #E1E7DC; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 20px; font-weight: 700; color: #0369A1">5</span><span style="font-size: 12px; color: #5F6B5A">harga diubah</span></div>
+            <div style="border: 1px solid #F1C9C9; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 20px; font-weight: 700; color: #B91C1C">3</span><span style="font-size: 12px; color: #5F6B5A">baris salah, dilewati</span></div>
+          </div>
+          <div style="border: 1px solid #F1C9C9; border-radius: 8px; overflow: hidden">
+            <div style="display: grid; grid-template-columns: 64px 1fr; padding: 8px 12px; border-bottom: 1px solid #F7E1E1; background: #FFF7F7"><span style="font-weight: 700; color: #B91C1C">Baris 7</span><span>Satuan "box" tidak dikenal. Pakai rim atau pcs.</span></div>
+            <div style="display: grid; grid-template-columns: 64px 1fr; padding: 8px 12px; border-bottom: 1px solid #F7E1E1; background: #FFF7F7"><span style="font-weight: 700; color: #B91C1C">Baris 12</span><span>Harga 0. Harga harus lebih dari 0.</span></div>
+            <div style="display: grid; grid-template-columns: 64px 1fr; padding: 8px 12px; background: #FFF7F7"><span style="font-weight: 700; color: #B91C1C">Baris 15</span><span>Kolom Merek kosong. Isi Kertas Supreme atau Imperial Indopack.</span></div>
+          </div>
+          <span style="font-size: 12px; color: #5F6B5A; line-height: 1.5">Produk yang tidak ada di file tidak berubah. Bot memakai harga baru begitu diterapkan.</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding: 14px 22px; border-top: 1px solid #EEF2EA; display: flex; justify-content: flex-end; gap: 8px">
+      <a href="Catalog.dc.html" style="font-size: 13px; font-weight: 500; height: 36px; padding: 0 16px; border: 1px solid #D5DECF; border-radius: 6px; color: #1F2421; text-decoration: none; display: inline-flex; align-items: center">Batal</a>
+      <a href="Catalog.dc.html" style="font-size: 13px; font-weight: 600; height: 36px; padding: 0 16px; border-radius: 6px; background: #586B34; color: #ffffff; text-decoration: none; display: inline-flex; align-items: center">Terapkan 21 baris</a>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":640,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
