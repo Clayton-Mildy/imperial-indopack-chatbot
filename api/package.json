@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "build:scripts": "esbuild scripts/migrate.ts scripts/seed.ts scripts/seed-categories.ts scripts/backfill-product-categories.ts scripts/backfill-leads.ts scripts/backfill-lead-stages.ts scripts/backfill-outbound-senders.ts scripts/repair-lead-sync-order.ts scripts/seed-embeddings.ts scripts/seed-upsell-relationships.ts scripts/seed-default-prompt.ts scripts/reseed-prompt-defaults.ts scripts/push-test.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outdir=dist-scripts",
+    "build:scripts": "esbuild scripts/migrate.ts scripts/seed.ts scripts/backfill-leads.ts scripts/backfill-lead-stages.ts scripts/backfill-outbound-senders.ts scripts/repair-lead-sync-order.ts scripts/seed-embeddings.ts scripts/seed-default-prompt.ts scripts/reseed-prompt-defaults.ts scripts/push-test.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outdir=dist-scripts",
     "start": "node dist/index.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

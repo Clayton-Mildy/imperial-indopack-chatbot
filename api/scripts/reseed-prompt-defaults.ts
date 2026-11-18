@@ -6,7 +6,9 @@
 // update.ps1 runs this on every deploy, so a prompt change ships with the build. A section staff
 // edited in the dashboard since the last sync is kept and reported, not overwritten - see
 // promptSync.syncPromptSections. --force overwrites those too.
-// Retired sections (promptSync.SECTIONS_RETIRED, Legacy's) are removed from both.
+// Retired sections (promptSync.SECTIONS_RETIRED, from the prompt this bot was ported from) are removed
+// from both. Identity is never synced (per-number persona): one that does not name Imperial Indopack
+// is reported, so a database seeded before the Imperial prompt gets its Identity fixed by hand.
 // Idempotent; leaves all other DB content untouched.
 // Run: tsx scripts/reseed-prompt-defaults.ts [--force]
 import 'dotenv/config';
@@ -30,7 +32,16 @@ for (const name of SECTIONS_TO_SYNC) {
 const baseline = await getShippedPromptSections();
 let kept = 0;
 
+// An Identity written for another business: sync leaves it alone, so say so.
+function warnStaleIdentity(sections: PromptSection[], label: string): void {
+  const identity = sections.find((s) => s.name === 'Identity');
+  if (identity && !/imperial indopack/i.test(identity.content)) {
+    console.warn(`! [${label}] Identity does not mention Imperial Indopack - it is never synced; update it in the dashboard (Nomor WhatsApp / prompt).`);
+  }
+}
+
 function patch(live: PromptSection[], label: string): { patched: PromptSection[]; changed: number } {
+  warnStaleIdentity(live, label);
   const { patched, actions } = syncPromptSections(live, NEW, baseline, force);
   let changed = 0;
   for (const [name, action] of Object.entries(actions)) {
