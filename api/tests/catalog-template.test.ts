@@ -131,7 +131,7 @@ describe('parseTemplateRows', () => {
     const p = parseTemplateRows([
       HEADER,
       ROW(BRAND, PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'ya'),
-      ROW('Imperial Indopack', PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'ya'),
+      ROW('Imperial Indopack', PRODUCT, SIZE, 20, 'rim', 150000, 'rim', 'ya'),
       ROW(BRAND, PRODUCT, '40 x 40 cm', 5, 'rim', 1, 'rim', 'ya'),
       ROW('', PRODUCT, SIZE, 10, 'rim', 165000, 'rim', 'ya'),
     ]);
@@ -172,5 +172,39 @@ describe('parseTemplateRows', () => {
     const p = parseTemplateRows([HEADER, ROW('kertas supreme', PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'tidak'), ROW(BRAND, PRODUCT, SIZE, 10, 'rim', 0, 'rim', 'tidak')]);
     expect(p).toMatchObject({ totalRows: 2, validRows: 1 });
     expect(p.variants).toEqual([]); // the bad row poisons the variant
+  });
+
+  it('two spellings of one size are one variant; conflicting tiers poison it; different sizes stay apart', () => {
+    const merged = parseTemplateRows([
+      HEADER,
+      ROW(BRAND, PRODUCT, '30x30', 5, 'rim', 185000, 'rim', 'tidak'),
+      ROW(BRAND, PRODUCT, '30 x 30 cm', 10, 'rim', 165000, 'rim', 'tidak'),
+    ]);
+    expect(merged.errors).toEqual([]);
+    expect(merged.variants).toHaveLength(1);
+    expect(merged.variants[0]!.size).toBe('30x30');
+    expect(merged.variants[0]!.tiers.map((t) => t.minQty)).toEqual([5, 10]);
+
+    const clash = parseTemplateRows([
+      HEADER,
+      ROW(BRAND, PRODUCT, '30x30', 5, 'rim', 185000, 'rim', 'tidak'),
+      ROW(BRAND, PRODUCT, '30 x 30 cm', 5, 'rim', 170000, 'rim', 'tidak'),
+    ]);
+    expect(clash.variants).toEqual([]);
+    expect(clash.errors[0]!.message).toMatch(/muncul dua kali/);
+
+    const apart = parseTemplateRows([
+      HEADER,
+      ROW(BRAND, PRODUCT, '30x30', 5, 'rim', 185000, 'rim', 'tidak'),
+      ROW(BRAND, PRODUCT, '30x40', 5, 'rim', 195000, 'rim', 'tidak'),
+    ]);
+    expect(apart.variants).toHaveLength(2);
+  });
+
+  it('caps the error list at 50 while the row counts stay exact', () => {
+    const rows = Array.from({ length: 60 }, (_, i) => ROW(BRAND, `${PRODUCT} ${i}`, SIZE, 5, 'box', 1000, 'rim', 'tidak'));
+    const p = parseTemplateRows([HEADER, ...rows, ROW(BRAND, `${PRODUCT} ok`, SIZE, 5, 'rim', 1000, 'rim', 'tidak')]);
+    expect(p.errors).toHaveLength(50);
+    expect(p).toMatchObject({ totalRows: 61, validRows: 1 });
   });
 });

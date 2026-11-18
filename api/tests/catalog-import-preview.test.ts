@@ -144,14 +144,15 @@ describe('catalog import preview and apply', () => {
 
   it('without a staff name the history actor is Sistem; an unchanged re-import writes no history; a name matches case-insensitively', async () => {
     const a = await app();
+    const before0 = (await historyOf(EXISTING)).length;
     await post(a, await xlsxOf([row(EXISTING.toUpperCase(), 10, 'rim', 150000, { size: '30X30' }), row(EXISTING, 20, 'rim', 130000)]));
-    const imported = (await historyOf(EXISTING)).filter((h) => h.changeType === 'imported');
-    expect(imported).toHaveLength(2);
-    expect(imported.some((h) => h.actorName === 'Sistem')).toBe(true);
+    const added = (await historyOf(EXISTING)).slice(before0);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ changeType: 'imported', actorName: 'Sistem' });
     const all = await getDb().select().from(products).where(ilike(products.name, `${EXISTING}`));
     expect(all).toHaveLength(1);
     const before = (await historyOf(EXISTING)).length;
-    await post(a, await xlsxOf([row(EXISTING, 20, 'rim', 130000)]));
+    await post(a, await xlsxOf([row(EXISTING, 10, 'rim', 150000), row(EXISTING, 20, 'rim', 130000)]));
     expect((await historyOf(EXISTING)).length).toBe(before);
     await a.close();
   });
@@ -159,6 +160,20 @@ describe('catalog import preview and apply', () => {
   it('a new size on an existing product is counted as a new size', async () => {
     const p = await previewCatalogImport(await xlsxOf([row(EXISTING, 5, 'rim', 99000, { size: '50 x 50 cm' })]));
     expect(p).toMatchObject({ newProducts: 0, newSizes: 1, changedPrices: 0, unchanged: 0, validRows: 1, totalRows: 1 });
+  });
+
+  it('two spellings of one size in a file merge: no tier lost, one variant, one size counted', async () => {
+    const NAME = `${P}Dua Ejaan`;
+    const file = () => xlsxOf([row(NAME, 5, 'rim', 185000, { size: '30x30' }), row(NAME, 10, 'rim', 165000, { size: '30 x 30 cm' })]);
+    expect(await previewCatalogImport(await file())).toMatchObject({ newProducts: 1, totalRows: 2 });
+    await importCatalogFromXlsx(await file());
+    const [p] = await getDb().select().from(products).where(eq(products.name, NAME));
+    const vs = await getDb().select().from(productVariants).where(eq(productVariants.productId, p!.id));
+    expect(vs).toHaveLength(1);
+    expect((await listTiersByVariant([vs[0]!.id])).get(vs[0]!.id)!.map((t) => t.minQty)).toEqual([5, 10]);
+    // On an existing product, a new spelling of its size is not a new size.
+    const again = await previewCatalogImport(await xlsxOf([row(NAME, 20, 'rim', 150000, { size: '30X30 CM' })]));
+    expect(again.newSizes).toBe(0);
   });
 
   it('an over-long staff name is a 400', async () => {

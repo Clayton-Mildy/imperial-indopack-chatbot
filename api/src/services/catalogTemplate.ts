@@ -9,6 +9,7 @@
 import type { Product } from '../domain/types.js';
 import { toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
 import { formatProductSpec, parseProductSpec } from '../domain/productSpec.js';
+import { normalizeSize } from '../domain/orderProfile.js';
 import { normalizeHeader } from './leadImport.js';
 import { BRAND_NAME, brandSlugOfName } from '../domain/brands.js';
 
@@ -109,7 +110,8 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
       continue;
     }
 
-    const key = [brand, product, size].map((s) => s.toLowerCase()).join('\u0000');
+    // Identity as the import applies it: by product name and normalised size ("30x30" is "30 x 30 cm").
+    const key = `${product.toLowerCase()}\u0000${normalizeSize(size)}`;
     // A bad row poisons its whole variant: importing the rest would replace its tiers with a
     // partial set, silently dropping the tier the bad row was meant to carry.
     const bad = (message: string) => { err(row, message); failed.add(key); };
@@ -156,7 +158,7 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
       (b) =>
         (!b.brand || b.brand.toLowerCase() === v.brand.toLowerCase()) &&
         (!b.product || b.product.toLowerCase() === v.product.toLowerCase()) &&
-        (!b.size || b.size.toLowerCase() === v.size.toLowerCase())
+        (!b.size || normalizeSize(b.size) === normalizeSize(v.size))
     );
   out.validRows = out.totalRows - errorRows.size;
   out.variants = [...groups].filter(([k, v]) => !failed.has(k) && !poisoned(v)).map(([, v]) => v);
