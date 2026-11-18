@@ -11,9 +11,14 @@ import { describe, it, expect, vi } from 'vitest';
 
 // The default catalog source - a pure stand-in for the cached snapshot (no database).
 const { mockGetCatalogProducts } = vi.hoisted(() => ({ mockGetCatalogProducts: vi.fn() }));
-vi.mock('../src/services/ragQuery.js', () => ({ getCatalogProducts: mockGetCatalogProducts }));
+vi.mock('../src/services/ragQuery.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/services/ragQuery.js')>()),
+  getCatalogProducts: mockGetCatalogProducts,
+}));
 
 import { normalizeSize, runPriceTool, PriceToolInput, PRICE_TOOL, PRICE_TOOL_NAME } from '../src/services/priceTool.js';
+import { parseTemplateRows, TEMPLATE_COLUMNS } from '../src/services/catalogTemplate.js';
+import { formatProducts } from '../src/services/ragQuery.js';
 import { CATALOG, IVORY_BOX, IVORY_INPUT, SUPREME, SUPREME_2, SUPREME_INPUT } from './price-fixtures.js';
 
 describe('runPriceTool - the plan cases', () => {
@@ -157,6 +162,57 @@ describe('runPriceTool - product match', () => {
     const longer = { ...CATALOG[2]!, id: 'p-ii2', name: 'Box Ivory 270 gsm cetak full color laminasi' };
     expect((await runPriceTool(IVORY_INPUT, [...CATALOG, longer])).text).toMatch(/^HARGA:/);
   });
+});
+
+// Final review I3: the field description said "exactly as written after 'Produk:'", and the block prints
+// "Produk: <name> — <description>"; every imported product's description is its spec columns. Copying the
+// line returned TIDAK_ADA_DI_KATALOG, and Pricing rule (d) handed an in-catalog item to the team.
+describe('runPriceTool - the product name as the catalog block prints it', () => {
+  // The description the real import writes: the Gramasi / Cetak columns of the template row.
+  const imported = parseTemplateRows([
+    [...TEMPLATE_COLUMNS],
+    ['Kertas Supreme', SUPREME.name, '30 x 30 cm', '64 gsm', '1 warna', null, null, 5, 'rim', 185000, 'rim', 'tidak', null],
+  ]).variants[0]!;
+  const product = { ...SUPREME, description: imported.description };
+  const produkLine = formatProducts([product]).split('\n').find((l) => l.startsWith('Produk: '))!.slice('Produk: '.length);
+
+  it('prices the whole "Produk:" line copied from the block, description and all', async () => {
+    expect(produkLine).toBe(`${SUPREME.name} — Gramasi: 64 gsm · Cetak: 1 warna`);
+    expect((await runPriceTool({ ...SUPREME_INPUT, product: produkLine }, [product, SUPREME_2, IVORY_BOX])).text).toMatch(/^HARGA: Kertas Supreme 64 gsm cetak 1 warna /);
+  });
+
+  it('strips a " - " suffix too', async () =>
+    expect((await runPriceTool({ ...SUPREME_INPUT, product: `${SUPREME.name} - Gramasi: 64 gsm` }, CATALOG)).text).toMatch(/^HARGA:/));
+
+  it('"64gsm" is "64 gsm", whatever the spacing and case', async () => {
+    expect((await runPriceTool({ ...SUPREME_INPUT, product: 'kertas supreme 64gsm cetak 1 warna' }, CATALOG)).text).toMatch(/^HARGA:/);
+    expect((await runPriceTool({ ...SUPREME_INPUT, product: '  KERTAS   SUPREME 64 GSM cetak 1 warna ' }, CATALOG)).text).toMatch(/^HARGA:/);
+  });
+
+  it('a name that itself holds " - " still matches exactly', async () => {
+    const dashed = { ...IVORY_BOX, id: 'p-dash', name: 'Box Nasi - Kraft' };
+    expect((await runPriceTool({ ...IVORY_INPUT, product: 'Box Nasi - Kraft' }, [...CATALOG, dashed])).text).toMatch(/^HARGA: Box Nasi - Kraft /);
+  });
+
+  it('with no match, lists up to 3 closest product names so the model can call again', async () => {
+    const more = ['Kertas Supreme 70 gsm polos', 'Kertas Supreme 64 gsm cetak 3 warna', 'Box Nasi Kraft'].map((name, i) => ({ ...SUPREME, id: `p-x${i}`, name }));
+    const r = await runPriceTool({ ...SUPREME_INPUT, product: 'kertas supreme 80 gsm cetak 1 warna' }, [...CATALOG, ...more]);
+    expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/);
+    const listed = /Nama produk terdekat di katalog: ([^.]+)\./.exec(r.text)![1]!.split('; ');
+    expect(listed).toHaveLength(3);
+    expect(listed[0]).toBe('Kertas Supreme 64 gsm cetak 1 warna');
+    expect(listed).not.toContain('Box Nasi Kraft');
+    expect(r.text).toMatch(/panggil hitung_harga lagi/);
+    expect(r.figures).toEqual([]);
+  });
+
+  it('lists nothing when no name shares a word', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, product: 'paper bag' }, CATALOG);
+    expect(r.text).not.toContain('terdekat');
+  });
+
+  it('the field description names the part before " — "', () =>
+    expect(PRICE_TOOL.input_schema.properties!['product']).toMatchObject({ description: expect.stringContaining('the part before " — "') }));
 });
 
 describe('runPriceTool - two variants with one size', () => {

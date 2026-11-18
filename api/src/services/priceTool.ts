@@ -27,7 +27,7 @@ export const PRICE_TOOL_DESC =
   'Calculate the price of one catalog item for the quantity the customer wants. You MUST call this before stating any price for a quantity, any total, or which tier applies, and repeat its figures exactly as returned - never do price arithmetic yourself. One call per item (product + size); for several items make several calls in the same turn. The result starts with HARGA: (the tier used, unit price, total, delivery, and the next tier to mention), DI_BAWAH_MINIMUM: (below the minimum order: explain the minimum, quote nothing), DI_ATAS_TINGKAT_TERATAS: (quote nothing: the team calculates it) or TIDAK_ADA_DI_KATALOG: (quote nothing; the result says why and what to offer instead).';
 
 const PRICE_FIELD_DESC = {
-  product: 'The product name exactly as written after "Produk:" in the catalog block.',
+  product: 'The product name as written after "Produk:" in the catalog block (the part before " — ").',
   size: 'The size exactly as written after "Ukuran:" under that product in the catalog block, e.g. "30 x 30 cm" or "20x20x7,5".',
   qty: 'How many the customer wants, as a plain number in `unit`: "2.500 pcs" is 2500, not 2.5.',
   unit: '"rim" or "pcs", the unit the customer\'s quantity is in (1 rim = 500 pcs).',
@@ -71,22 +71,54 @@ const qtyText = (qty: number, unit: QtyUnit): string =>
 const tierStart = (t: PriceTier): string => `mulai ${qtyText(t.minQty, t.qtyUnit)}`;
 const delivery = (included: boolean): string => (included ? 'sudah termasuk ongkir' : 'belum termasuk ongkir');
 
-const words = (s: string): string[] => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+// "64gsm" and "64 gsm" are one gramasi.
+const words = (s: string): string[] =>
+  s.toLowerCase().replace(/(\d)\s*gsm\b/g, '$1 gsm').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 
-/**
- * Exact name first (case and punctuation aside), then the one product whose name holds every input
- * word. None, or more than one, is no match: a guessed product is a wrong price.
- */
-function matchProduct(catalog: Product[], query: string): Product | Product[] {
+// The catalog block prints "Produk: <name> — <description>", and an imported product's description is
+// its spec columns ("Gramasi: 64 gsm · Cetak: 1 warna"), so a model copying the whole line sends both.
+const DESCRIPTION_SUFFIX_RE = /\s+[—–-]\s+.*$/s;
+
+function exactOrContaining(catalog: Product[], query: string): Product[] {
   const q = words(query);
   if (q.length === 0) return [];
   const exact = catalog.filter((p) => words(p.name).join(' ') === q.join(' '));
-  if (exact.length > 0) return exact.length === 1 ? exact[0]! : exact;
-  const containing = catalog.filter((p) => {
+  if (exact.length > 0) return exact;
+  return catalog.filter((p) => {
     const name = new Set(words(p.name));
     return q.every((w) => name.has(w));
   });
-  return containing.length === 1 ? containing[0]! : containing;
+}
+
+/**
+ * Exact name first (case, spacing and punctuation aside), then the one product whose name holds every
+ * input word - for the query as sent, and failing that without a " — description" suffix (a name that
+ * itself holds " - " still matches as sent). None, or more than one, is no match: a guessed product is
+ * a wrong price.
+ */
+function matchProduct(catalog: Product[], query: string): Product | Product[] {
+  const asSent = catalog.filter((p) => words(p.name).join(' ') === words(query).join(' '));
+  const stripped = query.replace(DESCRIPTION_SUFFIX_RE, '');
+  const found = asSent.length > 0 ? asSent : exactOrContaining(catalog, stripped);
+  return found.length === 1 ? found[0]! : found;
+}
+
+/**
+ * Up to three product names sharing the most words with the query, for a no-match result: the model
+ * calls again with one of them instead of handing an in-catalog item to the team (Pricing rule d).
+ */
+function closestNames(catalog: Product[], query: string): string[] {
+  const q = new Set(words(query.replace(DESCRIPTION_SUFFIX_RE, '')));
+  return catalog
+    .map((p) => {
+      const name = words(p.name);
+      const shared = name.filter((w) => q.has(w)).length;
+      return { name: p.name, shared, extra: name.length - shared };
+    })
+    .filter((c) => c.shared > 0)
+    .sort((a, b) => b.shared - a.shared || a.extra - b.extra || a.name.localeCompare(b.name))
+    .slice(0, 3)
+    .map((c) => c.name);
 }
 
 const NO_PRICE = 'Jangan sebut harga untuk item ini; harganya dihitung tim kami.';
@@ -120,9 +152,13 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
 
   const match = matchProduct(products, input.product);
   if (Array.isArray(match)) {
-    return notInCatalog(match.length > 1
-      ? `"${input.product}" cocok dengan lebih dari satu produk (${match.slice(0, 5).map((p) => p.name).join('; ')}). Panggil lagi dengan nama produk persis seperti di katalog.`
-      : `Produk "${input.product}" tidak ada di katalog.`);
+    if (match.length > 1) {
+      return notInCatalog(`"${input.product}" cocok dengan lebih dari satu produk (${match.slice(0, 5).map((p) => p.name).join('; ')}). Panggil lagi dengan nama produk persis seperti di katalog.`);
+    }
+    const closest = closestNames(products, input.product);
+    return notInCatalog(`Produk "${input.product}" tidak ada di katalog.${closest.length > 0
+      ? ` Nama produk terdekat di katalog: ${closest.join('; ')}. Kalau salah satunya yang dimaksud pelanggan, panggil hitung_harga lagi dengan nama itu persis.`
+      : ''}`);
   }
   const product = match;
 
