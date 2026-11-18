@@ -167,8 +167,8 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
     console.error('[priceTool] catalog load failed:', err instanceof Error ? err.message : err);
     return { text: `TIDAK_ADA_DI_KATALOG: Harga tidak bisa dihitung saat ini (katalog gagal dimuat). ${NO_PRICE}`, figures: [], call: notInCatalogCall(input) };
   }
-  // Same universe as the catalog block the model reads: only products with an active variant.
-  const products = source.filter((p) => (p.variants ?? []).some((v) => v.isActive));
+  // Same universe as the catalog block the model reads: products switched on, with an active variant.
+  const products = source.filter((p) => p.isActive !== false && (p.variants ?? []).some((v) => v.isActive));
 
   const notInCatalog = (reason: string, p: Product | null = null, v: ProductVariant | null = null): PriceToolResult =>
     ({ text: `TIDAK_ADA_DI_KATALOG: ${reason} ${NO_PRICE}`, figures: [], call: notInCatalogCall(input, p, v) });

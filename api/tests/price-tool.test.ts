@@ -37,6 +37,10 @@ describe('runPriceTool - the plan cases', () => {
     expect((await runPriceTool({ product: 'box', size: '20x20x7,5', qty: 10, unit: 'rim' }, [])).text).toMatch(/^TIDAK_ADA_DI_KATALOG:/));
   it('2.5 pcs is below the minimum', async () =>
     expect((await runPriceTool({ ...IVORY_INPUT, qty: 2.5, unit: 'pcs' }, CATALOG)).text).toMatch(/^DI_BAWAH_MINIMUM:/));
+  it('a product switched off in the editor is not in the catalog, even in a catalog passed in', async () => {
+    const r = await runPriceTool(IVORY_INPUT, [...CATALOG.filter((p) => p !== IVORY_BOX), { ...IVORY_BOX, isActive: false }]);
+    expect(r.call.outcome).toBe('not_in_catalog'); expect(r.figures).toEqual([]);
+  });
 });
 
 describe('runPriceTool - tiers (spec 8: between tiers, top tier, above it, below the minimum, pcs vs rim)', () => {

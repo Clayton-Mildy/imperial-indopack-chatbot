@@ -60,6 +60,7 @@ function mapProduct(
     tier: (row.tier as ProductTier | null) ?? null,
     relatedProductIds: Array.isArray(row.relatedProductIds) ? (row.relatedProductIds as string[]) : null,
     upsellProductId: (row.upsellProductId as string | null) ?? null,
+    isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     ...(brand !== undefined ? { brand } : {}),
@@ -269,6 +270,8 @@ export async function listProducts(filters?: {
   categoryId?: string;
   page?: number;
   limit?: number;
+  /** Only products switched on in the editor (products.is_active) - what the bot may offer. */
+  activeOnly?: boolean;
 }): Promise<{ products: Product[]; total: number }> {
   const db = getDb();
 
@@ -278,6 +281,7 @@ export async function listProducts(filters?: {
   const conditions = [];
   if (filters?.brandId !== undefined) conditions.push(eq(products.brandId, filters.brandId));
   if (filters?.categoryId !== undefined) conditions.push(eq(products.categoryId, filters.categoryId));
+  if (filters?.activeOnly) conditions.push(eq(products.isActive, true));
   if (filters?.search !== undefined && filters.search.trim() !== '') {
     const term = '%' + filters.search.trim() + '%';
     conditions.push(sql`(${products.name} ILIKE ${term} OR EXISTS (
@@ -580,8 +584,9 @@ export async function searchActiveProducts(params: {
 
   let productRows: (typeof products.$inferSelect)[];
 
+  // A product switched off in the editor is never offered (products.is_active).
   const brandClause = brandFilter
-    ? sql`EXISTS (SELECT 1 FROM brands b WHERE b.id = ${products.brandId} AND b.name ILIKE ${`%${brandFilter}%`})`
+    ? sql`${products.isActive} AND EXISTS (SELECT 1 FROM brands b WHERE b.id = ${products.brandId} AND b.name ILIKE ${`%${brandFilter}%`})`
     : undefined;
 
   // Per-keyword relevance score. First-match-wins CASE so one keyword never
@@ -611,7 +616,7 @@ export async function searchActiveProducts(params: {
       : sql``;
     const where = brandClause
       ? sql`${brandClause} AND (${scoreExpr}) > 0${photoClause}`
-      : sql`(${scoreExpr}) > 0${photoClause}`;
+      : sql`${products.isActive} AND (${scoreExpr}) > 0${photoClause}`;
     // Color/type variants are modeled as separate products sharing identical
     // `fungsi` text (one print or colour per product), so without a per-family cap
     // one family fills the whole window and crowds out functional alternatives
@@ -729,7 +734,7 @@ async function vectorSearchProducts(
     sql`
       SELECT p.*, 1 - (p.embedding <=> ${vecLiteral}::vector) AS similarity
       FROM products p
-      WHERE p.embedding IS NOT NULL
+      WHERE p.embedding IS NOT NULL AND p.is_active
       ORDER BY p.embedding <=> ${vecLiteral}::vector
       LIMIT ${limit}
     `

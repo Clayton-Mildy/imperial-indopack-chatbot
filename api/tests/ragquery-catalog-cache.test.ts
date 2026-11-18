@@ -64,7 +64,7 @@ describe('getFullCatalogBlock', () => {
     expect(first).not.toContain('Produk: Inactive One');
     expect(second).toBe(first);
     expect(mockListProducts).toHaveBeenCalledTimes(1);
-    expect(mockListProducts).toHaveBeenCalledWith({ limit: 0 });
+    expect(mockListProducts).toHaveBeenCalledWith({ limit: 0, activeOnly: true });
   });
 
   it('coalesces concurrent calls into a single listProducts fetch', async () => {

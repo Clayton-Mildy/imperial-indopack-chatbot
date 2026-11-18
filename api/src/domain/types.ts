@@ -86,6 +86,8 @@ export type Product = {
   tier?: ProductTier | null;
   relatedProductIds?: string[] | null;
   upsellProductId?: string | null;
+  /** Switched on in the product editor (products.is_active); false = the bot neither lists nor prices it. */
+  isActive?: boolean;
   createdAt: string;
   updatedAt: string;
   brand?: Brand;

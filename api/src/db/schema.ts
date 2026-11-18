@@ -146,6 +146,9 @@ export const brands = pgTable('brands', {
   name: text('name').notNull().unique(),
   description: text('description'),
   catalogFileUrl: text('catalog_file_url'),
+  // The price-list file's own name and upload time, for the Katalog page (0029).
+  catalogFileName: text('catalog_file_name'),
+  catalogFileUploadedAt: timestamp('catalog_file_uploaded_at', { withTimezone: true }),
   brandType: text('brand_type').notNull().default('own'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -185,6 +188,8 @@ export const products = pgTable(
     tier: text('tier'),
     relatedProductIds: jsonb('related_product_ids'),
     upsellProductId: uuid('upsell_product_id'),
+    // Switched off in the editor (0029): kept with its history, but the bot neither lists nor prices it.
+    isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -336,14 +341,22 @@ export const activityLogs = pgTable(
 
 // ─── catalog_audit ─────────────────────────────────────────────────────────
 
-export const catalogAudit = pgTable('catalog_audit', {
-  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  itemId: uuid('item_id'),
-  changedBy: uuid('changed_by').references(() => staffProfiles.id),
-  changeType: text('change_type').notNull(),
-  diff: jsonb('diff'),
-  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
-});
+// One row per product save, switch or delete (repositories/catalogAudit.ts). item_id is the product id
+// with no foreign key, so a deleted product's history stays readable; diff holds CatalogChange[].
+export const catalogAudit = pgTable(
+  'catalog_audit',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    itemId: uuid('item_id'),
+    changedBy: uuid('changed_by').references(() => staffProfiles.id, { onDelete: 'set null' }),
+    changeType: text('change_type').notNull(),
+    diff: jsonb('diff'),
+    // The actor's name as shown at the time (0029); survives the staff account being deleted.
+    actorName: text('actor_name'),
+    changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_catalog_audit_item').on(table.itemId, table.changedAt.desc())]
+);
 
 // ─── conversation_reads ────────────────────────────────────────────────────
 

@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import 'dotenv/config';
 import Fastify from 'fastify';
-import { eq, like } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import { getDb } from '../src/db/client.js';
 import { brands, products, productVariants, variantPriceTiers } from '../src/db/schema.js';
 
@@ -122,6 +122,37 @@ describe('go-live issues', () => {
     await db.update(productVariants).set({ isActive: false }).where(eq(productVariants.id, v!.id));
     expect(await codes()).not.toContain('catalog_demo');
     await db.delete(products).where(eq(products.id, p!.id));
+  });
+
+  it('an inactive product neither fills the catalog nor counts as demo', async () => {
+    const db = getDb();
+    const [brand] = await db.select().from(brands).where(eq(brands.name, 'Imperial Indopack'));
+    const tiered = async (name: string) => {
+      const [p] = await db.insert(products).values({ name, brandId: brand!.id, isActive: false }).returning();
+      const [v] = await db.insert(productVariants).values({ productId: p!.id, name: '1x1x1' }).returning();
+      await db.insert(variantPriceTiers).values({ variantId: v!.id, minQty: 1, qtyUnit: 'pcs', priceIdr: '999', priceUnit: 'pcs' });
+      return p!.id;
+    };
+    // Every other product switched off for the duration, so catalog_empty depends on this test's rows only.
+    const othersOn = (await db.select({ id: products.id }).from(products).where(eq(products.isActive, true))).map((r) => r.id);
+    try {
+      if (othersOn.length > 0) await db.update(products).set({ isActive: false }).where(inArray(products.id, othersOn));
+      const real = await tiered('__go_live_test__ Box Nonaktif');
+      const demo = await tiered(DEMO);
+      let now = await codes();
+      expect(now).toContain('catalog_empty');
+      expect(now).not.toContain('catalog_demo');
+      await db.update(products).set({ isActive: true }).where(eq(products.id, real));
+      expect(await codes()).not.toContain('catalog_empty');
+      await db.update(products).set({ isActive: true }).where(eq(products.id, demo));
+      now = await codes();
+      expect(now).toContain('catalog_demo');
+      await db.update(products).set({ isActive: false }).where(eq(products.id, demo));
+      expect(await codes()).not.toContain('catalog_demo');
+    } finally {
+      if (othersOn.length > 0) await db.update(products).set({ isActive: true }).where(inArray(products.id, othersOn));
+      await db.delete(products).where(like(products.name, '__go_live_test__%'));
+    }
   });
 
   it('serves both routes', async () => {

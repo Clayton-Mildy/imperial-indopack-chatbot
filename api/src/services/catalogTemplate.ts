@@ -8,6 +8,7 @@
 
 import type { Product } from '../domain/types.js';
 import { toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
+import { formatProductSpec, parseProductSpec } from '../domain/productSpec.js';
 import { normalizeHeader } from './leadImport.js';
 
 export const TEMPLATE_SHEET = 'Katalog';
@@ -30,8 +31,6 @@ export interface ParsedTemplate {
   errors: { row: number; message: string }[];
 }
 
-const SPEC_COLUMNS = ['Gramasi', 'Cetak', 'Finishing'] as const;
-const SEP = ' · ';
 const MAX_ERRORS = 50;
 
 function text(v: unknown): string | null {
@@ -129,11 +128,8 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
 
     let variant = groups.get(key);
     if (!variant) {
-      const specs = SPEC_COLUMNS.flatMap((c) => {
-        const v = text(cell(c));
-        return v ? [`${c}: ${v}`] : [];
-      });
-      variant = { brand, product, size, description: specs.length ? specs.join(SEP) : null, fungsi: text(cell('Kegunaan')), tiers: [] };
+      const description = formatProductSpec({ gsm: text(cell('Gramasi')), print: text(cell('Cetak')), finishing: text(cell('Finishing')) });
+      variant = { brand, product, size, description, fungsi: text(cell('Kegunaan')), tiers: [] };
       groups.set(key, variant);
     }
     const note = text(cell('Catatan'));
@@ -150,25 +146,16 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
   return out;
 }
 
-/** Splits "Gramasi: 64 gsm · Finishing: x" back into its three columns; unknown parts are dropped. */
-function splitDescription(description: string | null): Record<(typeof SPEC_COLUMNS)[number], string | null> {
-  const parts: Record<string, string | null> = { Gramasi: null, Cetak: null, Finishing: null };
-  for (const seg of (description ?? '').split(SEP)) {
-    const m = /^(Gramasi|Cetak|Finishing):\s*(.+)$/.exec(seg.trim());
-    if (m) parts[m[1]!] = m[2]!.trim();
-  }
-  return parts as Record<(typeof SPEC_COLUMNS)[number], string | null>;
-}
-
 /** Header row plus one row per tier. A variant with no tiers has nothing to say in this layout and is omitted. */
 export function buildTemplateRows(products: Product[]): unknown[][] {
   const rows: unknown[][] = [[...TEMPLATE_COLUMNS]];
   for (const p of products) {
-    const specs = splitDescription(p.description);
+    // "Gramasi: 64 gsm · Finishing: x" back into its three columns; unknown parts are dropped.
+    const spec = parseProductSpec(p.description);
     for (const v of p.variants ?? []) {
       for (const t of v.priceTiers ?? []) {
         rows.push([
-          p.brand?.name ?? '', p.name, v.name, specs.Gramasi, specs.Cetak, specs.Finishing, p.fungsi,
+          p.brand?.name ?? '', p.name, v.name, spec.gsm, spec.print, spec.finishing, p.fungsi,
           t.minQty, t.qtyUnit, t.priceIdr, t.priceUnit, t.includesDelivery ? 'ya' : 'tidak', t.note ?? null,
         ]);
       }

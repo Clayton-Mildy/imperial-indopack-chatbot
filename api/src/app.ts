@@ -11,6 +11,7 @@ import { contactRoutes } from './routes/dashboard/contacts.js';
 import { escalationRoutes } from './routes/dashboard/escalations.js';
 import { numberRoutes } from './routes/dashboard/numbers.js';
 import { catalogRoutes } from './routes/dashboard/catalog.js';
+import { catalogProductRoutes } from './routes/dashboard/catalogProducts.js';
 import { sendRoutes } from './routes/dashboard/send.js';
 import { testPromptRoutes } from './routes/dashboard/testPrompt.js';
 import { authRoutes } from './routes/dashboard/auth.js';
@@ -64,7 +65,7 @@ export function buildApp() {
           ? [dashboardOrigin]
           : false
         : true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   });
   void app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } });
   void app.register(fastifyStatic, {
@@ -136,6 +137,7 @@ export function buildApp() {
   void app.register(escalationRoutes);
   void app.register(numberRoutes);
   void app.register(catalogRoutes);
+  void app.register(catalogProductRoutes);
   void app.register(sendRoutes);
   void app.register(testPromptRoutes);
   void app.register(authRoutes);

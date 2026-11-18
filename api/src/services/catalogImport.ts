@@ -19,6 +19,7 @@ import { refreshEmbeddingsSequential } from './embeddings.js';
 import { invalidateCatalogCache } from './ragQuery.js';
 import { parseTemplateRows, TEMPLATE_SHEET } from './catalogTemplate.js';
 import { replaceVariantTiers } from '../repositories/priceTiers.js';
+import { lowestTier } from '../domain/pricing.js';
 
 export { InvalidXlsxError };
 
@@ -100,7 +101,8 @@ export async function importCatalogFromXlsx(buffer: Buffer): Promise<CatalogImpo
       }
       changed.add(productId);
 
-      const lowest = Math.min(...v.tiers.map((t) => t.priceIdr));
+      // The smallest-quantity tier's price, the rule the product editor uses too.
+      const basePrice = lowestTier(v.tiers)!.priceIdr;
       const [existing] = await tx
         .select({ id: productVariants.id })
         .from(productVariants)
@@ -110,13 +112,13 @@ export async function importCatalogFromXlsx(buffer: Buffer): Promise<CatalogImpo
         variantId = existing.id;
         await tx
           .update(productVariants)
-          .set({ priceIdr: String(lowest), isActive: true, updatedAt: new Date() })
+          .set({ priceIdr: String(basePrice), isActive: true, updatedAt: new Date() })
           .where(eq(productVariants.id, variantId));
         result.variantsUpdated++;
       } else {
         const [row] = await tx
           .insert(productVariants)
-          .values({ productId, name: v.size, priceIdr: String(lowest), isActive: true })
+          .values({ productId, name: v.size, priceIdr: String(basePrice), isActive: true })
           .returning({ id: productVariants.id });
         variantId = row!.id;
         result.variantsCreated++;

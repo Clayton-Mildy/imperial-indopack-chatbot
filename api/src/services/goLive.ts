@@ -66,6 +66,7 @@ async function hasActiveTieredVariant(demoOnly: boolean): Promise<boolean> {
     .where(
       and(
         eq(productVariants.isActive, true),
+        eq(products.isActive, true),
         demoOnly ? like(products.name, `%${DEMO_SUFFIX}`) : undefined,
         demoOnly ? undefined : exists(db.select({ one: sql`1` }).from(variantPriceTiers).where(eq(variantPriceTiers.variantId, productVariants.id))),
       ),

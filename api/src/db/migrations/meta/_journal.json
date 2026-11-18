@@ -204,6 +204,13 @@
       "when": 1794300000000,
       "tag": "0028_conversation_handoff_and_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794400000000,
+      "tag": "0029_catalog_editor",
+      "breakpoints": true
     }
   ]
 }

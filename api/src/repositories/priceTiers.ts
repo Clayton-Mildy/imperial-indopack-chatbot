@@ -3,11 +3,14 @@ import { getDb, type DbOrTx } from '../db/client.js';
 import { variantPriceTiers } from '../db/schema.js';
 import { toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
 
-/** Tiers per variant id, each list sorted by pcs threshold ascending (5 rim before 10 rim, whatever the insert order). */
-export async function listTiersByVariant(variantIds: string[]): Promise<Map<string, PriceTier[]>> {
+/**
+ * Tiers per variant id, each list sorted by pcs threshold ascending (5 rim before 10 rim, whatever the insert order).
+ * `db` lets a caller read inside its own transaction.
+ */
+export async function listTiersByVariant(variantIds: string[], db: DbOrTx = getDb()): Promise<Map<string, PriceTier[]>> {
   const out = new Map<string, PriceTier[]>();
   if (variantIds.length === 0) return out;
-  const rows = await getDb()
+  const rows = await db
     .select()
     .from(variantPriceTiers)
     .where(inArray(variantPriceTiers.variantId, variantIds))

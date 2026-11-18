@@ -58,7 +58,7 @@ describe('importCatalogFromXlsx with the Imperial template', () => {
     let { p, v } = await variantOf(PROD);
     expect(p.description).toBe('Gramasi: 64 gsm');
     expect(p.fungsi).toBe('Bungkus');
-    expect(Number(v.priceIdr)).toBe(165000);
+    expect(Number(v.priceIdr)).toBe(190000); // the smallest-quantity tier (600 pcs), not the cheapest
     expect(v.isActive).toBe(true);
     let tiers = (await listTiersByVariant([v.id])).get(v.id)!;
     expect(tiers.map((t) => `${t.minQty} ${t.qtyUnit}`)).toEqual(['600 pcs', '5 rim', '10 rim']); // sorted by pcs threshold, not insert order

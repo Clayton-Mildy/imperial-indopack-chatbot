@@ -31,6 +31,11 @@ export function toPcs(qty: number, unit: QtyUnit): number {
 
 const tierPcs = (t: PriceTier): number => toPcs(t.minQty, t.qtyUnit);
 
+/** The smallest-quantity tier (by pcs threshold): its price is the one product_variants.price_idr keeps. */
+export function lowestTier(tiers: PriceTier[]): PriceTier | undefined {
+  return [...tiers].sort((a, b) => tierPcs(a) - tierPcs(b))[0];
+}
+
 export function quotePrice(tiers: PriceTier[], qty: number, unit: QtyUnit): PriceQuote {
   if (tiers.length === 0) return { kind: 'no_tiers' };
   const sorted = [...tiers].sort((a, b) => tierPcs(a) - tierPcs(b));

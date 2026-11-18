@@ -121,11 +121,11 @@ async function fetchCompanionProducts(mainItems: Product[]): Promise<Product[]> 
   const db = getDb();
   const companionIds = [...companionIdSet].slice(0, 10); // cap at 10 companions
 
-  // Fetch companion product rows with active in-stock variants only
+  // Fetch companion product rows (switched on in the editor) with active in-stock variants only
   const companionProductRows = await db
     .select()
     .from(products)
-    .where(inArray(products.id, companionIds));
+    .where(and(inArray(products.id, companionIds), eq(products.isActive, true)));
 
   console.log(`[ragQuery] fetchCompanionProducts: fetched ${companionProductRows.length} companion product rows for ids: ${companionIds.slice(0, 3).join(', ')}...`);
 
@@ -181,6 +181,7 @@ async function fetchCompanionProducts(mainItems: Product[]): Promise<Product[]> 
         tier: (p.tier as Product['tier']) ?? null,
         relatedProductIds: null,
         upsellProductId: null,
+        isActive: p.isActive,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
         brand: brand ? { id: brand.id, name: brand.name, description: brand.description, catalogFileUrl: brand.catalogFileUrl, brandType: brand.brandType, createdAt: brand.createdAt.toISOString() } : undefined,
@@ -235,7 +236,7 @@ export async function buildCatalogContext(userMessage: string, extraKeywords?: s
 // shown, and an invalidation clears both at once.
 
 interface CatalogSnapshot {
-  /** Products with at least one active variant - exactly what the block lists. */
+  /** Products switched on in the editor with at least one active variant - exactly what the block lists. */
   products: Product[];
   block: string;
 }
@@ -264,7 +265,8 @@ async function getCatalogSnapshot(): Promise<CatalogSnapshot> {
 
   const generation = catalogCacheGeneration;
   const build = (async () => {
-    const { products: items } = await listProducts({ limit: 0 });
+    // activeOnly: a product switched off in the editor is neither listed nor priced (hitung_harga reads this list).
+    const { products: items } = await listProducts({ limit: 0, activeOnly: true });
     const withActiveVariant = items.filter((p) => (p.variants ?? []).some((v) => v.isActive));
     const snapshot: CatalogSnapshot = { products: withActiveVariant, block: formatProducts(withActiveVariant) };
     if (generation === catalogCacheGeneration) {

@@ -40,7 +40,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // Per request, not per folder: the dashboard sends a folder in batches of this many photos.
 const IMAGE_BATCH_MAX_FILES = 10;
-import { getFullCatalogBlock, invalidateCatalogCache } from '../../services/ragQuery.js';
+import { invalidateCatalogCache } from '../../services/ragQuery.js';
+import { invalidateCatalogOnWrite } from './catalogCache.js';
 import {
   CreateBrandBodySchema,
   PatchBrandBodySchema,
@@ -63,17 +64,8 @@ const XLSX_MIME_TYPES = new Set([
 const XLSX_MAX_BYTES = 5 * 1024 * 1024;
 
 export async function catalogRoutes(app: FastifyInstance): Promise<void> {
-  // Any successful mutation in this file (POST/PATCH/DELETE, any route present or
-  // future) can change what getFullCatalogBlock() memoizes — one hook invalidates
-  // it for all of them instead of a call at the end of every handler.
-  app.addHook('onResponse', async (request, reply) => {
-    if (request.method !== 'GET' && reply.statusCode < 400) {
-      invalidateCatalogCache();
-      // Rebuild in the background so the next customer message never blocks on it;
-      // the in-flight dedup in getFullCatalogBlock shares this build with any real request.
-      getFullCatalogBlock().catch(() => { });
-    }
-  });
+  // Every successful write in this file invalidates the bot's cached catalog (catalogCache.ts).
+  invalidateCatalogOnWrite(app);
 
   // GET /api/v1/catalog/export - whole catalog as .xlsx.
   // Binary, so no { data, error } envelope.
