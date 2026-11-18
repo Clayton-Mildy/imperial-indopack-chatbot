@@ -49,10 +49,10 @@
 | Designs kept in the repo | `docs/superpowers/designs/*.dc.html` | 0 |
 | Ports, capture transport, local seed | `api/src/config.ts`, `api/src/app.ts`, `api/src/services/captureClient.ts`, `api/src/services/whatsappSender.ts`, `api/scripts/seed-local.ts`, `api/.env.example` | 1 |
 | Price calls on the turn | `api/src/services/priceTool.ts`, `api/src/services/aiLayer.ts`, `api/src/services/messageRouter.ts`, `api/src/domain/messageSources.ts` | 2 |
-| Handoff category | `api/src/db/migrations/0027_conversation_handoff_and_notes.sql`, `api/src/domain/handoff.ts`, `api/src/repositories/conversations.ts`, `api/src/services/escalationHandler.ts` | 3 |
+| Handoff category | `api/src/db/migrations/0028_conversation_handoff_and_notes.sql`, `api/src/domain/handoff.ts`, `api/src/repositories/conversations.ts`, `api/src/services/escalationHandler.ts` | 3 |
 | Bot settings | `api/src/domain/botSettings.ts`, `api/src/repositories/appSettings.ts`, `api/src/services/escalationNudge.ts`, `api/src/services/chakraSync.ts`, `api/src/index.ts`, `api/src/routes/dashboard/settings.ts` | 4 |
 | Go-live status | `api/src/domain/brands.ts`, `api/src/services/goLive.ts` | 5 |
-| Product editor API | `api/src/db/migrations/0028_catalog_editor.sql`, `api/src/domain/productSpec.ts`, `api/src/services/catalogEditor.ts`, `api/src/repositories/catalogAudit.ts`, `api/src/routes/dashboard/catalogProducts.ts`, `api/src/routes/dashboard/catalogCache.ts` | 6 |
+| Product editor API | `api/src/db/migrations/0029_catalog_editor.sql`, `api/src/domain/productSpec.ts`, `api/src/services/catalogEditor.ts`, `api/src/repositories/catalogAudit.ts`, `api/src/routes/dashboard/catalogProducts.ts`, `api/src/routes/dashboard/catalogCache.ts` | 6 |
 | Preview, price check, price lists | `api/src/routes/dashboard/catalogProducts.ts`, `api/src/routes/dashboard/brandPriceLists.ts`, `api/src/services/catalogDelivery.ts` | 7 |
 | Import preview | `api/src/services/catalogImport.ts`, `api/src/services/catalogTemplate.ts`, `api/src/routes/dashboard/catalog.ts` | 8 |
 | Inbox list, team queue | `api/src/domain/orderDetails.ts`, `api/src/services/teamQueue.ts`, `api/src/routes/dashboard/teamQueue.ts` | 9 |
@@ -276,7 +276,7 @@ git add -A src tests && git commit -m "Record each hitung_harga call on the repl
 
 **Files:**
 - Create:
-  - `api/src/db/migrations/0027_conversation_handoff_and_notes.sql`, with journal idx 27 (`when` 1794200000000)
+  - `api/src/db/migrations/0028_conversation_handoff_and_notes.sql`, with journal idx 28 (`when` 1794300000000)
   - `api/src/domain/handoff.ts`
 - Modify:
   - `api/src/db/schema.ts`, `api/src/domain/types.ts` (`Conversation.handoffCategory`, `teamNotes`, `teamNotesUpdatedAt`, `teamNotesUpdatedBy`)
@@ -549,7 +549,7 @@ git add -A src tests && git commit -m "WhatsApp connection status and go-live ch
 
 **Files:**
 - Create:
-  - `api/src/db/migrations/0028_catalog_editor.sql`, with journal idx 28 (`when` 1794300000000)
+  - `api/src/db/migrations/0029_catalog_editor.sql`, with journal idx 29 (`when` 1794400000000)
   - `api/src/domain/productSpec.ts`, `api/src/services/catalogEditor.ts`, `api/src/repositories/catalogAudit.ts`
   - `api/src/routes/dashboard/catalogProducts.ts`
   - `api/src/routes/dashboard/catalogCache.ts`: the `onResponse` invalidation hook moved out of `catalog.ts` as `invalidateCatalogOnWrite(app)`; both files register it
