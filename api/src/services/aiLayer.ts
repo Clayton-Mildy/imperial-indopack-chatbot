@@ -11,7 +11,7 @@ import {
   REFERENCE_PHOTOS_MARKER,
 } from '../domain/constants.js';
 import { buildCatalogContext, getFullCatalogBlock } from './ragQuery.js';
-import { withoutInventedTotals, verifyReplyTieredPrices, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, saysNotCarried, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, nameGivenIn, ASKS_NAME_RE } from './replyChecks.js';
+import { withoutInventedTotals, verifyReplyTieredPrices, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, saysNotCarried, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, verifyReplyUrls, verifyReplyOrderStatus, urlsIn, nameGivenIn, ASKS_NAME_RE } from './replyChecks.js';
 import {
   getLastNMessages,
   getConversationSummary,
@@ -19,7 +19,7 @@ import {
   countConversationMessages,
   getMessagesForSummary,
 } from '../repositories/conversations.js';
-import { getDefaultPromptSections } from '../repositories/appSettings.js';
+import { getDefaultPromptSections, getPoFormUrl, PO_FORM_PLACEHOLDER_URL } from '../repositories/appSettings.js';
 import { listBrands } from '../repositories/products.js';
 import type { AIResponse, PromptSection } from '../domain/types.js';
 import { resolveLink } from './linkResolver.js';
@@ -513,6 +513,10 @@ interface VerifyFitDeps {
   afterNotCarried?: boolean;
   /** The name the customer gave in answer to our name question - see verifyReplyNameRepeat. */
   givenName?: string | null;
+  /** The customer's own recent messages: a link in them may be written back (verifyReplyUrls). */
+  customerText?: string;
+  /** The configured PO form link, or null while it is the placeholder; read only for a draft with a link. */
+  poFormUrl?: () => Promise<string | null>;
 }
 
 // Two repairs, not one. In every double failure of a UAT round the rewrite broke a DIFFERENT rule
@@ -557,6 +561,15 @@ export async function verifyFit(
   // The catalog note the model was shown is the record of whether a file went out.
   const catalogSent = systemPrompt.includes(CATALOG_SENT_MARKER);
 
+  // Read once, and only when a draft has a link at all: most replies have none.
+  let poForm: Promise<string | null> | null = null;
+  const linkCheck = async (message: string): Promise<{ ok: boolean; reason: string }> => {
+    if (urlsIn(message).length === 0) return { ok: true, reason: '' };
+    poForm ??= (deps.poFormUrl?.() ?? Promise.resolve(null)).catch(() => null);
+    const po = await poForm;
+    return verifyReplyUrls(message, po ? [po] : [], deps.customerText ?? '');
+  };
+
   const check = async (r: AIResponse): Promise<FitVerdict | null> => {
     if (r.confidence === 'low' || !r.message) return null; // text never reaches the customer
     // Deterministic floor: a misquoted price must never depend on the fuzzy name matcher or the
@@ -564,8 +577,15 @@ export async function verifyFit(
     // the whole block is the scope: a real tier figure is never invented, whichever product it is
     // printed under (quoting it against the wrong product is the judge's to catch).
     const prices = verifyReplyTieredPrices(r.message, catalogBlock, r.toolFigures, r.priceToolRan);
+    // Spec 4's anti-goals, hard and catalog-independent: no link the customer did not send, and no
+    // order confirmed / paid / in production / shipped.
+    const links = await linkCheck(r.message);
+    const status = verifyReplyOrderStatus(r.message);
     if (!catalogBlock) {
-      return prices.ok ? null : { ok: false, reason: prices.reason, ...(prices.onlyInvented && { invented: prices.invented }) };
+      const hard = [prices, links, status].filter((c) => !c.ok);
+      if (hard.length === 0) return null;
+      const onlyPrices = hard.length === 1 && !prices.ok && prices.onlyInvented;
+      return { ok: false, reason: hard.map((c) => c.reason).join(' '), ...(onlyPrices && { invented: prices.invented }) };
     }
     const named = namedProducts(catalogBlock, r.message);
     // No service check: a "we sell goods only, no custom work" rule would push replies to refuse
@@ -573,6 +593,8 @@ export async function verifyFit(
     const results: { ok: boolean; reason: string; soft?: boolean }[] = [
       verifyReplyMeta(r.message),
       prices,
+      links,
+      status,
       verifyReplyTone(r.message),
       verifyReplyNotCarried(r.message),
       verifyReplyNotCarriedCloses(r.message, named.length > 0),
@@ -1092,6 +1114,26 @@ async function callViaAgentSDK(systemPrompt: string, messages: ChatMessage[]): P
   return structuredOutputFailed(draft);
 }
 
+/** The text of every customer turn in the context, the current one included (its image parts aside). */
+function customerTextOf(messages: ChatMessage[]): string {
+  return messages
+    .filter((m) => m.role === 'user')
+    .map((m) => (typeof m.content === 'string'
+      ? m.content
+      : m.content.map((b) => (b.type === 'text' ? b.text : '')).join('\n')))
+    .join('\n');
+}
+
+/** The PO form link staff set in Settings, or null while it is still the placeholder (or unreadable). */
+async function configuredPoFormUrl(): Promise<string | null> {
+  try {
+    const url = await getPoFormUrl();
+    return url && url !== PO_FORM_PLACEHOLDER_URL ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 async function callClaude(
   systemPrompt: string,
   messages: ChatMessage[],
@@ -1134,6 +1176,8 @@ async function callClaude(
     openingTurn: typeof lastBot?.content === 'string' && ASKS_NAME_RE.test(lastBot.content),
     afterNotCarried: typeof lastBot?.content === 'string' && saysNotCarried(lastBot.content),
     givenName: nameGivenIn(messages),
+    customerText: customerTextOf(messages),
+    poFormUrl: configuredPoFormUrl,
   });
   return withCatalogPhotosOnly(verified, extractCatalogBlock(systemPrompt));
 }

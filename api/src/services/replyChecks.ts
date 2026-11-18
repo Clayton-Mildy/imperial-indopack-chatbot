@@ -184,6 +184,89 @@ export function verifyReplyCatalogClaim(message: string, catalogSent: boolean): 
   };
 }
 
+// ─── Links (spec 4, final review I4a) ─────────────────────────────────────────
+// A link in the reply text went out unchecked: a made-up forms.gle PO link, a link copied from a web
+// search. The PO form, the price lists and the reference photos are sent by code (send_po_form,
+// catalog_url, image_urls), so the model writes no link - except one the customer sent itself, or the
+// configured PO form if it does write it. A full link, a www. one, or a bare domain with a common
+// TLD ("contoh.co.id", "bit.ly/x"); never an e-mail address, a file name or a figure.
+const URL_TLDS = String.raw`(?:com|net|org|co\.id|or\.id|my\.id|web\.id|biz\.id|id|gle|ly|me|ee|io|app|link|site|store|shop|xyz|info)`;
+const URL_RE = new RegExp([
+  String.raw`\bhttps?:\/\/[^\s<>"'()\[\]]+`,
+  String.raw`\bwww\.[^\s<>"'()\[\]]+`,
+  String.raw`(?<![@\w.-])[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.${URL_TLDS}\b(?:\/[^\s<>"'()\[\]]*)?`,
+].join('|'), 'gi');
+
+/** Every link in a text, trailing punctuation off. */
+export function urlsIn(text: string): string[] {
+  return [...text.matchAll(URL_RE)].map((m) => m[0].replace(/[.,!?;:]+$/, '')).filter(Boolean);
+}
+
+/** One link, however it is written: no scheme, no "www.", no trailing slash, host in lower case (the path keeps its case). */
+function sameLink(u: string): string {
+  const s = u.replace(/[.,!?;:]+$/, '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/+$/, '');
+  const slash = s.indexOf('/');
+  return slash === -1 ? s.toLowerCase() : s.slice(0, slash).toLowerCase() + s.slice(slash);
+}
+
+export function verifyReplyUrls(message: string, allowed: string[], customerText: string): { ok: boolean; reason: string } {
+  const ok = new Set([...allowed, ...urlsIn(customerText)].map(sameLink));
+  const bad = urlsIn(message).filter((u) => !ok.has(sameLink(u)));
+  if (bad.length === 0) return { ok: true, reason: '' };
+  return {
+    ok: false,
+    reason: `Jangan menulis tautan ${bad.map((u) => `"${u}"`).join(', ')} di balasan: tautan yang tidak dikirim pelanggan sendiri tidak boleh ada - jangan mengarang link dan jangan menyalin link dari hasil pencarian. ` +
+      'Form PO dikirim sistem lewat send_po_form, daftar harga lewat catalog_url, foto contoh lewat image_urls: tulis balasannya tanpa link.',
+  };
+}
+
+// ─── Order status (spec 4, final review I4b) ──────────────────────────────────
+// "The bot says an order is confirmed, paid or in production": only the team knows any of that. A
+// statement, never a question ("apakah sudah dibayar?") or what happens after a condition ("setelah
+// dibayar, pesanan diproduksi", "kalau sudah lunas ...", "akan diproduksi"). Confirmed and shipped need
+// an order word in the sentence: "daftar harga sudah dikirim" is the catalog claim check's, and "foto
+// barangnya sudah saya kirim" or "form pesanan" are not the order.
+const ORDER_NOUN_RE = /(?<!\b(?:foto|contoh|gambar|daftar|list|detail|rincian|info|harga|form|formulir)\s+)\b(?:pesanan|order|orderan|barang|paket|kiriman)(?:nya)?\b/i;
+const DONE = String.raw`(?:sudah|telah|udah|sdh|udh)`;
+const PAID_RE = new RegExp([
+  String.raw`\b${DONE}\s+(?:kami\s+|saya\s+)?(?:di)?bayar(?:kan)?\b`,
+  String.raw`\b(?:${DONE}\s+)?lunas\b`,
+  String.raw`\b(?:pembayaran|transfer(?:an)?|tf|dana|dp)(?:nya)?\s+(?:kakak\s+|kak\s+)?(?:${DONE}\s+)?(?:kami\s+|saya\s+)?(?:terima|diterima|masuk|berhasil)\b`,
+].join('|'), 'i');
+const PRODUCED_RE = new RegExp([
+  String.raw`\b(?:sedang|sudah|telah|lagi|udah|sdh)\s+(?:dalam\s+)?(?:(?:di)?produksi|proses\s+produksi)\b`,
+  String.raw`\bdalam\s+(?:proses\s+|tahap\s+)?produksi\b`,
+  String.raw`\b${DONE}\s+masuk\s+(?:tahap\s+|proses\s+)?produksi\b`,
+  String.raw`\b(?:sedang|lagi)\s+(?:di)?cetak\b`,
+].join('|'), 'i');
+const CONFIRMED_RE = new RegExp(String.raw`\b${DONE}\s+(?:kami\s+|saya\s+)?(?:di)?konfirmasi\b|\bterkonfirmasi\b`, 'i');
+const SHIPPED_RE = new RegExp([
+  String.raw`\b(?:${DONE}|sedang|lagi)\s+(?:kami\s+|saya\s+)?(?:di)?kirim(?:kan)?\b`,
+  String.raw`\bdalam\s+(?:proses\s+)?pengiriman\b`,
+  String.raw`\b${DONE}\s+(?:dalam\s+perjalanan|sampai|tiba|diterima)\b`,
+].join('|'), 'i');
+// Before the claim in its sentence: a condition, the future, or a question word.
+const HYPOTHETICAL_RE = /\b(?:kalau|kalo|klo|jika|bila|apabila|setelah|sesudah|begitu|nanti|akan|sebelum|selama|supaya|agar|biar|asal|apakah|sudahkah)\b/i;
+
+function orderStatusClaim(sentence: string): string | null {
+  const checks = [PAID_RE, PRODUCED_RE, ...(ORDER_NOUN_RE.test(sentence) ? [CONFIRMED_RE, SHIPPED_RE] : [])];
+  for (const re of checks) {
+    const m = re.exec(sentence);
+    if (m && !HYPOTHETICAL_RE.test(sentence.slice(0, m.index))) return m[0];
+  }
+  return null;
+}
+
+export function verifyReplyOrderStatus(message: string): { ok: boolean; reason: string } {
+  const hit = message.split(SEGMENT_RE).filter((s) => !s.includes('?')).map(orderStatusClaim).find(Boolean);
+  if (!hit) return { ok: true, reason: '' };
+  return {
+    ok: false,
+    reason: `Jangan menyatakan status pesanan ("${hit}"): bahwa pesanan sudah dikonfirmasi, sudah dibayar, sedang diproduksi, atau sudah dikirim hanya tim kami yang bisa menyampaikan. ` +
+      'Kalau pelanggan menanyakan atau mengabarkannya, sampaikan tim kami yang akan mengecek, dan set confidence "low".',
+  };
+}
+
 // A line that adds up: the word for it, or an "=" ("10 rim x Rp 185.000 = Rp 1.850.000").
 const TOTAL_LINE_RE = /\b(?:total|subtotal|jumlah|keseluruhan|grand)\b|=/i;
 // The total words verifyReplyTieredPrices also knows: "Totalnya Rp 8.000.000", "Semuanya jadi ...".

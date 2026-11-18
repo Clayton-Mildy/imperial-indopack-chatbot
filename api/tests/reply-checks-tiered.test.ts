@@ -330,6 +330,37 @@ describe('verifyFit - the strict price check in the pipeline', () => {
     expect(out).toMatchObject({ confidence: 'high', totalForTeam: true, message: 'Box Ivory 270 gsm cetak full color 8 rim harganya Rp 2.000/pcs kak.' });
   });
 
+  // Final review I4: hard checks, in the pipeline - with or without a catalog block.
+  describe('links and order-status claims', () => {
+    const BARE = '## Identity\nKamu adalah CS Imperial Indopack.';
+    for (const [label, prompt] of [['with a catalog block', PROMPT], ['with no catalog block', BARE]] as const) {
+      it(`repairs a made-up link and an order-status claim, ${label}`, async () => {
+        const bad = draft('Pesanan kakak sudah dikonfirmasi, isi form di https://forms.gle/Karangan ya kak.');
+        const fixed = draft('Siap kak, tim kami yang konfirmasi pesanannya ya.');
+        const regenerate = vi.fn(async () => fixed);
+        const out = await verifyFit(bad, prompt, 'oke saya ambil', { judge: okJudge().judge, regenerate, customerText: 'oke saya ambil' });
+        expect(regenerate).toHaveBeenCalledTimes(1);
+        expect(regenerate.mock.calls[0]![0]).toContain('https://forms.gle/Karangan');
+        expect(regenerate.mock.calls[0]![0]).toMatch(/sudah dikonfirmasi/);
+        expect(out).toBe(fixed);
+      });
+    }
+
+    it('sends a link the customer sent, and the configured PO form, as they are', async () => {
+      const echo = draft('Siap kak, sudah saya lihat https://instagram.com/ContohToko 😊');
+      expect(await verifyFit(echo, PROMPT, 'x', { judge: okJudge().judge, regenerate: noRegenerate, customerText: 'ini IG saya https://instagram.com/ContohToko' })).toBe(echo);
+      const po = draft('Ini form PO-nya kak: https://forms.gle/ContohPO123');
+      const poFormUrl = vi.fn(async () => 'https://forms.gle/ContohPO123');
+      expect(await verifyFit(po, PROMPT, 'x', { judge: okJudge().judge, regenerate: noRegenerate, poFormUrl })).toBe(po);
+    });
+
+    it('reads the PO form setting only when the draft has a link', async () => {
+      const poFormUrl = vi.fn(async () => 'https://forms.gle/ContohPO123');
+      await verifyFit(draft('Boleh tahu ukurannya kak?'), PROMPT, 'x', { judge: okJudge().judge, regenerate: noRegenerate, poFormUrl });
+      expect(poFormUrl).not.toHaveBeenCalled();
+    });
+  });
+
   // Before the client imports a catalog the prompt has no catalog block; a figure is then backed by
   // nothing but the tool, and the price check must not be skipped along with the judge.
   describe('with no catalog block in the prompt', () => {

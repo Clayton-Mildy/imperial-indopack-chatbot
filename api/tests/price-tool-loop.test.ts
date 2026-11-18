@@ -33,8 +33,11 @@ vi.mock('../src/services/ragQuery.js', async () => {
     getCatalogProducts: vi.fn(async () => CATALOG),
   };
 });
+const mockGetPoFormUrl = vi.fn(async () => 'https://forms.gle/REPLACE-ME');
 vi.mock('../src/repositories/appSettings.js', () => ({
   getDefaultPromptSections: vi.fn(async () => [{ name: 'Identitas', content: 'CS Imperial Indopack' }]),
+  getPoFormUrl: mockGetPoFormUrl,
+  PO_FORM_PLACEHOLDER_URL: 'https://forms.gle/REPLACE-ME',
 }));
 vi.mock('../src/repositories/products.js', () => ({ listBrands: vi.fn(async () => []) }));
 vi.mock('../src/repositories/conversations.js', () => ({
@@ -340,5 +343,34 @@ describe('Agent SDK path', () => {
       });
     expect(await callAIWithHistory(HISTORY, ASK)).toMatchObject({ toolFigures: [], priceToolRan: true });
     expect((await callAIWithHistory(HISTORY, 'halo')).priceToolRan).toBe(false);
+  });
+});
+
+// Final review I4(a): the link check reads the customer's own turns and the PO form setting from the
+// call itself.
+describe('links in the reply', () => {
+  const linkReply = (message: string) => respondTurn({ ...REPLY, message });
+
+  it('sends back a link the customer sent this turn, with no repair', async () => {
+    mockCreate.mockResolvedValueOnce(linkReply('Siap kak, sudah saya lihat https://instagram.com/ContohToko 😊'));
+    const result = await callAIWithHistory(HISTORY, 'ini IG toko saya https://instagram.com/ContohToko');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(result.message).toContain('https://instagram.com/ContohToko');
+  });
+
+  it('repairs a made-up PO link while the setting is the placeholder, and accepts the configured one', async () => {
+    mockCreate
+      .mockResolvedValueOnce(linkReply('Silakan isi form PO di https://forms.gle/Karangan ya kak'))
+      .mockResolvedValueOnce(linkReply('Siap kak, form PO-nya saya kirim ya.'));
+    const repaired = await callAIWithHistory(HISTORY, 'oke saya ambil');
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(mockCreate.mock.calls[1]![0].messages.at(-1))).toContain('https://forms.gle/Karangan');
+    expect(repaired.message).toBe('Siap kak, form PO-nya saya kirim ya.');
+
+    mockCreate.mockReset();
+    mockGetPoFormUrl.mockResolvedValueOnce('https://forms.gle/ContohPO123');
+    mockCreate.mockResolvedValueOnce(linkReply('Ini form PO-nya kak: https://forms.gle/ContohPO123'));
+    expect((await callAIWithHistory(HISTORY, 'oke saya ambil')).message).toContain('https://forms.gle/ContohPO123');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 });

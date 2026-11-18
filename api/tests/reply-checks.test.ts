@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { withoutInventedTotals, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, nameGivenIn, ASKS_NAME_RE } from '../src/services/replyChecks.js';
+import { withoutInventedTotals, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, nameGivenIn, ASKS_NAME_RE, verifyReplyUrls, verifyReplyOrderStatus, urlsIn } from '../src/services/replyChecks.js';
 import { SYSTEM_PROMPT_BEHAVIORAL_RULES } from '../src/domain/constants.js';
 
 describe('withoutInventedTotals', () => {
@@ -265,4 +265,87 @@ describe('a not-carried reply closes the chat', () => {
     expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).toMatch(/TIDAK ada pertanyaan sama sekali/);
     expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).not.toMatch(/Di balasan pertama, tambahkan pertanyaan nama/);
   });
+});
+
+// Final review I4(a), spec 4: a link in the reply text went out unchecked - a made-up forms.gle PO link,
+// a web-search result. The PO link is sent by code on its own line; the model writes no URL, except one
+// the customer sent itself (or, if it does write it, the configured PO form).
+describe('verifyReplyUrls', () => {
+  const PO = 'https://forms.gle/ContohPO123';
+
+  it.each([
+    'Silakan isi form PO di https://forms.gle/AbCdEf ya kak',
+    'Bisa cek di www.contoh-kemasan.com kak',
+    'Info lengkap di imperialindopack.co.id ya',
+    'Lihat contohnya di bit.ly/contohbox',
+  ])('rejects a link the customer did not send: %s', (msg) => {
+    const v = verifyReplyUrls(msg, [PO], 'mau box nasi 20x20');
+    expect(v.ok).toBe(false);
+    expect(v.reason).toContain(urlsIn(msg)[0]!);
+    expect(v.reason).toMatch(/send_po_form/);
+  });
+
+  it('accepts a link the customer sent, however it is written back', () => {
+    const customer = 'ini toko saya kak https://instagram.com/ContohToko dan tokopedia.com/contohtoko';
+    expect(verifyReplyUrls('Siap kak, sudah saya lihat https://instagram.com/ContohToko.', [], customer).ok).toBe(true);
+    expect(verifyReplyUrls('Tokonya di https://www.tokopedia.com/contohtoko/ ya kak', [], customer).ok).toBe(true);
+  });
+
+  it('accepts the configured PO form, never the placeholder', () => {
+    expect(verifyReplyUrls(`Form PO-nya: ${PO}`, [PO], '').ok).toBe(true);
+    expect(verifyReplyUrls('Form PO-nya: https://forms.gle/REPLACE-ME', [], '').ok).toBe(false);
+  });
+
+  it.each([
+    'Harganya Rp 1.800.000 ya kak',
+    'Ukuran 20x20x7.5 cm ready kak',
+    'Bisa email ke contoh@gmail.com kak',
+    'Daftar Harga Kertas Supreme.pdf sudah saya kirim',
+    'Siap kak, ditunggu ya.Terima kasih',
+  ])('finds no link in: %s', (msg) => {
+    expect(urlsIn(msg)).toEqual([]);
+    expect(verifyReplyUrls(msg, [], '').ok).toBe(true);
+  });
+});
+
+// Final review I4(b), spec 4: "the bot says an order is confirmed, paid or in production".
+describe('verifyReplyOrderStatus', () => {
+  it.each([
+    'Pesanan kakak sudah dikonfirmasi ya',
+    'Orderannya sudah terkonfirmasi kak',
+    'Pembayarannya sudah kami terima, terima kasih kak',
+    'Pembayaran diterima ya kak',
+    'Sudah lunas ya kak 🙏',
+    'Transfernya sudah masuk kak',
+    'Pesanannya sudah dibayar ya kak',
+    'Pesanan kakak sedang diproduksi',
+    'Saat ini sedang dalam proses produksi ya kak',
+    'Kertasnya sedang dicetak kak',
+    'Pesanannya sudah masuk produksi',
+    'Barangnya sudah dikirim ya kak',
+    'Pesanan sudah kami kirimkan kemarin',
+    'Paketnya sedang dalam pengiriman kak',
+  ])('rejects the claim: %s', (msg) => {
+    const v = verifyReplyOrderStatus(msg);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toMatch(/tim/);
+    expect(v.reason).toMatch(/confidence "low"/);
+  });
+
+  it.each([
+    'Apakah sudah dibayar kak?',
+    'Pesanannya sudah dikonfirmasi belum kak?',
+    'Setelah dibayar, pesanan diproduksi sekitar 7 hari kerja.',
+    'Setelah pembayaran diterima, pesanan langsung kami produksi ya kak.',
+    'Kalau sudah lunas, barangnya langsung kami kirim.',
+    'Pesanan akan diproduksi setelah DP masuk.',
+    'Nanti setelah dikonfirmasi tim, pesanan diproses.',
+    'Pesanannya belum dikonfirmasi ya kak, tim kami cek dulu.',
+    'Daftar harga Kertas Supreme sudah dikirim ya kak.',
+    'Contoh desainnya sudah saya kirim di atas kak.',
+    'Foto produknya sudah saya kirim ya.',
+    'Form PO-nya saya kirim di bawah ya kak.',
+    'Proses produksi sekitar 7-10 hari kerja kak.',
+    'Pengiriman bisa ke seluruh Indonesia kak.',
+  ])('lets pass: %s', (msg) => expect(verifyReplyOrderStatus(msg).ok).toBe(true));
 });

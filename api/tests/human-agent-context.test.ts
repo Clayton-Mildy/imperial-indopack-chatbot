@@ -56,6 +56,9 @@ vi.mock('../src/services/replyChecks.js', () => ({
   verifyReplyFirstGreeting: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyNameRepeat: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyNotCarriedCloses: vi.fn(() => ({ ok: true, reason: '' })),
+  verifyReplyUrls: vi.fn(() => ({ ok: true, reason: '' })),
+  verifyReplyOrderStatus: vi.fn(() => ({ ok: true, reason: '' })),
+  urlsIn: vi.fn(() => []),
   nameGivenIn: vi.fn(() => null),
   ASKS_NAME_RE: /dengan\s+siapa/i,
 }));
