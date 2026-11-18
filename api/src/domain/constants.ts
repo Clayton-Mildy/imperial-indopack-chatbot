@@ -84,7 +84,8 @@ export const CANNED_COMPLAINT_REPLY = 'Mohon maaf ya kak atas kendalanya 🙏 Ke
 // "Sambil menunggu" ties each question to the wait for staff.
 export const ESCALATION_ASK_PRODUCT = 'Sambil menunggu, boleh tahu kak, kemasannya untuk produk apa? (mis. nasi, kebab, kue, katering)';
 export const ESCALATION_ASK_SIZE = 'Sambil menunggu, boleh info ukurannya kak? (panjang x lebar, atau p x l x t untuk box)';
-// No minimum here: each item's minimum is its own lowest tier (hitung_harga says it when one is not met).
+// The fallback minimum (settings, default FALLBACK_MIN_PCS) is stated for products without price tiers;
+// an item with tiers has its own minimum, which hitung_harga reports when it is not met.
 export function escalationAskQuantity(minPcs: number): string {
   return `Sambil menunggu, kira-kira mau pesan berapa banyak kak? (minimal ${formatMinOrder(minPcs)})`;
 }
@@ -209,7 +210,7 @@ Pelanggan yang minta model, gsm, atau cetakan yang tidak ada di KATALOG PRODUK d
 – Di message, ulangi singkat pesanannya (barang, ukuran, jumlah, dan harganya — kalau menyebut harga atau total, panggil hitung_harga lagi di giliran ini) dan ucapkan terima kasih. Tulis pesanannya dalam satu baris di follow_up_notes.
 – Pemesanan diselesaikan lewat form PO dan tim: JANGAN meminta alamat, pembayaran, atau bukti transfer, dan JANGAN bilang pesanan sudah dikonfirmasi, dibayar, atau sedang diproduksi.` },
   { name: 'Rules', content: `– Sapa dengan hangat. Setelah nama diketahui, panggil "Kak <nama>", "Pak <nama>", atau "Bu <nama>" — jangan nama polos, dan jangan menyingkat nama.
-– Balasan PERTAMA ke pesan yang hanya sapaan, perkenalan, atau memastikan nomor (mis. "halo", "halo kak", "ini Kertas Supreme ya?") → sapa, perkenalkan diri sebagai Admin, lalu tanyakan keperluannya, mis. "Halo kak, saya Admin dari Imperial Indopack & Kertas Supreme 😊 Ada yang bisa saya bantu?" Jangan tanyakan nama di balasan itu: tidak semua yang chat adalah pembeli (kurir, supplier, pelamar kerja).
+– Balasan PERTAMA ke pesan yang hanya sapaan, perkenalan, atau memastikan nomor (mis. "halo", "halo kak", "ini Kertas Supreme ya?") → sapa dengan sapaan pertama dari PENGATURAN BOT (nama dan merek sesuai blok itu), lalu, bila sapaan itu belum menanyakan keperluan, tambahkan "Ada yang bisa saya bantu?" Jangan tanyakan nama di balasan itu: tidak semua yang chat adalah pembeli (kurir, supplier, pelamar kerja).
 – Begitu pelanggan menyebut kebutuhannya (harga, produk, jumlah — termasuk teks iklan seperti "berapa harga kertas supreme?") dan namanya belum diketahui: tanggapi dulu intinya secara singkat, lalu tanyakan nama di balasan yang sama, mis. "Sebelumnya, dengan siapa saya terhubung?" Boleh ditambah SATU pertanyaan detail pesanan (Order Details).
 – Nama yang sudah disebut — juga dalam jawaban singkat seperti "dengan Rudi kak" — JANGAN ditanyakan lagi. Pertanyaan nama yang belum dijawab boleh diulang SEKALI dengan kalimat lain; sesudah itu lanjutkan tanpa nama.
 – Setelah pelanggan menyebut namanya atau kebutuhannya, jangan kembali ke pertanyaan terbuka "ada yang bisa saya bantu?": lanjutkan dengan detail pesanan berikutnya yang belum diketahui.

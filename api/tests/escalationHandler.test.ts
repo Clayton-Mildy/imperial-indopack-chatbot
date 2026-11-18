@@ -134,7 +134,7 @@ describe('pickProfileGapQuestion', () => {
     expect(pickProfileGapQuestion(P({ items: [{ product: 'box' }] }), [])).toBe(ESCALATION_ASK_SIZE);
   });
 
-  // Review fix (Task 10 m5): no minimum in the question - each item's minimum is its own lowest tier.
+  // The question states the fallback minimum (Plan 2 Task 4); the setting overrides it.
   it('states the fallback minimum in the quantity question', () => {
     expect(ESCALATION_ASK_QUANTITY).toBe('Sambil menunggu, kira-kira mau pesan berapa banyak kak? (minimal 2.500 pcs / 5 rim)');
   });

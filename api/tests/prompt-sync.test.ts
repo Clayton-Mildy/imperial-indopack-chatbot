@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SECTIONS_TO_SYNC, SECTIONS_NOT_SYNCED, SECTIONS_RETIRED, syncPromptSections } from '../src/domain/promptSync.js';
+import { SECTIONS_TO_SYNC, SECTIONS_NOT_SYNCED, SECTIONS_RETIRED, syncPromptSections, PREVIOUS_IDENTITY_DEFAULTS, upgradeUneditedIdentity } from '../src/domain/promptSync.js';
 import { SYSTEM_PROMPT_SECTIONS } from '../src/domain/constants.js';
 
 // update.ps1 runs reseed-prompt-defaults on every deploy (2026-11-02), so it must ship a prompt change
@@ -84,5 +84,25 @@ describe('syncPromptSections - the ported prompt replaced', () => {
     const shippedNames = SYSTEM_PROMPT_SECTIONS.map((s) => s.name);
     expect(SECTIONS_RETIRED.filter((n) => shippedNames.includes(n))).toEqual([]);
     expect([...SECTIONS_TO_SYNC, ...Object.keys(SECTIONS_NOT_SYNCED)].sort()).toEqual([...shippedNames].sort());
+  });
+});
+
+describe('upgradeUneditedIdentity', () => {
+  const NEWID = SYSTEM_PROMPT_SECTIONS.find((x) => x.name === 'Identity')!.content;
+  it('replaces an Identity that still equals a previous shipped default (after trim)', () => {
+    const live = [{ name: 'Identity', content: `\n${PREVIOUS_IDENTITY_DEFAULTS[0]}  ` }, { name: 'Mission', content: 'm' }];
+    const r = upgradeUneditedIdentity(live, NEWID);
+    expect(r.replaced).toBe(true);
+    expect(r.sections[0]!.content).toBe(NEWID);
+    expect(r.sections[1]).toEqual(live[1]);
+  });
+  it('keeps an Identity staff edited', () => {
+    const live = [{ name: 'Identity', content: PREVIOUS_IDENTITY_DEFAULTS[0] + ' Nama: Sari.' }];
+    const r = upgradeUneditedIdentity(live, NEWID);
+    expect(r.replaced).toBe(false);
+    expect(r.sections).toEqual(live);
+  });
+  it('the previous default is not the current one', () => {
+    expect(PREVIOUS_IDENTITY_DEFAULTS.map((t) => t.trim())).not.toContain(NEWID.trim());
   });
 });

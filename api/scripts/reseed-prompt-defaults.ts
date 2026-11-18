@@ -7,7 +7,7 @@
 // edited in the dashboard since the last sync is kept and reported, not overwritten - see
 // promptSync.syncPromptSections. --force overwrites those too.
 // Retired sections (promptSync.SECTIONS_RETIRED, from the prompt this bot was ported from) are removed
-// from both. Identity is never synced (per-number persona): one that does not name Imperial Indopack
+// from both. Identity is never synced (per-number persona) except an unedited previous default (promptSync.PREVIOUS_IDENTITY_DEFAULTS): one that does not name Imperial Indopack
 // is reported, so a database seeded before the Imperial prompt gets its Identity fixed by hand.
 // Idempotent; leaves all other DB content untouched.
 // Run: tsx scripts/reseed-prompt-defaults.ts [--force]
@@ -17,7 +17,7 @@ import {
   getDefaultPromptSections, setDefaultPromptSections, getShippedPromptSections, setShippedPromptSections,
 } from '../src/repositories/appSettings.js';
 import { listPhoneNumbers, updatePhoneNumber } from '../src/repositories/phoneNumbers.js';
-import { SECTIONS_TO_SYNC, syncPromptSections } from '../src/domain/promptSync.js';
+import { SECTIONS_TO_SYNC, syncPromptSections, upgradeUneditedIdentity } from '../src/domain/promptSync.js';
 import type { PromptSection } from '../src/domain/types.js';
 
 const force = process.argv.includes('--force');
@@ -41,9 +41,13 @@ function warnStaleIdentity(sections: PromptSection[], label: string): void {
 }
 
 function patch(live: PromptSection[], label: string): { patched: PromptSection[]; changed: number } {
+  // An Identity still equal to a previous shipped default was never edited: upgrade it.
+  const upgraded = upgradeUneditedIdentity(live, NEW.find((s) => s.name === 'Identity')!.content);
+  if (upgraded.replaced) console.log(`~ [${label}] replaced the unedited old "Identity" with the new default.`);
+  live = upgraded.sections;
   warnStaleIdentity(live, label);
   const { patched, actions } = syncPromptSections(live, NEW, baseline, force);
-  let changed = 0;
+  let changed = upgraded.replaced ? 1 : 0;
   for (const [name, action] of Object.entries(actions)) {
     if (action === 'updated') { console.log(`~ [${label}] updated "${name}" in place.`); changed++; }
     else if (action === 'inserted') { console.log(`+ [${label}] inserted "${name}".`); changed++; }

@@ -59,6 +59,10 @@ describe('Imperial Indopack prompt', () => {
 });
 
 describe('the facts each section must state', () => {
+  it('no shipped section fixes a bot name; PENGATURAN BOT owns name and greeting', () => {
+    for (const s of SYSTEM_PROMPT_SECTIONS) expect(s.content, s.name).not.toMatch(/\bAdmin\b/);
+  });
+
   it('Identity: the name and first greeting come from PENGATURAN BOT, not from the text', () => {
     expect(section('Identity')).toContain('PENGATURAN BOT');
     expect(section('Identity')).not.toContain('Admin');

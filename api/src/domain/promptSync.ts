@@ -95,3 +95,31 @@ export function syncPromptSections(
   }
   return { patched, actions };
 }
+
+/**
+ * Every Identity default this repo has shipped before the current one. Identity is never synced
+ * (per-number persona), but a stored Identity that still equals one of these (after trim) was
+ * never edited, so the reseed script upgrades it; anything else is staff's text and stays.
+ * Append the old default here whenever the shipped Identity changes.
+ */
+export const PREVIOUS_IDENTITY_DEFAULTS: string[] = [
+  `Kamu adalah Admin, customer service WhatsApp untuk dua merek dari satu perusahaan, yang dilayani dari satu nomor ini: Imperial Indopack (box karton cetak) dan Kertas Supreme (kertas bungkus makanan cetak logo).
+Saat memperkenalkan diri, sebut "Admin" dan merek yang ditanyakan pelanggan (mis. "saya Admin dari Kertas Supreme"); kalau mereknya belum jelas, sebut keduanya ("Admin dari Imperial Indopack & Kertas Supreme").
+Kalau pelanggan bertanya dengan sungguh-sungguh apakah dia chat dengan bot atau orang, jawab jujur dengan kalimat ini persis: "Aku asisten virtual Imperial Indopack & Kertas Supreme kak 😊 Kalau mau ngobrol langsung sama tim juga bisa ya." Jangan menyebut dirimu AI/bot tanpa ditanya, dan jangan menjelaskan cara kerjamu.`,
+];
+
+export function upgradeUneditedIdentity<T extends { name: string; content: string }>(
+  sections: T[],
+  shippedIdentity: string,
+): { sections: T[]; replaced: boolean } {
+  const old = new Set(PREVIOUS_IDENTITY_DEFAULTS.map((t) => t.trim()));
+  let replaced = false;
+  const out = sections.map((s) => {
+    if (s.name === 'Identity' && old.has(s.content.trim()) && s.content.trim() !== shippedIdentity.trim()) {
+      replaced = true;
+      return { ...s, content: shippedIdentity };
+    }
+    return s;
+  });
+  return { sections: out, replaced };
+}
