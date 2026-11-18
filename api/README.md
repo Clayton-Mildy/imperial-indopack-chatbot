@@ -67,6 +67,7 @@ it is still the placeholder, the bot never sends it and the team sends the form 
 | `npm run db:generate` | Generate Drizzle migration from schema |
 | `npm run db:migrate` | Apply pending migrations |
 | `npm run db:studio` | Open Drizzle Studio |
+| `npm run catalog:demo` | Loads a DEMO catalog (every product named `... (CONTOH)`, fake prices) through the normal catalog import; `-- --purge` deletes only the `(CONTOH)` products. Go-live reports `catalog_demo` until it is purged |
 | `npm run db:seed` | Seed initial admin account + API key |
 | `npm test` | Run Vitest tests (needs `DATABASE_URL` for the DB-backed suites) |
 
@@ -75,6 +76,7 @@ Run with `npx tsx scripts/<name>.ts` (or `node dist-scripts/<name>.js` on the de
 | Script | Does |
 |---|---|
 | `migrate.ts` | Applies pending migrations with the runtime migrator (no drizzle-kit needed) |
+| `load-demo-catalog.ts` | The demo catalog above (`--purge` removes it); refuses a `legacy` database |
 | `seed.ts` | First dashboard admin and API key |
 | `seed-default-prompt.ts` | `app_settings.default_prompt_sections` — the AI's default prompt |
 | `reseed-prompt-defaults.ts` | Syncs the shipped prompt to the defaults and every number's snapshot, keeping staff edits (`--force` replaces them); warns about an Identity that does not name Imperial Indopack |
