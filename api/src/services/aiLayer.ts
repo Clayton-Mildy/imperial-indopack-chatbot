@@ -19,7 +19,8 @@ import {
   countConversationMessages,
   getMessagesForSummary,
 } from '../repositories/conversations.js';
-import { getDefaultPromptSections, getPoFormUrl, PO_FORM_PLACEHOLDER_URL } from '../repositories/appSettings.js';
+import { buildBotSettingsBlock, DEFAULT_BOT_SETTINGS } from '../domain/botSettings.js';
+import { getBotSettings, getDefaultPromptSections, getPoFormUrl, PO_FORM_PLACEHOLDER_URL } from '../repositories/appSettings.js';
 import { listBrands } from '../repositories/products.js';
 import type { AIResponse, PromptSection } from '../domain/types.js';
 import { resolveLink } from './linkResolver.js';
@@ -761,11 +762,14 @@ async function buildSystemPrompt(
   turn?: { catalogNote?: string | null; customerMessage?: string; photoNote?: string | null }
 ): Promise<string> {
   const fullCatalog = isFullCatalogEnabled();
-  const [catalogContext, identitySection, brandContext] = await Promise.all([
+  const [catalogContext, identitySection, brandContext, botSettings] = await Promise.all([
     fullCatalog ? getFullCatalogBlock() : buildCatalogContext(ragQuery, extraKeywords),
     resolveIdentitySection(promptSections),
     buildBrandContext(),
+    // A settings read that fails must not stop a reply: the defaults are the shipped behaviour.
+    (async () => getBotSettings())().catch(() => DEFAULT_BOT_SETTINGS),
   ]);
+  const botBlock = buildBotSettingsBlock(botSettings);
 
   // No name line. The WhatsApp profile name is not the customer's name: it falls back to the
   // MSISDN for most of this audience ("Pak +6281236295157"), and where it is set it is a nickname,
@@ -793,6 +797,8 @@ async function buildSystemPrompt(
     return [
       identitySection,
       '',
+      botBlock,
+      '',
       brandContext,
       '',
       SYSTEM_PROMPT_BEHAVIORAL_RULES + TOOL_USE_SEARCH_INSTRUCTION,
@@ -809,6 +815,8 @@ async function buildSystemPrompt(
 
   return [
     identitySection,
+    '',
+    botBlock,
     '',
     brandContext,
     '',

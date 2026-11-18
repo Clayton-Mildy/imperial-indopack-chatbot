@@ -25,6 +25,7 @@ vi.mock('../src/services/ragQuery.js', () => ({
 }));
 vi.mock('../src/repositories/appSettings.js', () => ({
   getDefaultPromptSections: vi.fn(async () => [{ name: 'Identity', content: 'Kamu adalah Admin' }]),
+  getBotSettings: vi.fn(async () => ({ botName: 'Sari', signAs: 'brand_discussed', greeting: 'Halo {merek}', fallbackMinPcs: 2500, teamReminderMinutes: 30, whatsappSyncMinutes: 60 })),
 }));
 vi.mock('../src/repositories/products.js', () => ({
   listBrands: vi.fn(async () => []),
@@ -59,6 +60,9 @@ describe('warmPromptCache', () => {
     // 1h TTL — identical to toSystemBlocks' output for real traffic.
     expect(req.system[0].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
     expect(req.system[0].text).toContain('--- AKHIR KATALOG ---');
+    expect(req.system[0].text).toContain('Nama kamu: Sari.');
+    // Right after the identity section, ahead of the brand block.
+    expect(req.system[0].text.indexOf('--- PENGATURAN BOT ---')).toBeGreaterThan(req.system[0].text.indexOf('Kamu adalah Admin'));
     // Same tools as callViaAPI, same order — a different list is a different cache tier.
     expect(req.tools.map((t: { name: string }) => t.name)).toEqual([
       'web_search', 'resolve_link', 'hitung_harga', 'respond_to_customer',

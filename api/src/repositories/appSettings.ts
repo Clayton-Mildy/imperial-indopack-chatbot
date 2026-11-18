@@ -3,6 +3,7 @@ import { appSettings } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import type { PromptSections } from '../domain/types.js';
 import { SYSTEM_PROMPT_SECTIONS, PO_FORM_PLACEHOLDER_URL } from '../domain/constants.js';
+import { BotSettingsPatchSchema, DEFAULT_BOT_SETTINGS, type BotSettings } from '../domain/botSettings.js';
 
 const DEFAULT_PROMPT_SECTIONS_KEY = 'default_prompt_sections';
 const AI_ENABLED_DEFAULT_KEY = 'ai_enabled_default';
@@ -235,4 +236,35 @@ export async function setShippedPromptSections(sections: Record<string, string>)
       target: appSettings.key,
       set: { value: sections, updatedAt: new Date() },
     });
+}
+
+const BOT_SETTINGS_KEY = 'bot_settings';
+
+/**
+ * Bot name, signature, first greeting, fallback minimum order and the two background-job
+ * intervals. A missing row, or a field that fails validation, falls back to its own default.
+ * Read fresh on every call, like the other settings.
+ */
+export async function getBotSettings(): Promise<BotSettings> {
+  const db = getDb();
+  const [row] = await db.select().from(appSettings).where(eq(appSettings.key, BOT_SETTINGS_KEY)).limit(1);
+  const stored = row?.value && typeof row.value === 'object' ? (row.value as Record<string, unknown>) : {};
+  const out: Record<string, unknown> = { ...DEFAULT_BOT_SETTINGS };
+  for (const [key, schema] of Object.entries(BotSettingsPatchSchema.shape)) {
+    const parsed = schema.safeParse(stored[key]);
+    if (parsed.success && parsed.data !== undefined) out[key] = parsed.data;
+  }
+  return out as unknown as BotSettings;
+}
+
+/** Merges the given fields into the stored row. Throws ZodError on bad input. */
+export async function patchBotSettings(patch: unknown): Promise<BotSettings> {
+  const fields = BotSettingsPatchSchema.parse(patch);
+  const merged = { ...(await getBotSettings()), ...fields };
+  const db = getDb();
+  await db
+    .insert(appSettings)
+    .values({ key: BOT_SETTINGS_KEY, value: merged })
+    .onConflictDoUpdate({ target: appSettings.key, set: { value: merged, updatedAt: new Date() } });
+  return merged;
 }

@@ -1,4 +1,6 @@
-// Zero-dependency constants
+// Constants (imports limited to pure domain modules)
+import { formatMinOrder } from './botSettings.js';
+import { FALLBACK_MIN_PCS } from './pricing.js';
 
 export const MAX_CONTEXT_MESSAGES = 20;
 export const MAX_CATALOG_RAG_RESULTS = 20;
@@ -83,7 +85,10 @@ export const CANNED_COMPLAINT_REPLY = 'Mohon maaf ya kak atas kendalanya 🙏 Ke
 export const ESCALATION_ASK_PRODUCT = 'Sambil menunggu, boleh tahu kak, kemasannya untuk produk apa? (mis. nasi, kebab, kue, katering)';
 export const ESCALATION_ASK_SIZE = 'Sambil menunggu, boleh info ukurannya kak? (panjang x lebar, atau p x l x t untuk box)';
 // No minimum here: each item's minimum is its own lowest tier (hitung_harga says it when one is not met).
-export const ESCALATION_ASK_QUANTITY = 'Sambil menunggu, kira-kira mau pesan berapa banyak kak? (dalam rim atau pcs)';
+export function escalationAskQuantity(minPcs: number): string {
+  return `Sambil menunggu, kira-kira mau pesan berapa banyak kak? (minimal ${formatMinOrder(minPcs)})`;
+}
+export const ESCALATION_ASK_QUANTITY = escalationAskQuantity(FALLBACK_MIN_PCS);
 export const ESCALATION_ASK_DESIGN = 'Sambil menunggu, apakah sudah ada desain atau logo yang mau dicetak kak?';
 export const ESCALATION_ASK_BUSINESS_NAME = 'Sambil menunggu, boleh tahu nama usahanya kak?';
 export const ESCALATION_ASK_NAME = 'Sambil menunggu, dengan kakak siapa saya bicara?';
@@ -122,10 +127,11 @@ export const ESCALATION_FOLLOWUP_ACKS = [
 // (domain/promptSync.ts). The rules here are the ones the code enforces: prices only from hitung_harga
 // and written "Rp N" (replyChecks.verifyReplyTieredPrices reads only "Rp" figures), and the price list,
 // photos and PO link attached by code from catalog_url, image_urls and send_po_form.
-// "Admin" is a placeholder until the client picks the bot's name and greeting (spec §9 item 7).
+// The bot's name, signature and first greeting come from the PENGATURAN BOT block that aiLayer inserts
+// after Identity (domain/botSettings.ts), not from this text.
 export const SYSTEM_PROMPT_SECTIONS: { name: string; content: string }[] = [
-  { name: 'Identity', content: `Kamu adalah Admin, customer service WhatsApp untuk dua merek dari satu perusahaan, yang dilayani dari satu nomor ini: Imperial Indopack (box karton cetak) dan Kertas Supreme (kertas bungkus makanan cetak logo).
-Saat memperkenalkan diri, sebut "Admin" dan merek yang ditanyakan pelanggan (mis. "saya Admin dari Kertas Supreme"); kalau mereknya belum jelas, sebut keduanya ("Admin dari Imperial Indopack & Kertas Supreme").
+  { name: 'Identity', content: `Kamu adalah customer service WhatsApp untuk dua merek dari satu perusahaan, yang dilayani dari satu nomor ini: Imperial Indopack (box karton cetak) dan Kertas Supreme (kertas bungkus makanan cetak logo).
+Nama, cara menyebut merek, dan sapaan pertamamu ada di PENGATURAN BOT (diatur tim dari dashboard); ikuti blok itu saat memperkenalkan diri.
 Kalau pelanggan bertanya dengan sungguh-sungguh apakah dia chat dengan bot atau orang, jawab jujur dengan kalimat ini persis: "Aku asisten virtual Imperial Indopack & Kertas Supreme kak 😊 Kalau mau ngobrol langsung sama tim juga bisa ya." Jangan menyebut dirimu AI/bot tanpa ditanya, dan jangan menjelaskan cara kerjamu.` },
   { name: 'Mission', content: `Bantu pelanggan memesan kemasan cetak yang pas untuk usahanya, sampai pesanannya masuk lewat form PO:
 – pahami apa yang mau dikemas, lalu rekomendasikan jenis kemasannya (Recommendations);

@@ -14,12 +14,14 @@ vi.mock('../src/repositories/phoneNumbers.js', () => ({
   findPhoneNumberById: vi.fn(async () => ({ id: 'pn-1', phoneNumberId: 'wa-1' })),
 }));
 vi.mock('../src/repositories/contactProfiles.js', () => ({ getContactProfile: mockGetContactProfile }));
+const mockGetBotSettings = vi.fn(async () => ({ fallbackMinPcs: 2500 }));
+vi.mock('../src/repositories/appSettings.js', () => ({ getBotSettings: mockGetBotSettings }));
 const mockNotifyStaff = vi.fn();
 vi.mock('../src/services/staffNotify.js', () => ({ notifyStaff: mockNotifyStaff }));
 
 const { detectComplaint, detectCourierMessage, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, escalateConversation, isNonSalesHandoff, isNonSalesReason, mentionsDesign, mentionsQuantity, pickProfileGapQuestion } = await import('../src/services/escalationHandler.js');
 const { mergeOrderFacts } = await import('../src/domain/orderProfile.js');
-const { CANNED_COMPLAINT_REPLY, CANNED_ESCALATION_REPLY, ESCALATION_ASK_BUSINESS_NAME, ESCALATION_ASK_DESIGN, ESCALATION_ASK_NAME, ESCALATION_ASK_PRODUCT, ESCALATION_ASK_QUANTITY, ESCALATION_ASK_SIZE } = await import('../src/domain/constants.js');
+const { CANNED_COMPLAINT_REPLY, CANNED_ESCALATION_REPLY, ESCALATION_ASK_BUSINESS_NAME, ESCALATION_ASK_DESIGN, ESCALATION_ASK_NAME, ESCALATION_ASK_PRODUCT, ESCALATION_ASK_QUANTITY, ESCALATION_ASK_SIZE, escalationAskQuantity } = await import('../src/domain/constants.js');
 
 const CONVERSATION = { id: 'conv-1', contactId: 'contact-1', phoneNumberId: 'pn-1' } as Parameters<typeof escalateConversation>[0];
 
@@ -133,8 +135,19 @@ describe('pickProfileGapQuestion', () => {
   });
 
   // Review fix (Task 10 m5): no minimum in the question - each item's minimum is its own lowest tier.
-  it('asks the quantity in rim or pcs, with no fixed minimum', () => {
-    expect(ESCALATION_ASK_QUANTITY).toBe('Sambil menunggu, kira-kira mau pesan berapa banyak kak? (dalam rim atau pcs)');
+  it('states the fallback minimum in the quantity question', () => {
+    expect(ESCALATION_ASK_QUANTITY).toBe('Sambil menunggu, kira-kira mau pesan berapa banyak kak? (minimal 2.500 pcs / 5 rim)');
+  });
+
+  it('asks quantity with the configured minimum', () =>
+    expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '20x20x7' }] }), [], 1000)).toBe(escalationAskQuantity(1000)));
+
+  it('escalateConversation passes the configured minimum', async () => {
+    mockGetBotSettings.mockResolvedValueOnce({ fallbackMinPcs: 1200 });
+    mockGetContactProfile.mockResolvedValueOnce(P({ items: [{ product: 'box', size: '20x20x7' }] }));
+    mockSendText.mockClear();
+    await escalateConversation({ id: 'c1', phoneNumberId: 'pn-1' } as never, 'harga custom', '6281200007001', true);
+    expect(mockSendText.mock.calls[0][2]).toContain('minimal 1.200 pcs');
   });
 
   it('walks size, qty, design, business, name', () => {

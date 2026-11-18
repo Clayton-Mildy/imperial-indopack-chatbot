@@ -1,5 +1,7 @@
 import { updateConversationStatus, insertMessage, getLastNMessages } from '../repositories/conversations.js';
 import { getContactProfile } from '../repositories/contactProfiles.js';
+import { getBotSettings } from '../repositories/appSettings.js';
+import { FALLBACK_MIN_PCS } from '../domain/pricing.js';
 import { sendTextMessage } from './whatsappSender.js';
 import {
   CANNED_ESCALATION_REPLY,
@@ -7,7 +9,7 @@ import {
   ESCALATION_ASK_DESIGN,
   ESCALATION_ASK_NAME,
   ESCALATION_ASK_PRODUCT,
-  ESCALATION_ASK_QUANTITY,
+  escalationAskQuantity,
   ESCALATION_ASK_SIZE,
   MAX_CONTEXT_MESSAGES,
 } from '../domain/constants.js';
@@ -32,7 +34,7 @@ import { HANDOFF_LABEL, NO_SIGNALS, classifyHandoff, type HandoffCategory } from
 // times after "3 box", because the answer never reached the profile. Asking again is nagging; the
 // next rung, or nothing, is better. And a quantity or store name the customer already TYPED counts
 // as known even if the model never saved it.
-export function pickProfileGapQuestion(profile: ContactProfile | null, recent: RecentRow[] = []): string | null {
+export function pickProfileGapQuestion(profile: ContactProfile | null, recent: RecentRow[] = [], minPcs: number = FALLBACK_MIN_PCS): string | null {
   // A complaint or job hand-off stays free of sales questions for as long as the customer waits on
   // it - on the acks after it AND on a later hand-off in the same thread (UAT Run 3 E-06). One place,
   // so both hand-off paths ask the same.
@@ -45,11 +47,12 @@ export function pickProfileGapQuestion(profile: ContactProfile | null, recent: R
   const items = (Array.isArray(facts.items) ? facts.items : []) as OrderItem[];
   const text = (v: unknown) => typeof v === 'string' && v.trim() !== '';
 
+  const askQuantity = escalationAskQuantity(minPcs);
   const ladder: Array<[boolean, string]> = [
     [items.some((i) => i.product) || text(facts.business_type), ESCALATION_ASK_PRODUCT],
     [items.some((i) => i.size), ESCALATION_ASK_SIZE],
     [items.some((i) => i.qty !== undefined) || !hasNoFact(facts, QUANTITY_KEYS)
-      || recent.some((m) => m.role === 'user' && mentionsQuantity(m.body)), ESCALATION_ASK_QUANTITY],
+      || recent.some((m) => m.role === 'user' && mentionsQuantity(m.body)), askQuantity],
     [items.some((i) => i.has_design !== undefined) || typeof facts.has_design === 'boolean'
       || recent.some((m) => m.role === 'user' && mentionsDesign(m.body)), ESCALATION_ASK_DESIGN],
     [text(facts.business_name) || answeredStoreName(recent), ESCALATION_ASK_BUSINESS_NAME],
@@ -59,6 +62,12 @@ export function pickProfileGapQuestion(profile: ContactProfile | null, recent: R
     if (!known && fresh(question)) return question;
   }
   return null;
+}
+
+// The configured fallback minimum; the shipped value when the setting cannot be read, so a
+// settings hiccup never stops the hand-off message.
+async function minPcsSetting(): Promise<number> {
+  try { return (await getBotSettings()).fallbackMinPcs; } catch { return FALLBACK_MIN_PCS; }
 }
 
 type RecentRow = { role: string; body: string };
@@ -181,7 +190,7 @@ export async function escalateConversation(
     path: `/conversations/${conversation.id}`,
   });
 
-  const question = askProfileGap ? pickProfileGapQuestion(profile, recent) : null;
+  const question = askProfileGap ? pickProfileGapQuestion(profile, recent, await minPcsSetting()) : null;
   const reply = question ? `${lead} ${question}` : lead;
 
   let sentId: string | null = null;

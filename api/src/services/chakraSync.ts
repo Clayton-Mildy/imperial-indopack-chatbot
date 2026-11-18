@@ -54,6 +54,12 @@ export interface ChakraSyncOptions {
   maxChats?: number;
 }
 
+/** A scheduled sync is due once `minutes` have passed since the last start; 0 minutes = never. */
+export function shouldStartSync(lastStartMs: number | null, nowMs: number, minutes: number): boolean {
+  if (minutes <= 0) return false;
+  return lastStartMs === null || nowMs - lastStartMs >= minutes * 60_000;
+}
+
 let running: Promise<ChakraSyncResult> | null = null;
 
 export function isChakraSyncRunning(): boolean {

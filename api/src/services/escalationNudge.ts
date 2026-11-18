@@ -1,4 +1,5 @@
 import { listStaleEscalations } from '../repositories/conversations.js';
+import { getBotSettings } from '../repositories/appSettings.js';
 import { notifyStaff } from './staffNotify.js';
 
 /**
@@ -23,7 +24,9 @@ function waitedFor(since: Date): string {
   return hours < 24 ? `${hours} jam` : `${Math.floor(hours / 24)} hari`;
 }
 
-export async function nudgeStaleEscalations(afterMs: number): Promise<void> {
+export async function nudgeStaleEscalations(afterMs?: number): Promise<void> {
+  // Undefined: the team-reminder delay staff set in Pengaturan (read each sweep, so a change applies at once).
+  afterMs ??= (await getBotSettings()).teamReminderMinutes * 60_000;
   const stale = await listStaleEscalations(new Date(Date.now() - afterMs));
 
   // Anything no longer in the stale set has been answered, resolved or returned to the AI -
@@ -48,7 +51,7 @@ export async function nudgeStaleEscalations(afterMs: number): Promise<void> {
 export function scheduleEscalationNudge(afterMs: number, intervalMs: number): void {
   if (afterMs <= 0 || intervalMs <= 0) return;
   setInterval(() => {
-    void nudgeStaleEscalations(afterMs).catch((err) =>
+    void nudgeStaleEscalations().catch((err) =>
       console.warn('[escalationNudge] sweep failed:', err instanceof Error ? err.message : err)
     );
   }, intervalMs);

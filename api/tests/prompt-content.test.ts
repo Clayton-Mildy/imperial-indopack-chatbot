@@ -59,8 +59,9 @@ describe('Imperial Indopack prompt', () => {
 });
 
 describe('the facts each section must state', () => {
-  it('Identity: the bot is "Admin" until the client names it', () => {
-    expect(section('Identity')).toContain('Admin');
+  it('Identity: the name and first greeting come from PENGATURAN BOT, not from the text', () => {
+    expect(section('Identity')).toContain('PENGATURAN BOT');
+    expect(section('Identity')).not.toContain('Admin');
     expect(section('Identity')).not.toContain('Rina');
   });
 

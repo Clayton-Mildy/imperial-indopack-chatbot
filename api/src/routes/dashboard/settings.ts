@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
+import { poFormMessage } from '../../domain/constants.js';
 import { apiKeyAuth } from '../../middleware/apiKey.js';
 import {
   getDefaultPromptSections,
@@ -12,6 +13,9 @@ import {
   setLeadSilenceLostDays,
   getPoFormUrl,
   setPoFormUrl,
+  getBotSettings,
+  patchBotSettings,
+  PO_FORM_PLACEHOLDER_URL,
 } from '../../repositories/appSettings.js';
 
 const PromptSectionSchema = z.object({
@@ -107,7 +111,11 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
 
   // GET|PATCH /api/v1/settings/po-form-url - the link the bot sends when a customer agrees to a price
   app.get('/api/v1/settings/po-form-url', { preHandler: [apiKeyAuth] }, async (_request, reply) => {
-    return reply.send({ data: { url: await getPoFormUrl() }, error: null });
+    const url = await getPoFormUrl();
+    return reply.send({
+      data: { url, isPlaceholder: url === PO_FORM_PLACEHOLDER_URL, message: poFormMessage(url) },
+      error: null,
+    });
   });
 
   app.patch('/api/v1/settings/po-form-url', { preHandler: [apiKeyAuth] }, async (request, reply) => {
@@ -117,6 +125,20 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
     await setPoFormUrl(result.data.url);
     return reply.send({ data: { url: await getPoFormUrl() }, error: null });
+  });
+
+  // GET|PATCH /api/v1/settings/bot - name, signature, greeting, minimum order, reminder and sync interval
+  app.get('/api/v1/settings/bot', { preHandler: [apiKeyAuth] }, async (_request, reply) => {
+    return reply.send({ data: await getBotSettings(), error: null });
+  });
+
+  app.patch('/api/v1/settings/bot', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    try {
+      return reply.send({ data: await patchBotSettings(request.body ?? {}), error: null });
+    } catch (err) {
+      if (err instanceof ZodError) return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
+      throw err;
+    }
   });
 
   // GET /api/v1/settings/lead-silence-days

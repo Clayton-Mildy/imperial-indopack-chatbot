@@ -15,6 +15,8 @@ const mockListStale = vi.fn();
 const mockNotifyStaff = vi.fn();
 
 vi.mock('../src/repositories/conversations.js', () => ({ listStaleEscalations: mockListStale }));
+const mockGetBotSettings = vi.fn(async () => ({ teamReminderMinutes: 30 }));
+vi.mock('../src/repositories/appSettings.js', () => ({ getBotSettings: mockGetBotSettings }));
 vi.mock('../src/services/staffNotify.js', () => ({ notifyStaff: mockNotifyStaff }));
 
 const { nudgeStaleEscalations, resetNudgeState } = await import('../src/services/escalationNudge.js');
@@ -31,6 +33,16 @@ beforeEach(() => {
 });
 
 describe('nudgeStaleEscalations', () => {
+  it('without an argument uses the team-reminder minutes from settings', async () => {
+    mockGetBotSettings.mockResolvedValueOnce({ teamReminderMinutes: 10 });
+    mockListStale.mockResolvedValue([]);
+    const before = Date.now();
+    await nudgeStaleEscalations();
+    const cutoff = (mockListStale.mock.calls[0]![0] as Date).getTime();
+    expect(before - cutoff).toBeGreaterThanOrEqual(10 * 60_000 - 50);
+    expect(before - cutoff).toBeLessThan(10 * 60_000 + 2000);
+  });
+
   it('nudges an escalation that has been waiting, with how long and a deep link', async () => {
     mockListStale.mockResolvedValue([stale('conv-1', 45)]);
 

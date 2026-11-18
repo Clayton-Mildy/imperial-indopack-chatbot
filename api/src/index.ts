@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import { getConfig } from './config.js';
 import { buildApp } from './app.js';
-import { startChakraSync } from './services/chakraSync.js';
+import { startChakraSync, shouldStartSync } from './services/chakraSync.js';
+import { getBotSettings } from './repositories/appSettings.js';
 import { getFullCatalogBlock } from './services/ragQuery.js';
 import { warmPromptCache } from './services/aiLayer.js';
 import { scheduleEscalationNudge } from './services/escalationNudge.js';
@@ -43,16 +44,25 @@ const LEAD_INSIGHTS_BATCH = Number(process.env.LEAD_INSIGHTS_BATCH ?? 20);
 // The API is a long-lived service, so this needs no Windows Task Scheduler entry. The
 // watermark makes every run after the first backfill cheap.
 const FIRST_SYNC_DELAY_MS = 5 * 60_000;
+const SYNC_TICK_MS = 60_000;
 
+// Ticks every minute and starts a sync once the interval staff set in Pengaturan has passed since the
+// last one (0 there = off). CHAKRA_SYNC_INTERVAL_MS=0 or a non-chakra transport disables the schedule.
 function scheduleChakraSync(intervalMs: number): void {
-  if (intervalMs <= 0) return;
+  if (intervalMs <= 0 || getConfig().WHATSAPP_TRANSPORT !== 'chakra') return;
+  let lastStartMs: number | null = null;
   const tick = (): void => {
-    const { started, reason } = startChakraSync();
-    if (!started) console.log(`[chakraSync] scheduled run skipped: ${reason}`);
+    void (async () => {
+      const { whatsappSyncMinutes } = await getBotSettings();
+      if (!shouldStartSync(lastStartMs, Date.now(), whatsappSyncMinutes)) return;
+      const { started, reason } = startChakraSync();
+      if (started) lastStartMs = Date.now();
+      else console.log(`[chakraSync] scheduled run skipped: ${reason}`);
+    })().catch((err) => console.warn('[chakraSync] schedule tick failed:', err instanceof Error ? err.message : err));
   };
   setTimeout(() => {
     tick();
-    setInterval(tick, intervalMs);
+    setInterval(tick, SYNC_TICK_MS);
   }, FIRST_SYNC_DELAY_MS);
 }
 
