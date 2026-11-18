@@ -27,6 +27,19 @@ vi.mock('../src/services/embeddings.js', () => ({
   refreshEmbeddingsSequential: vi.fn(async () => {}),
   refreshEmbeddingAsync: vi.fn(),
 }));
+// The real replaceVariantTiers, except that the rollback test can make its Nth call throw.
+const tierFault = vi.hoisted(() => ({ failAtCall: 0, calls: 0 }));
+vi.mock('../src/repositories/priceTiers.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/repositories/priceTiers.js')>();
+  return {
+    ...actual,
+    replaceVariantTiers: async (...args: Parameters<typeof actual.replaceVariantTiers>) => {
+      tierFault.calls++;
+      if (tierFault.failAtCall > 0 && tierFault.calls === tierFault.failAtCall) throw new Error('injected tier failure');
+      return actual.replaceVariantTiers(...args);
+    },
+  };
+});
 
 const { catalogProductRoutes } = await import('../src/routes/dashboard/catalogProducts.js');
 const { catalogRoutes } = await import('../src/routes/dashboard/catalog.js');
@@ -150,14 +163,23 @@ describe('product editor routes', () => {
     expect(twin.statusCode).toBe(400);
     expect(twin.json().details).toEqual([{ code: 'tier_order', sizeIndex: 0, tierIndex: 1 }]);
 
-    // A fractional price never reaches the database CHECK or replaceVariantTiers.
+    // A fractional price never reaches the database CHECK or replaceVariantTiers, and the form learns which field.
     const frac = await post({ draft: draft({ name: `${P}Pecahan`, sizes: [{ size: '30x30', tiers: [tier(5, 1500.5)] }] }), ...ACTOR });
     expect(frac.statusCode).toBe(400);
-    expect(frac.json().error).toBe('VALIDATION_ERROR');
+    expect(frac.json()).toEqual({ data: null, error: 'VALIDATION_ERROR', details: [{ code: 'price_invalid', sizeIndex: 0, tierIndex: 0 }] });
 
+    // Above the integer min_qty column (and the business cap): a 400, not a 500 from the INSERT.
+    const huge = await post({ draft: draft({ name: `${P}Raksasa`, sizes: [{ size: '30x30', tiers: [tier(3_000_000_000, 185000)] }] }), ...ACTOR });
+    expect(huge.statusCode).toBe(400);
+    expect(huge.json()).toEqual({ data: null, error: 'VALIDATION_ERROR', details: [{ code: 'qty_invalid', sizeIndex: 0, tierIndex: 0 }] });
+
+    // Over-long text, and a missing or over-long staff name: a 400 before anything is written.
+    expect((await post({ draft: draft({ name: `${P}${'x'.repeat(5000)}` }), ...ACTOR })).statusCode).toBe(400);
+    expect((await post({ draft: draft({ name: `${P}Ukuran Panjang`, sizes: [{ size: '3'.repeat(5000), tiers: [tier(5, 185000)] }] }), ...ACTOR })).statusCode).toBe(400);
     expect((await post({ draft: draft({ name: `${P}Tanpa Staf` }) })).statusCode).toBe(400);
-    const made = await getDb().select().from(products).where(inArray(products.name, [`${P}Urutan`, `${P}Kembar`, `${P}Pecahan`, `${P}Tanpa Staf`]));
-    expect(made).toEqual([]);
+    expect((await post({ draft: draft({ name: `${P}Staf Panjang` }), staffName: 'A'.repeat(101) })).statusCode).toBe(400);
+    const made = await getDb().select().from(products).where(ilike(products.name, `${P}%`));
+    expect(made.map((p) => p.name)).toEqual([NAME]);
   });
 
   it('409 NAME_TAKEN for a second product with the same name in other case', async () => {
@@ -256,6 +278,92 @@ describe('product editor routes', () => {
     await db.insert(leads).values({ contactId: c!.id, status: 'won', items: [{ product: USAGE_NAME, size: '21x14x5', qty: 3000, qty_unit: 'pcs' }] });
 
     expect((await get(pid)).usage).toEqual({ quotedLast30Days: 1, wonLeads: 1 });
+  });
+
+  describe('save paths', () => {
+    const SAVE_NAME = `${P}Box Simpan`;
+    const pcsTier = (minQty: number, priceIdr: number) => tier(minQty, priceIdr, 'pcs', 'pcs', true);
+    const A = { size: '20 x 20 x 7 cm', tiers: [pcsTier(2500, 1900), pcsTier(5000, 1700)] };
+    const B = { size: '25 x 25 x 8 cm', tiers: [pcsTier(2500, 2100)] };
+    const C = { size: '30 x 30 x 10 cm', tiers: [pcsTier(2500, 2500)] };
+    const D = { size: '16 x 16 x 6 cm', tiers: [pcsTier(2500, 1500), pcsTier(5000, 1400)] };
+    const boxDraft = (sizes: object[], name = SAVE_NAME) =>
+      draft({ brand: 'imperial_indopack', name, gsm: '270 gsm', print: 'Full color', finishing: null, use: 'box kue', sizes });
+    const variantRows = (ids: string[]) => getDb().select().from(productVariants).where(inArray(productVariants.id, ids));
+    const tierRows = (ids: string[]) => getDb().select().from(variantPriceTiers).where(inArray(variantPriceTiers.variantId, ids));
+    let boxId: string;
+    let a: string, b: string, c: string, d: string;
+
+    it('removing a size in a PUT deletes its variant and its tiers', async () => {
+      const created = await post({ draft: boxDraft([A, B, C]), ...ACTOR });
+      expect(created.statusCode).toBe(201);
+      boxId = created.json().data.id;
+      productIds.add(boxId);
+      [a, b, c] = created.json().data.sizes.map((s: { id: string }) => s.id);
+
+      const res = await put(boxId, { draft: boxDraft([{ ...A, id: a }, { ...B, id: b }]), ...ACTOR });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.sizes.map((s: { id: string }) => s.id)).toEqual([a, b]);
+      expect(await variantRows([c])).toEqual([]);
+      expect(await tierRows([c])).toEqual([]);
+      expect(await tierRows([a])).toHaveLength(2);
+      expect((await get(boxId)).history[0].changes).toEqual([{ kind: 'size_removed', size: C.size }]);
+    });
+
+    it('adding a size in an update inserts it after the kept ones', async () => {
+      const res = await put(boxId, { draft: boxDraft([{ ...A, id: a }, { ...B, id: b }, D]), ...ACTOR });
+      expect(res.statusCode).toBe(200);
+      const sizes = res.json().data.sizes as { id: string; size: string; tiers: unknown[] }[];
+      expect(sizes.map((s) => s.size)).toEqual([A.size, B.size, D.size]);
+      expect(sizes.slice(0, 2).map((s) => s.id)).toEqual([a, b]);
+      d = sizes[2]!.id;
+      expect([a, b, c]).not.toContain(d);
+      expect(sizes[2]!.tiers).toHaveLength(2);
+      const [row] = await variantRows([d]);
+      expect(row!.priceIdr).toBe('1500');
+      expect((await get(boxId)).history[0].changes).toEqual([{ kind: 'size_added', size: D.size }]);
+    });
+
+    it('two sizes trade names in one save, each keeping its id and tiers', async () => {
+      const res = await put(boxId, { draft: boxDraft([{ ...A, id: a, size: B.size }, { ...B, id: b, size: A.size }, { ...D, id: d }]), ...ACTOR });
+      expect(res.statusCode).toBe(200);
+      const byId = new Map((await variantRows([a, b])).map((v) => [v.id, v.name]));
+      expect(byId.get(a)).toBe(B.size);
+      expect(byId.get(b)).toBe(A.size);
+      const tiers = await tierRows([a, b]);
+      expect(tiers.filter((t) => t.variantId === a)).toHaveLength(2);
+      expect(tiers.filter((t) => t.variantId === b)).toHaveLength(1);
+      expect((await get(boxId)).history[0].changes).toEqual([
+        { kind: 'size_renamed', from: A.size, to: B.size },
+        { kind: 'size_renamed', from: B.size, to: A.size },
+      ]);
+    });
+
+    it('a failure while writing the second size\'s tiers rolls the whole save back', async () => {
+      const before = await get(boxId);
+      tierFault.calls = 0;
+      tierFault.failAtCall = 2;
+      try {
+        const res = await put(boxId, {
+          draft: boxDraft(
+            [
+              { id: a, size: B.size, tiers: [pcsTier(2500, 1850), pcsTier(5000, 1700)] },
+              { id: b, size: '25 x 25 x 9 cm', tiers: [pcsTier(2500, 2050)] },
+              { ...D, id: d },
+            ],
+            `${SAVE_NAME} Baru`
+          ),
+          ...ACTOR,
+        });
+        expect(res.statusCode).toBe(500);
+        expect(tierFault.calls).toBe(2);
+      } finally {
+        tierFault.failAtCall = 0;
+      }
+      const after = await get(boxId);
+      expect(after.product).toEqual(before.product); // name, first size's tiers, renames, updatedAt
+      expect(after.history).toEqual(before.history);
+    });
   });
 
   it('the catalog routes still invalidate the bot\'s catalog on a write', async () => {

@@ -17,7 +17,6 @@ import { lowestTier, toPcs, type PriceTier, type QtyUnit } from '../domain/prici
 import { formatProductSpec, parseProductSpec } from '../domain/productSpec.js';
 import { listTiersByVariant, replaceVariantTiers } from '../repositories/priceTiers.js';
 import { recordCatalogChange } from '../repositories/catalogAudit.js';
-import { getBrandRowsBySlug } from '../repositories/products.js';
 import { refreshEmbeddingAsync } from './embeddings.js';
 import { invalidateCatalogCache } from './ragQuery.js';
 
@@ -25,30 +24,40 @@ import { invalidateCatalogCache } from './ragQuery.js';
 
 const UnitSchema = z.enum(['rim', 'pcs']);
 
-// Quantities and prices are whole and positive here already, so a bad number is a 400 at the route and
-// never reaches the tier CHECK constraints or replaceVariantTiers' whole-rupiah guard. null = not filled
-// in yet; validateProductDraft names it by index.
+/** Business caps on one tier. min_qty is a Postgres integer (max 2,147,483,647); this stays far below it. */
+export const MAX_TIER_QTY = 10_000_000;
+/** Rp per pcs or per rim. price_idr is numeric, so this is a sanity cap that keeps every total a safe integer. */
+export const MAX_TIER_PRICE_IDR = 1_000_000_000;
+/** Text caps: a huge name or size would otherwise fail its unique btree index with a 500. */
+export const MAX_TEXT_LENGTH = 200;
+export const MAX_USE_LENGTH = 500;
+
+// Any finite number (or null = not filled in yet) gets through the schema, so that a fractional, zero,
+// negative or out-of-range quantity or price comes back from validateProductDraft by size and tier index -
+// the form can mark the field - instead of as a bare schema 400. Nothing unchecked reaches the database.
 const DraftTierSchema = z.object({
-  minQty: z.number().int().positive().nullable(),
+  minQty: z.number().nullable(),
   qtyUnit: UnitSchema,
-  priceIdr: z.number().int().positive().nullable(),
+  priceIdr: z.number().nullable(),
   priceUnit: UnitSchema,
   includesDelivery: z.boolean(),
 });
 
+const shortText = z.string().max(MAX_TEXT_LENGTH);
+
 export const ProductDraftSchema = z.object({
   brand: z.enum(['kertas_supreme', 'imperial_indopack']),
-  name: z.string(),
-  gsm: z.string().nullable(),
-  print: z.string().nullable(),
-  finishing: z.string().nullable(),
-  use: z.string(),
+  name: shortText,
+  gsm: shortText.nullable(),
+  print: shortText.nullable(),
+  finishing: shortText.nullable(),
+  use: z.string().max(MAX_USE_LENGTH),
   isActive: z.boolean(),
   sizes: z.array(
     z.object({
       // The variant id from GET; absent (or null) for a size added in the form.
       id: z.string().uuid().nullish(),
-      size: z.string(),
+      size: shortText,
       tiers: z.array(DraftTierSchema),
     })
   ),
@@ -74,7 +83,9 @@ export type ProductInputErrorCode =
   | 'duplicate_size'
   | 'no_tiers'
   | 'qty_missing'
+  | 'qty_invalid'
   | 'price_missing'
+  | 'price_invalid'
   | 'duplicate_tier'
   | 'tier_order';
 
@@ -84,15 +95,18 @@ export interface ProductInputError {
   tierIndex?: number;
 }
 
-const isWholePositive = (n: number | null): n is number => n !== null && Number.isSafeInteger(n) && n > 0;
+/** null = missing; anything but a whole number from 1 to `max` = invalid. */
+const checkWhole = (n: number | null, max: number): 'ok' | 'missing' | 'invalid' =>
+  n === null ? 'missing' : Number.isSafeInteger(n) && n > 0 && n <= max ? 'ok' : 'invalid';
 const optionalText = (v: string | null): string | null => v?.trim() || null;
 const tierKey = (t: { minQty: number; qtyUnit: QtyUnit }): string => `${t.minQty} ${t.qtyUnit}`;
 
 /**
- * Trimmed, checked input, or every problem by size and tier index. A quantity or price that is null
- * (or, from a caller that skipped the schema, not a whole positive number) is "missing". Tiers must rise
- * strictly in pcs in the order given: "5 rim" then "2500 pcs" is one threshold twice and is tier_order,
- * reported once per size on the first offending tier; the very same (minQty, unit) twice is duplicate_tier.
+ * Trimmed, checked input, or every problem by size and tier index. A quantity or price that is null is
+ * "missing"; one that is fractional, zero, negative or above MAX_TIER_QTY / MAX_TIER_PRICE_IDR is
+ * "invalid". Tiers must rise strictly in pcs in the order given: "5 rim" then "2500 pcs" is one threshold
+ * twice and is tier_order, reported once per size on the first offending tier; the very same
+ * (minQty, unit) twice is duplicate_tier. Order and duplicates are judged on valid quantities only.
  */
 export function validateProductDraft(d: ProductDraft): { ok: true; input: ProductInput } | { ok: false; errors: ProductInputError[] } {
   const errors: ProductInputError[] = [];
@@ -119,11 +133,11 @@ export function validateProductDraft(d: ProductDraft): { ok: true; input: Produc
     let orderReported = false;
     const tiers: PriceTier[] = [];
     s.tiers.forEach((t, tierIndex) => {
-      const qtyOk = isWholePositive(t.minQty);
-      const priceOk = isWholePositive(t.priceIdr);
-      if (!qtyOk) errors.push({ code: 'qty_missing', sizeIndex, tierIndex });
-      if (!priceOk) errors.push({ code: 'price_missing', sizeIndex, tierIndex });
-      if (!qtyOk) return;
+      const qty = checkWhole(t.minQty, MAX_TIER_QTY);
+      const price = checkWhole(t.priceIdr, MAX_TIER_PRICE_IDR);
+      if (qty !== 'ok') errors.push({ code: qty === 'missing' ? 'qty_missing' : 'qty_invalid', sizeIndex, tierIndex });
+      if (price !== 'ok') errors.push({ code: price === 'missing' ? 'price_missing' : 'price_invalid', sizeIndex, tierIndex });
+      if (qty !== 'ok') return;
       const key = tierKey({ minQty: t.minQty!, qtyUnit: t.qtyUnit });
       if (seenTiers.has(key)) {
         errors.push({ code: 'duplicate_tier', sizeIndex, tierIndex });
@@ -136,7 +150,7 @@ export function validateProductDraft(d: ProductDraft): { ok: true; input: Produc
         orderReported = true;
       }
       highestPcs = Math.max(highestPcs, pcs);
-      if (priceOk) tiers.push({ minQty: t.minQty!, qtyUnit: t.qtyUnit, priceIdr: t.priceIdr!, priceUnit: t.priceUnit, includesDelivery: t.includesDelivery });
+      if (price === 'ok') tiers.push({ minQty: t.minQty!, qtyUnit: t.qtyUnit, priceIdr: t.priceIdr!, priceUnit: t.priceUnit, includesDelivery: t.includesDelivery });
     });
     return { ...(s.id ? { id: s.id } : {}), size, tiers };
   });
@@ -384,8 +398,11 @@ async function assertNameFree(tx: DbOrTx, name: string, exceptId?: string): Prom
   if (taken.length > 0) throw new ProductNameTakenError(name);
 }
 
+/** The brand row for a slug (by name, case-insensitive, first by name as getBrandRowsBySlug picks), read
+ *  inside the save's transaction; created when missing. */
 async function brandIdFor(tx: DbOrTx, brand: BrandSlug): Promise<string> {
-  const existing = (await getBrandRowsBySlug())[brand];
+  const rows = await tx.select({ id: brands.id, name: brands.name }).from(brands).orderBy(asc(brands.name));
+  const existing = rows.find((b) => brandSlugOfName(b.name) === brand);
   if (existing) return existing.id;
   const [made] = await tx.insert(brands).values({ name: BRAND_NAME[brand] }).onConflictDoNothing().returning({ id: brands.id });
   if (made) return made.id;

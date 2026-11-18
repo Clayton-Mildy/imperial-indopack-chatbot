@@ -22,7 +22,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Who is acting: the dashboard sends the signed-in staff member from its session.
 const ActorFields = {
   staffId: z.string().uuid().nullish(),
-  staffName: z.string().trim().min(1),
+  staffName: z.string().trim().min(1).max(100),
 };
 const SaveBodySchema = z.object({ draft: ProductDraftSchema, ...ActorFields });
 const ActiveBodySchema = z.object({ isActive: z.boolean(), ...ActorFields });

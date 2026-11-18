@@ -4,6 +4,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  MAX_TEXT_LENGTH,
+  MAX_TIER_PRICE_IDR,
+  MAX_TIER_QTY,
   ProductDraftSchema,
   validateProductDraft,
   diffProduct,
@@ -77,6 +80,29 @@ describe('validateProductDraft', () => {
     });
   });
 
+  it('a fractional, zero, negative or out-of-range number is invalid, not missing, by index', () => {
+    const bad = [T(2.5), T(0), T(-5), T(3_000_000_000), T(MAX_TIER_QTY + 1), T(5, 1500.5), T(6, 0), T(7, -1000), T(8, MAX_TIER_PRICE_IDR + 1)];
+    expect(validateProductDraft(DRAFT({ sizes: [S('30x30', bad)] }))).toEqual({
+      ok: false,
+      errors: [
+        { code: 'qty_invalid', sizeIndex: 0, tierIndex: 0 },
+        { code: 'qty_invalid', sizeIndex: 0, tierIndex: 1 },
+        { code: 'qty_invalid', sizeIndex: 0, tierIndex: 2 },
+        { code: 'qty_invalid', sizeIndex: 0, tierIndex: 3 },
+        { code: 'qty_invalid', sizeIndex: 0, tierIndex: 4 },
+        { code: 'price_invalid', sizeIndex: 0, tierIndex: 5 },
+        { code: 'price_invalid', sizeIndex: 0, tierIndex: 6 },
+        { code: 'price_invalid', sizeIndex: 0, tierIndex: 7 },
+        { code: 'price_invalid', sizeIndex: 0, tierIndex: 8 },
+      ],
+    });
+  });
+
+  it('accepts the caps themselves', () => {
+    const r = validateProductDraft(DRAFT({ sizes: [S('30x30', [T(MAX_TIER_QTY, MAX_TIER_PRICE_IDR)])] }));
+    expect(r.ok).toBe(true);
+  });
+
   it('trims names and sizes, empties a blank spec field, and returns PriceTiers', () => {
     const r = validateProductDraft(DRAFT({ name: '  Kertas Contoh  ', gsm: '  ', print: ' 1 warna ', sizes: [S(' 30 x 30 cm ', [T(5, 185000), T(10, 165000)], 'id-1')] }));
     expect(r).toEqual({
@@ -100,10 +126,22 @@ describe('ProductDraftSchema', () => {
     expect(ProductDraftSchema.safeParse(body({ minQty: null, priceIdr: null })).success).toBe(true);
   });
 
-  it('refuses a fractional or non-positive quantity or price (whole rupiah only)', () => {
-    for (const t of [{ priceIdr: 1500.5 }, { priceIdr: 0 }, { priceIdr: -1000 }, { minQty: 2.5 }, { minQty: 0 }, { qtyUnit: 'box' }]) {
+  it('lets any finite number through, so validateProductDraft can name the bad field', () => {
+    for (const t of [{ priceIdr: 1500.5 }, { priceIdr: 0 }, { priceIdr: -1000 }, { minQty: 2.5 }, { minQty: 3_000_000_000 }]) {
+      expect(ProductDraftSchema.safeParse(body(t)).success, JSON.stringify(t)).toBe(true);
+    }
+  });
+
+  it('refuses a non-number, an unknown unit, and an over-long text', () => {
+    const long = 'x'.repeat(MAX_TEXT_LENGTH + 1);
+    for (const t of [{ priceIdr: '1500' }, { minQty: Number.POSITIVE_INFINITY }, { qtyUnit: 'box' }]) {
       expect(ProductDraftSchema.safeParse(body(t)).success, JSON.stringify(t)).toBe(false);
     }
+    for (const over of [{ name: long }, { gsm: long }, { print: long }, { finishing: long }, { use: 'x'.repeat(501) }]) {
+      expect(ProductDraftSchema.safeParse({ ...DRAFT(), ...over }).success, Object.keys(over)[0]).toBe(false);
+    }
+    expect(ProductDraftSchema.safeParse({ ...DRAFT(), sizes: [S(long, [T(5)])] }).success).toBe(false);
+    expect(ProductDraftSchema.safeParse({ ...DRAFT(), name: 'x'.repeat(MAX_TEXT_LENGTH) }).success).toBe(true);
   });
 
   it('refuses a brand that is not one of the two', () => {
