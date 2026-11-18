@@ -20,7 +20,7 @@ import type { BrandSlug, OrderItem } from '../domain/orderProfile.js';
  * whose turn ended in a fixed hand-off, nor one where the model just left them out: the 6 Okt
  * leads list was mostly dashes, including a "Proyek" customer asking for a Dorma floor hinge.
  *
- * It only ever FILLS. customer_type decides which price the bot may quote, and whatever the live
+ * It only ever FILLS. whatever the live
  * bot wrote was read mid-conversation with the catalog in view, so neither is overwritten.
  * Hot/Cold is the exception: it is a reading of where the chat stands now, so the latest wins.
  *
@@ -125,7 +125,7 @@ async function askModel(system: string, content: string, label: string): Promise
   return response.content[0]?.type === 'text' ? response.content[0].text : '';
 }
 
-const ORDER_PROMPT = `Kamu membaca percakapan WhatsApp antara pelanggan dan tim penjualan Legacy (distributor hardware). Setiap pesan Pelanggan diberi nomor, mis. [3]; pesan Staf dan Bot hanya konteks.
+const ORDER_PROMPT = `Kamu membaca percakapan WhatsApp antara pelanggan dan tim penjualan Imperial Indopack / Kertas Supreme (box karton dan kertas bungkus makanan cetak). Setiap pesan Pelanggan diberi nomor, mis. [3]; pesan Staf dan Bot hanya konteks.
 
 Sebutkan nomor SETIAP pesan Pelanggan yang MEMESAN barang: pelanggan menyatakan memesan / mengambil / membeli barang tertentu dengan jumlahnya, mis. "Pesan Meteran F92 5mtr=1# Kuas cat 1=1#", "Mau pesan 20 pcs yg silver", "oke saya ambil 2 lusin". Pelanggan lama yang memesan berulang kali: sebutkan setiap pesanannya.
 
