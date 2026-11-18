@@ -1242,15 +1242,15 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
     return;
   }
 
-  // A document with no caption is almost always an invoice, a PO, a transfer receipt or a list -
-  // paperwork for a person, and nothing the model can read. It used to go to the model as the
+  // A document with no caption is a file for a person - for this printer usually a design, otherwise a
+  // PO, an invoice or a list - and nothing the model can read. It used to go to the model as the
   // placeholder "[Pelanggan mengirim dokumen]", which answered some earlier question instead, or
   // told the customer to ask about products only (UAT F-22). Hand it to the team, no sales question.
   if (isDocument && !payload.text?.trim()) {
     const name = payload.media?.filename;
     const reason = `Pelanggan mengirim dokumen tanpa keterangan${name ? `: ${name}` : ''} - mohon dicek tim.`;
-    // Paperwork for a person, like the non-sales topics: same category.
-    await escalateConversation(conversation, reason, replyJid, false, phoneNumber, undefined, classifyHandoff({ ...NO_SIGNALS, nonSales: true }, reason));
+    // Perlu Tim's Desain masuk: "Pelanggan mengirim logo atau file" (controller ruling, Plan 2 Task 3).
+    await escalateConversation(conversation, reason, replyJid, false, phoneNumber, undefined, classifyHandoff({ ...NO_SIGNALS, designReceived: true }, reason));
     return;
   }
 

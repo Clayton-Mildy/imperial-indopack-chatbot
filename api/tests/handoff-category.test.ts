@@ -142,6 +142,25 @@ describe('handoff category in the database', () => {
     expect(await findConversationById(conv.id)).toMatchObject({ status: 'active', assignedAgent: null });
   });
 
+  // "Kembalikan ke AI" is PATCH {status:'active'}. The router answers only a chat that is not held and
+  // has no assignee (fireTextDebounce/runPhotoTurn/routeInboundBaileysMessage gates), so after a staff
+  // reply the PATCH must leave both behind, or the bot never answers this customer again.
+  it('Kembalikan ke AI after a staff reply gives the chat back to the bot', async () => {
+    const app = Fastify();
+    await app.register(conversationRoutes);
+    await escalateConversation(conv, 'ukuran 22x22x7 tidak ada di katalog', WA, false, phone, undefined, 'harga_custom');
+    await markHumanTakeover(conv.id, 'Admin QA');
+    expect(await findConversationById(conv.id)).toMatchObject({ status: 'needs_human', assignedAgent: 'Admin QA' });
+
+    const res = await app.inject({ method: 'PATCH', url: `/api/v1/conversations/${conv.id}`, payload: { status: 'active' } });
+    expect(res.statusCode).toBe(200);
+    const after = await findConversationById(conv.id);
+    expect(after).toMatchObject({ status: 'active', assignedAgent: null, handoffCategory: null, escalationReason: null });
+    const botAnswers = !['needs_human', 'resolved'].includes(after!.status) && after!.assignedAgent === null;
+    expect(botAnswers).toBe(true);
+    await app.close();
+  });
+
   it('/new clears the category and the assignee', async () => {
     await escalateConversation(conv, 'Pelanggan minta bicara dengan admin', WA, false, phone, undefined, 'minta_orang');
     await markHumanTakeover(conv.id, 'Admin QA');

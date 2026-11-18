@@ -1224,7 +1224,8 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation).toHaveBeenCalledTimes(1);
     expect(mockEscalateConversation.mock.calls[0][1]).toContain('Invoice-INV-2026-0613.pdf');
     expect(mockEscalateConversation.mock.calls[0][3]).toBe(false); // no sales question
-    expect(mockEscalateConversation.mock.calls[0][6]).toBe('bukan_pembeli'); // paperwork, like the non-sales topics
+    // For a printer an uncaptioned file is a design: "Desain masuk: Pelanggan mengirim logo atau file".
+    expect(mockEscalateConversation.mock.calls[0][6]).toBe('desain_masuk');
   });
 
   it('still lets a captioned document reach the model', async () => {
