@@ -18,7 +18,7 @@ const { leadRoutes } = await import('../src/routes/dashboard/leads.js');
 const { settingsRoutes } = await import('../src/routes/dashboard/settings.js');
 const { catalogRoutes } = await import('../src/routes/dashboard/catalog.js');
 const { getLeadReopenAfterDays } = await import('../src/repositories/appSettings.js');
-const { mergeLeadOrderFields, resetLeadsForContact, getLeadById } = await import('../src/repositories/leads.js');
+const { applyLeadOrderSnapshot, resetLeadsForContact, getLeadById } = await import('../src/repositories/leads.js');
 const { getFullCatalogBlock } = await import('../src/services/ragQuery.js');
 const { buildLeadsSheet } = await import('../src/services/leadsExport.js');
 
@@ -114,7 +114,7 @@ describe('leads API for Imperial Indopack', () => {
     expect(res.json().data.items).toHaveLength(1);
     expect(res.json().data.orderFieldsSetAt).not.toBeNull();
 
-    await mergeLeadOrderFields(leadA, { brands: ['imperial_indopack'], items: [{ product: 'Box Nasi', size: '10x10x5' }] });
+    await applyLeadOrderSnapshot(leadA, { brands: ['imperial_indopack'], items: [{ product: 'Box Nasi', size: '10x10x5' }] });
     const after = await getLeadById(leadA);
     expect(after!.brands).toEqual(['kertas_supreme']);
     expect(after!.items.map((i) => i.product)).toEqual(['Kertas Supreme 64 gsm']);
@@ -147,7 +147,7 @@ describe('leads API for Imperial Indopack', () => {
   it('/new clears the lock, so the lead pass can merge again', async () => {
     await resetLeadsForContact(contactA);
     expect((await getLeadById(leadA))!.orderFieldsSetAt).toBeNull();
-    await mergeLeadOrderFields(leadA, { brands: ['imperial_indopack'], items: [] });
+    await applyLeadOrderSnapshot(leadA, { brands: ['imperial_indopack'], items: [] });
     expect((await getLeadById(leadA))!.brands.sort()).toEqual(['imperial_indopack', 'kertas_supreme']);
   });
 

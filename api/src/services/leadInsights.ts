@@ -6,7 +6,7 @@ import { getLeadReopenAfterDays, getLeadSilenceLostDays } from '../repositories/
 import { canAdvance, matchEvidence, hasPriceFigure, parseLeadKind, parseLostReason } from '../domain/leadStages.js';
 import type { Lead, LeadKind, LeadStatus, LeadTemperature, LostReason } from '../domain/types.js';
 import { fillContactProfileGaps } from '../repositories/contactProfiles.js';
-import { applyAiLeadUpdate, applyLeadStage, closeSilentLeads, findCurrentLeadForContact, getLeadLifecycleStart, mergeLeadOrderFields, recordLeadOrders, reopenOrRenewLostLead, type LeadStageChange } from '../repositories/leads.js';
+import { applyAiLeadUpdate, applyLeadStage, closeSilentLeads, findCurrentLeadForContact, getLeadLifecycleStart, applyLeadOrderSnapshot, recordLeadOrders, reopenOrRenewLostLead, type LeadStageChange } from '../repositories/leads.js';
 import { parseTemperature } from './conversationInsights.js';
 import type { Message } from '../domain/types.js';
 import type { BrandSlug, OrderItem } from '../domain/orderProfile.js';
@@ -444,7 +444,7 @@ async function applyPlan(contactId: string, plan: InsightsPlan): Promise<void> {
       // again when a step above changed it, so a Lost from this very pass counts.
       const target = lead && !stageWritten ? lead : await findCurrentLeadForContact(contactId);
       if (target && target.kind === 'lead' && target.status !== 'lost') {
-        await mergeLeadOrderFields(target.id, { brands: step.brands, items: step.items });
+        await applyLeadOrderSnapshot(target.id, { brands: step.brands, items: step.items });
       }
     } else {
       await applyAiLeadUpdate(contactId, { temperature: step.value });

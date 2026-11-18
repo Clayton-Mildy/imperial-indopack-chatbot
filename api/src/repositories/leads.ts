@@ -2,7 +2,7 @@ import { eq, and, or, ilike, inArray, desc, asc, gte, lt, sql, type SQL, type An
 import { getDb } from '../db/client.js';
 import { leads, contacts, contactProfiles, leadOrders, staffProfiles } from '../db/schema.js';
 import { canAdvance, kindFromNonSalesTopic } from '../domain/leadStages.js';
-import { mergeOrderFacts, type BrandSlug, type OrderItem } from '../domain/orderProfile.js';
+import { itemKey, mergeOrderFacts, type BrandSlug, type OrderItem } from '../domain/orderProfile.js';
 import { insertLeadEvent, messageTimeSql } from './leadEvents.js';
 import type {
   LeadActor,
@@ -1265,22 +1265,32 @@ export async function closeSilentLeads(
 }
 
 /**
- * Adds brands and items the chat revealed to the lead, never replacing: brands are a union, items
- * are matched by product + size (mergeOrderFacts, the same rules as the contact profile). The row
- * is locked while it is read and written, so two passes cannot lose each other's items.
+ * Writes what one lead pass read of the chat. Brands are a union. Items are the pass's snapshot: each
+ * pass reads the whole transcript and returns the full list, so merging them additively collected
+ * near-duplicates ("kertas nasi" 30x30 in one pass, "Kertas Supreme 64 gsm" 30x30 in the next - two
+ * lines). The snapshot replaces the items, each keeping the fields it does not restate from the same
+ * item (product + size, mergeOrderFacts' key) already on the lead. An empty snapshot keeps the items:
+ * a pass that read nothing must not wipe them. A lead staff set by hand (order_fields_set_at) is left
+ * alone. The row is locked while it is read and written, so two passes cannot interleave.
  */
-export async function mergeLeadOrderFields(
+export async function applyLeadOrderSnapshot(
   leadId: string,
-  add: { brands: BrandSlug[]; items: OrderItem[] },
+  snapshot: { brands: BrandSlug[]; items: OrderItem[] },
 ): Promise<void> {
   await getDb().transaction(async (tx) => {
     const [row] = await tx.select({ brands: leads.brands, items: leads.items, lockedAt: leads.orderFieldsSetAt }).from(leads).where(eq(leads.id, leadId)).for('update');
     if (!row || row.lockedAt) return; // staff set these by hand: the AI no longer adds to them
-    const merged = mergeOrderFacts({ brands: row.brands, items: row.items }, { brands: add.brands, items: add.items });
-    await tx.update(leads).set({
-      brands: merged['brands'] as string[],
-      items: merged['items'] as unknown[],
-      updatedAt: new Date(),
-    }).where(eq(leads.id, leadId));
+    const brands = mergeOrderFacts({ brands: row.brands }, { brands: snapshot.brands })['brands'] as string[];
+    const fresh = mergeOrderFacts({}, { items: snapshot.items })['items'] as OrderItem[];
+    let items = row.items as unknown[];
+    if (fresh.length > 0) {
+      // The old item under each fresh key, patched with what the pass read (mergeOrderFacts' item rules).
+      const old = (Array.isArray(row.items) ? row.items : []) as OrderItem[];
+      items = fresh.map((item) => {
+        const prior = old.find((o) => o && typeof o === 'object' && itemKey(o) === itemKey(item));
+        return prior ? (mergeOrderFacts({ items: [prior] }, { items: [item] })['items'] as OrderItem[])[0]! : item;
+      });
+    }
+    await tx.update(leads).set({ brands, items, updatedAt: new Date() }).where(eq(leads.id, leadId));
   });
 }

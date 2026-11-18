@@ -28,7 +28,7 @@ vi.mock('../src/repositories/leads.js', () => ({
   findCurrentLeadForContact: vi.fn(async () => null),
   applyLeadStage: vi.fn(async () => false),
   reopenOrRenewLostLead: vi.fn(),
-  mergeLeadOrderFields: mockMerge,
+  applyLeadOrderSnapshot: mockMerge,
 }));
 vi.mock('../src/repositories/conversations.js', () => ({
   getLastNMessages: vi.fn(), listConversationsDueForInsights: vi.fn(), markInsightsExtracted: vi.fn(),

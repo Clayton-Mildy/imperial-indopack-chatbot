@@ -87,7 +87,7 @@ describe('lead-insights pass', () => {
     await db.execute(sql`DELETE FROM leads WHERE contact_id = ${contactId} AND id <> ${leadId}`);
     await db.execute(sql`UPDATE leads SET brands = '{}', items = '[]'::jsonb, lead_temperature = NULL, status = 'new', kind = 'lead', kind_set_by = NULL,
       lost_reason = NULL, outcome_evidence = NULL, outcome_message_id = NULL, closed_at = NULL, human_updated_at = NULL,
-      total_orders = 0, total_orders_set_at = NULL, deal_value_set_at = NULL WHERE id = ${leadId}`);
+      total_orders = 0, total_orders_set_at = NULL, deal_value_set_at = NULL, order_fields_set_at = NULL WHERE id = ${leadId}`);
     await db.execute(sql`DELETE FROM lead_orders WHERE lead_id = ${leadId}`);
     // The lifecycle starts before every test's messages (as a lead created at the first message
     // does), and no earlier test's reopen event moves that start.
@@ -224,7 +224,47 @@ describe('lead-insights pass', () => {
     expect(lead.items[1]).toMatchObject({ product: 'Box makanan', qty: 500, qty_unit: 'pcs' });
   });
 
-  it('adds to what the lead has: a second pass keeps the old items and updates a matching one', async () => {
+  // Final review I6: each pass is a fresh read of the whole chat returning the full list, so its list is
+  // the lead's items. Merged additively, "kertas nasi" 30x30 in one pass and "Kertas Supreme 64 gsm"
+  // 30x30 in the next were two lines.
+  it('a second pass replaces the items with its own list: one item, not a near-duplicate', async () => {
+    await insertMessage({ conversationId: convId, role: 'user', body: 'mau kertas nasi 30x30', createdAt: minutesAgo(10) });
+    answer({ lead_kind: 'lead', brands: ['kertas_supreme'], items: [{ product: 'kertas nasi', size: '30x30' }] });
+    await runLeadInsightsPass(1, only());
+    expect((await theLead()).items).toEqual([{ product: 'kertas nasi', size: '30x30' }]);
+
+    await insertMessage({ conversationId: convId, role: 'user', body: 'yang supreme 64 gsm ya, 10 rim', createdAt: minutesAgo(8) });
+    answer({ lead_kind: 'lead', brands: [], items: [{ product: 'Kertas Supreme 64 gsm', size: '30x30', qty: 10, qty_unit: 'rim' }] });
+    await runLeadInsightsPass(1, only());
+
+    const lead = await theLead();
+    expect(lead.items).toEqual([{ product: 'Kertas Supreme 64 gsm', size: '30x30', qty: 10, qty_unit: 'rim' }]);
+    expect(lead.brands).toEqual(['kertas_supreme']); // brands stay a union
+  });
+
+  it('a pass that read no items keeps the items the lead has', async () => {
+    await getDb().execute(sql`UPDATE leads SET items = '[{"product":"Kertas Supreme 64 gsm","size":"30x30","qty":5,"qty_unit":"rim"}]'::jsonb WHERE id = ${leadId}`);
+    await insertMessage({ conversationId: convId, role: 'user', body: 'oke kak', createdAt: minutesAgo(10) });
+    answer({ lead_kind: 'lead', brands: ['imperial_indopack'], items: [] });
+
+    await runLeadInsightsPass(1, only());
+
+    const lead = await theLead();
+    expect(lead.items).toEqual([{ product: 'Kertas Supreme 64 gsm', size: '30x30', qty: 5, qty_unit: 'rim' }]);
+    expect(lead.brands).toEqual(['imperial_indopack']);
+  });
+
+  it('a staff-locked lead keeps its items whatever the pass read', async () => {
+    await getDb().execute(sql`UPDATE leads SET items = '[{"product":"Box Nasi","size":"20x20"}]'::jsonb, order_fields_set_at = now() WHERE id = ${leadId}`);
+    await insertMessage({ conversationId: convId, role: 'user', body: 'kertas supreme 30x30', createdAt: minutesAgo(10) });
+    answer({ lead_kind: 'lead', brands: ['kertas_supreme'], items: [{ product: 'Kertas Supreme 64 gsm', size: '30x30' }] });
+
+    await runLeadInsightsPass(1, only());
+
+    expect((await theLead()).items).toEqual([{ product: 'Box Nasi', size: '20x20' }]);
+  });
+
+  it('the pass list replaces the items, keeping what it did not restate of the same item', async () => {
     await getDb().execute(sql`UPDATE leads SET brands = '{kertas_supreme}', items = '[{"product":"Kertas Supreme 64 gsm","size":"30x30","qty":5,"qty_unit":"rim"}]'::jsonb WHERE id = ${leadId}`);
     await insertMessage({ conversationId: convId, role: 'user', body: 'jadi 10 rim, plus box', createdAt: minutesAgo(10) });
     answer({
