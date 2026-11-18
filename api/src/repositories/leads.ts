@@ -19,6 +19,7 @@ import type {
   PaginationParams,
 } from '../domain/types.js';
 import { ORGANIC_CAMPAIGN } from '../domain/types.js';
+import { CANNED_PO_FORM_FROM_TEAM } from '../domain/constants.js';
 
 // ─── date bounds ───────────────────────────────────────────────────────────
 
@@ -1218,7 +1219,10 @@ export async function tagNonSalesLead(contactId: string, topic: string): Promise
  *   count), and it must be ours - bot or staff. A customer whose own message is the last one is
  *   waiting on US, and that is the unreplied list, never Lost.
  * - Not when that message is a hand-off ("kami cek dengan tim dulu", metadata source escalation /
- *   escalation_ack): the customer is waiting on the team, and silence there is ours.
+ *   escalation_ack) or a promise the team keeps (the design examples line, the PO form line while
+ *   its link is not set - CANNED_PO_FORM_FROM_TEAM), and not while that chat is escalated or taken
+ *   over: the customer is waiting on the team, and silence there is ours (final review M7). The PO
+ *   form link itself is the bot's last word like any reply.
  * - closed_at and the event are dated when the threshold passed (last message + days), computed in
  *   SQL to the microsecond, not the day the sweep ran: a first sweep after deploy closes months of
  *   stale leads, and each must land in its own report period. That also starts the reopen window
@@ -1237,7 +1241,7 @@ export async function closeSilentLeads(
            (m.created_at + make_interval(days => ${days}))::text AS closes_at
     FROM leads l
     JOIN LATERAL (
-      SELECT msg.role, msg.created_at, msg.metadata
+      SELECT msg.role, msg.created_at, msg.metadata, msg.body, c.status AS conv_status
       FROM messages msg JOIN conversations c ON c.id = msg.conversation_id
       WHERE c.contact_id = l.contact_id AND msg.role IN ('user', 'assistant')
       ORDER BY msg.created_at DESC LIMIT 1
@@ -1246,7 +1250,9 @@ export async function closeSilentLeads(
       AND l.status IN ('new', 'contacted', 'quoted')
       AND l.human_updated_at IS NULL
       AND m.role = 'assistant'
-      AND coalesce(m.metadata->>'source', '') NOT IN ('escalation', 'escalation_ack')
+      AND coalesce(m.metadata->>'source', '') NOT IN ('escalation', 'escalation_ack', 'design_examples')
+      AND NOT (coalesce(m.metadata->>'source', '') = 'po_form' AND m.body = ${CANNED_PO_FORM_FROM_TEAM})
+      AND m.conv_status NOT IN ('escalated', 'needs_human')
       AND m.created_at < now() - make_interval(days => ${days})
       ${opts.contactIds ? sql`AND l.contact_id IN (${sql.join(opts.contactIds.map((id) => sql`${id}::uuid`), sql`, `)})` : sql``}
     ORDER BY m.created_at`);

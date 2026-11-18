@@ -7,7 +7,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import 'dotenv/config';
 import { eq, sql } from 'drizzle-orm';
 import { getDb } from '../src/db/client.js';
-import { contacts, leads, phoneNumbers } from '../src/db/schema.js';
+import { contacts, conversations, leads, phoneNumbers } from '../src/db/schema.js';
+import { CANNED_DESIGN_EXAMPLES_FROM_TEAM, CANNED_PO_FORM_FROM_TEAM, poFormMessage } from '../src/domain/constants.js';
 import { upsertConversation, insertMessage } from '../src/repositories/conversations.js';
 import { closeSilentLeads } from '../src/repositories/leads.js';
 import { listLeadEvents } from '../src/repositories/leadEvents.js';
@@ -33,17 +34,19 @@ const contactIds: string[] = [];
 /** A contact, its chat (customer first, then the given rows) and an open lead. */
 async function chat(
   name: string,
-  rows: { role: 'user' | 'assistant' | 'system'; daysAgo: number; source?: string }[],
-  lead: Partial<typeof leads.$inferInsert> = {}
+  rows: { role: 'user' | 'assistant' | 'system'; daysAgo: number; source?: string; body?: string }[],
+  lead: Partial<typeof leads.$inferInsert> = {},
+  convStatus?: string
 ) {
   const db = getDb();
   const [c] = await db.insert(contacts).values({ waId: `${P}${name}` }).returning();
   contactIds.push(c!.id);
   const conv = await upsertConversation(c!.id, phoneId);
+  if (convStatus) await db.update(conversations).set({ status: convStatus }).where(eq(conversations.id, conv.id));
   let last = new Date(0);
   for (const r of rows) {
     const m = await insertMessage({
-      conversationId: conv.id, role: r.role, body: `${r.role} ${r.daysAgo}`, createdAt: ago(r.daysAgo),
+      conversationId: conv.id, role: r.role, body: r.body ?? `${r.role} ${r.daysAgo}`, createdAt: ago(r.daysAgo),
       ...(r.source ? { metadata: { source: r.source } } : {}),
     });
     if (r.role !== 'system') last = m.createdAt;
@@ -94,6 +97,27 @@ describe('closeSilentLeads', () => {
     const closed = await closeSilentLeads(14, { contactIds });
     expect(closed.map((c) => c.leadId)).not.toContain(leadId);
     expect((await getLead(leadId)).status).toBe(before.status);
+  });
+
+  // Final review M7: the team's promise lines (the PO form while its link is not set, the design
+  // examples) are not the bot's last word - the customer is waiting on the team. Nor is a chat that is
+  // escalated or taken over.
+  it.each([
+    ['our last message is the PO form the team will send', [{ role: 'user' as const, daysAgo: 21 }, { role: 'assistant' as const, daysAgo: 20.5 }, { role: 'assistant' as const, daysAgo: 20, source: 'po_form', body: CANNED_PO_FORM_FROM_TEAM }], undefined],
+    ['our last message is the design examples the team will send', [{ role: 'user' as const, daysAgo: 21 }, { role: 'assistant' as const, daysAgo: 20, source: 'design_examples', body: CANNED_DESIGN_EXAMPLES_FROM_TEAM }], undefined],
+    ['the chat is escalated', [{ role: 'user' as const, daysAgo: 21 }, { role: 'assistant' as const, daysAgo: 20 }], 'escalated'],
+    ['a person took the chat over', [{ role: 'user' as const, daysAgo: 21 }, { role: 'assistant' as const, daysAgo: 20 }], 'needs_human'],
+  ])('leaves it alone when %s', async (name, rows, convStatus) => {
+    const { leadId } = await chat(name.replace(/\W+/g, '_').slice(0, 30), rows, {}, convStatus);
+    const closed = await closeSilentLeads(14, { contactIds });
+    expect(closed.map((c) => c.leadId)).not.toContain(leadId);
+    expect((await getLead(leadId)).status).toBe('contacted');
+  });
+
+  it('still closes a lead whose customer got the PO form link itself and went quiet', async () => {
+    const { leadId } = await chat('po_link', [{ role: 'user', daysAgo: 21 }, { role: 'assistant', daysAgo: 20, source: 'po_form', body: poFormMessage('https://forms.gle/ContohPO123') }]);
+    await closeSilentLeads(14, { contactIds });
+    expect((await getLead(leadId)).status).toBe('lost');
   });
 
   it('writes nothing on a dry run', async () => {
