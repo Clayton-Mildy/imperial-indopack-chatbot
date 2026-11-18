@@ -2,13 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { extractBlocks } from '../scripts/draft-starter-catalog.js';
 import { parseTemplateRows, TEMPLATE_COLUMNS } from '../src/services/catalogTemplate.js';
 
+// Customer-named titles are synthetic ("CONTOH ..."): the real workbook's customer names never enter the repo.
 const N = null;
 // HARGA BOX shape: blocks side by side in column pairs B/C and E/F.
 const HARGA_BOX: unknown[][] = [
   [N, 'PENAWARAN HARGA IVORY 270 GSM', 'CETAK FULL COLOR ', N, 'PENAWARAN HARGA BOX CONTOH RESTO BIRU 350 GSM', 'CETAK 2 WARNA'],
   [N, 'QTY ORDER', 'HARGA PER PCS', N, 'QTY ORDER', 'HARGA PER PCS'],
-  [N, '5 RIM / 2.500 PCS ', 1500, N, '20 RIM / 10.000 PCS', 1900],
-  [N, '10 RIM / 5.000 PCS', 1300, N, '50 RIM / 25.000 PCS', 1400],
+  [N, '5 RIM / 2.500 PCS ', 1500, N, '20 RIM / 10.000 PCS', 1950],
+  [N, '10 RIM / 5.000 PCS', 1300, N, '50 RIM / 25.000 PCS', 1450],
   [N, 'SUDAH TERMASUK ONGKIR KE TEMPAT TUJUAN ', N, N, 'SUDAH TERMASUK ONGKIR KE TEMPAT TUJUAN', N],
   [N, 'BOX 1 UKURAN 21 X 7 X 5 CM ', N],
 ];
