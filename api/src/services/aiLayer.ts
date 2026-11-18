@@ -226,9 +226,8 @@ export function productBlocks(catalogBlock: string, names: string[]): string {
   // Split on the RECORD boundary, not on blank lines. formatProducts() renders each product as
   // "Merek: <brand>\nProduk: <name>\n...", and free-text fields carry their own blank lines - the
   // Keunggulan bullets on GRENDEL BULAT STAINLESS STEEL do, which cut its record in three and left
-  // the chunk holding "Produk:" with no Varian lines at all. Both callers then got a paragraph
-  // with zero prices in it: the price scope could not accept the product's own figures, and the
-  // judge was asked to check a quote against evidence that contained no quote.
+  // the chunk holding "Produk:" with no Varian lines at all. The judge then got a paragraph with
+  // zero prices in it, and was asked to check a quote against evidence that contained no quote.
   return catalogBlock
     .split(/\n(?=Merek: )/)
     .filter((rec) => names.some((n) => rec.includes(`Produk: ${n}`)))
@@ -507,20 +506,24 @@ export async function verifyFit(
 ): Promise<AIResponse> {
   const judge = deps.judge ?? judgeFit;
 
+  // No catalog block (none imported yet): nothing can back a figure but the tool's, so the price
+  // check still runs - against an empty block - while the catalog checks and the judge are skipped.
   const catalogBlock = extractCatalogBlock(systemPrompt);
-  if (!catalogBlock) return response;
 
   // The catalog note the model was shown is the record of whether a file went out.
   const catalogSent = systemPrompt.includes(CATALOG_SENT_MARKER);
 
   const check = async (r: AIResponse): Promise<FitVerdict | null> => {
     if (r.confidence === 'low' || !r.message) return null; // text never reaches the customer
-    const named = namedProducts(catalogBlock, r.message);
     // Deterministic floor: a misquoted price must never depend on the fuzzy name matcher or the
     // LLM judge. Exact figures only - the tool's this turn, else the catalog's printed tiers - so
     // the whole block is the scope: a real tier figure is never invented, whichever product it is
     // printed under (quoting it against the wrong product is the judge's to catch).
     const prices = verifyReplyTieredPrices(r.message, catalogBlock, r.toolFigures);
+    if (!catalogBlock) {
+      return prices.ok ? null : { ok: false, reason: prices.reason, ...(prices.onlyInvented && { invented: prices.invented }) };
+    }
+    const named = namedProducts(catalogBlock, r.message);
     // The price does not depend on who buys (spec 7.3): no check reads a buyer type, so the
     // two that still take one are given none.
     const results: { ok: boolean; reason: string; soft?: boolean }[] = [

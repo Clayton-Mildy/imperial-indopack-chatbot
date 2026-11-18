@@ -607,6 +607,14 @@ function backedTotals(message: string, priced: (n: number) => boolean): Set<numb
 
 // A line that adds up: the word for it, or an "=" ("2 set x Rp 210.000 = Rp 420.000").
 const TOTAL_LINE_RE = /\b(?:total|subtotal|jumlah|keseluruhan|grand)\b|=/i;
+// The total words verifyReplyTieredPrices also knows: "Totalnya Rp 8.000.000", "Semuanya jadi ...".
+// A bare "jumlah" is not one of them - it is also the everyday word for a quantity ("jumlah minimal
+// 5 rim"). withoutInventedTotals may cut a line with these too, so the two never disagree about
+// which lines a total can be cut from.
+const TOTAL_WORDS_RE = /\b(?:total\w*|subtotal|keseluruhan|semua(?:nya)?|grand)\b/i;
+const addsUp = (line: string): boolean => TOTAL_LINE_RE.test(line) || TOTAL_WORDS_RE.test(line);
+// The catalog's own unit conversion ("1 rim = 500 pcs/lembar"): an "=" that adds nothing up.
+const RIM_CONVERSION_RE = /\b\d+(?:[.,]\d+)?\s*rim\s*=\s*[\d.]+\s*(?:pcs|lembar)\b/gi;
 
 /**
  * The reply without its totals, or null when an invented figure sits on a line that is not one.
@@ -632,7 +640,7 @@ export function withoutInventedTotals(message: string, invented: number[]): stri
       if (!inTotals) kept.push(line);
       continue;
     }
-    if (!totalLine && !inTotals) return null;
+    if (!totalLine && !inTotals && !TOTAL_WORDS_RE.test(line)) return null;
   }
   const text = kept.join('\n').replace(/\n{3,}/g, '\n\n').replace(/(?:\n\s*-{3,}\s*)+$/, '').trim();
   return text || null;
@@ -643,6 +651,10 @@ export function withoutInventedTotals(message: string, invented: number[]): stri
 // a price, and "Rp 8 juta" reads as 8 - not the tool's 8.000.000, so it is redone, not skipped.
 const rpFigures = (text: string): number[] => [...text.matchAll(PRICE_RE)].map((m) => Number(m[0].replace(/\D/g, '')));
 const rp = (n: number): string => `Rp ${n.toLocaleString('id-ID')}`;
+const noToolTotalLine = (line: string): boolean => {
+  const rest = line.replace(RIM_CONVERSION_RE, ' ');
+  return TOTAL_WORDS_RE.test(rest) || rest.includes('=');
+};
 
 /**
  * The price check verifyFit runs (spec 7.5). Imperial Indopack's prices are tiers by quantity, and
@@ -652,12 +664,15 @@ const rp = (n: number): string => `Rp ${n.toLocaleString('id-ID')}`;
  * - hitung_harga returned figures this turn (`toolFigures`, every call's): every Rp figure in the
  *   reply is one of them. A catalog tier the tool did not return fails - it is the wrong tier.
  * - Otherwise: every figure is a tier price printed in the catalog block, and none sits on a line
- *   that adds up (TOTAL_LINE_RE) - a total without the tool is the model's own arithmetic.
+ *   that adds up - a total without the tool is the model's own arithmetic. That line is one with a
+ *   total word (TOTAL_WORDS_RE) or an "=" once the catalog's own "1 rim = 500 pcs" is taken out:
+ *   the catalog's wording ("(1 rim = 500 pcs)", "jumlah minimal 5 rim") must not read as a sum.
  *
  * `invented` is what withoutInventedTotals cuts by, so it leaves out a catalog price the reply also
  * quotes correctly on a line of its own: "Rp 2.000/pcs" then "8 rim x Rp 2.000 = Rp 8.000.000" cuts
  * the sum and keeps the tier, where cutting by 2.000 would have thrown the whole answer away.
- * `onlyInvented`: every failing figure is on a total line, so the total can go to the team.
+ * `onlyInvented`: every failing figure is on a total line, so the total can go to the team. Every
+ * such line is one withoutInventedTotals can cut.
  */
 export function verifyReplyTieredPrices(
   message: string,
@@ -670,7 +685,7 @@ export function verifyReplyTieredPrices(
   const passing = new Set<number>();
   let offTotalLine = false;
   for (const line of message.split('\n')) {
-    const totalLine = TOTAL_LINE_RE.test(line);
+    const totalLine = toolRan ? addsUp(line) : noToolTotalLine(line);
     for (const n of rpFigures(line)) {
       if (allowed.has(n) && (toolRan || !totalLine)) { passing.add(n); continue; }
       failing.add(n);
@@ -680,10 +695,13 @@ export function verifyReplyTieredPrices(
   if (failing.size === 0) return { ok: true, reason: '' };
 
   const figures = [...failing].map(rp).join(', ');
+  // The repair is written without the tool results in view (verifyFit's regenerate sends only the
+  // draft and this text), so it is told to fetch the figures again rather than to copy them.
   const reason = toolRan
-    ? `Harga ${figures} bukan angka dari hitung_harga. Sebut HANYA angka yang dikembalikan hitung_harga di giliran ini, ` +
-      'persis seperti tertulis di hasilnya (harga satuan, total, harga tingkat berikutnya) - jangan mengambil harga tingkat lain ' +
-      'dari katalog dan jangan menghitung sendiri. Untuk jumlah lain, panggil hitung_harga lagi lalu ulangi angka-angkanya persis.'
+    ? `Harga ${figures} bukan angka dari hitung_harga. Hasil hitung_harga sebelumnya sudah tidak terlihat di sini, jadi ` +
+      'panggil hitung_harga LAGI untuk setiap barang yang kamu sebut harganya (jumlahnya sama atau berbeda), termasuk untuk ' +
+      'produk lain yang kamu sebut, lalu ulangi angka hasilnya persis (harga satuan, total, harga tingkat berikutnya). ' +
+      'Jangan mengambil harga tingkat lain dari katalog dan jangan menghitung sendiri.'
     : `Harga ${figures} tidak boleh disebut: hitung_harga tidak dipanggil di giliran ini, jadi hanya harga tingkat yang tertulis ` +
       'persis di KATALOG PRODUK yang boleh disebut - tanpa total, hitungan, atau tanda "=". Untuk harga sesuai jumlah pelanggan, ' +
       'panggil hitung_harga lalu ulangi angka-angkanya persis.';

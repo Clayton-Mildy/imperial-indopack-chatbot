@@ -29,8 +29,16 @@ export async function listTiersByVariant(variantIds: string[]): Promise<Map<stri
   return out;
 }
 
-/** Replace all of a variant's tiers (delete then insert), inside the caller's transaction. */
+/**
+ * Replace all of a variant's tiers (delete then insert), inside the caller's transaction.
+ * Prices are whole rupiah: a fractional one is refused before anything is written, so it can never
+ * reach the catalog block, hitung_harga or the strict price check, whichever caller sent it.
+ */
 export async function replaceVariantTiers(tx: DbOrTx, variantId: string, tiers: PriceTier[]): Promise<void> {
+  const bad = tiers.find((t) => !Number.isSafeInteger(t.priceIdr));
+  if (bad) {
+    throw new Error(`Tier price must be whole rupiah, got ${bad.priceIdr} (variant ${variantId}, from ${bad.minQty} ${bad.qtyUnit})`);
+  }
   await tx.delete(variantPriceTiers).where(eq(variantPriceTiers.variantId, variantId));
   if (tiers.length === 0) return;
   await tx.insert(variantPriceTiers).values(

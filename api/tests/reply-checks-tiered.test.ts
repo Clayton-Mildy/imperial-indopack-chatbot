@@ -40,6 +40,18 @@ describe('verifyReplyTieredPrices - which figures fail, and what the model is to
     expect(v.reason).toMatch(/persis/);
   });
 
+  // The repair is written without the tool results in view (verifyFit's regenerate sends the draft
+  // and the correction only), so "repeat what it returned" would ask for figures it cannot see.
+  it('with the tool, tells the model the results are gone: call hitung_harga again for every item, other products too', () => {
+    const { reason } = verifyReplyTieredPrices('8 rim: Rp 1.500/pcs', BLOCK, [2000, 8000000, 1800]);
+    expect(reason).toContain('Hasil hitung_harga sebelumnya sudah tidak terlihat');
+    expect(reason).toContain('panggil hitung_harga LAGI untuk setiap barang');
+    expect(reason).toContain('jumlahnya sama atau berbeda');
+    expect(reason).toContain('produk lain');
+    expect(reason).toContain('ulangi angka hasilnya persis');
+    expect(reason).not.toContain('seperti tertulis di hasilnya');
+  });
+
   it('a tool call that returned no figures falls back to the catalog rule', () => {
     // Not in catalog / below the minimum: the tool ran but priced nothing.
     expect(verifyReplyTieredPrices('mulai 10 rim Rp 1.800/pcs', BLOCK, []).ok).toBe(true);
@@ -83,7 +95,59 @@ describe('verifyReplyTieredPrices - which figures fail, and what the model is to
     expect(verifyReplyTieredPrices('Totalnya Rp 8 juta kak', BLOCK, [2000, 8000000, 1800]).ok).toBe(false));
 });
 
+// The catalog's own wording is not a sum: "1 rim = 500 pcs" is in the block header, and "jumlah"
+// is also the word for a quantity. Without the tool, only a total word or a real "=" makes a total.
+describe('verifyReplyTieredPrices - what a total line is without the tool', () => {
+  it('passes a tier listing with "(1 rim = 500 pcs)" on the price line', () => {
+    expect(verifyReplyTieredPrices('Box Ivory mulai 5 rim (1 rim = 500 pcs): Rp 2.000/pcs kak', BLOCK, undefined).ok).toBe(true);
+    expect(verifyReplyTieredPrices('10 rim Rp 1.800/pcs, 1 rim = 500 lembar', BLOCK, undefined).ok).toBe(true);
+    expect(verifyReplyTieredPrices('mulai 2,5 rim = 1.250 pcs: Rp 2.000/pcs', BLOCK, undefined).ok).toBe(true);
+  });
+
+  it('passes "Jumlah minimal 5 rim: Rp 2.000/pcs"', () =>
+    expect(verifyReplyTieredPrices('Jumlah minimal 5 rim: Rp 2.000/pcs', BLOCK, undefined).ok).toBe(true));
+
+  it('rejects "Totalnya Rp 8.000.000" with no tool call, as only a total', () => {
+    const v = verifyReplyTieredPrices('Totalnya Rp 8.000.000', BLOCK, undefined);
+    expect(v.ok).toBe(false); expect(v.onlyInvented).toBe(true);
+  });
+
+  it('rejects "Semuanya jadi Rp 8.000.000" with no tool call, as only a total', () => {
+    const v = verifyReplyTieredPrices('Semuanya jadi Rp 8.000.000', BLOCK, undefined);
+    expect(v.ok).toBe(false); expect(v.onlyInvented).toBe(true);
+  });
+
+  it('a conversion on the line does not hide a sum on it', () => {
+    const v = verifyReplyTieredPrices('8 rim (1 rim = 500 pcs) x Rp 2.000 = Rp 8.000.000', BLOCK, undefined);
+    expect(v.ok).toBe(false); expect(v.onlyInvented).toBe(true);
+  });
+
+  it('a catalog price next to a total word is still a total', () =>
+    expect(verifyReplyTieredPrices('Total Rp 2.000/pcs ya kak', BLOCK, undefined).ok).toBe(false));
+});
+
 describe('verifyReplyTieredPrices keeps withoutInventedTotals working', () => {
+  it('a "Totalnya" or "Semuanya" line is cut like a "Total" line', () => {
+    for (const total of ['Totalnya Rp 8.000.000', 'Semuanya jadi Rp 8.000.000']) {
+      const msg = `Box Ivory 8 rim Rp 2.000/pcs kak.\n${total}`;
+      const v = verifyReplyTieredPrices(msg, BLOCK, undefined);
+      expect(v.onlyInvented).toBe(true);
+      expect(withoutInventedTotals(msg, v.invented!)).toBe('Box Ivory 8 rim Rp 2.000/pcs kak.');
+    }
+  });
+
+  it('with the tool, a "Totalnya" summing two tool totals is only a total, and is cut', () => {
+    const msg = 'Kertas: Rp 1.980.000\nBox: Rp 8.000.000\nTotalnya Rp 9.980.000';
+    const v = verifyReplyTieredPrices(msg, BLOCK, [165000, 1980000, 2000, 8000000]);
+    expect(v.invented).toEqual([9980000]);
+    expect(v.onlyInvented).toBe(true);
+    expect(withoutInventedTotals(msg, v.invented!)).toBe('Kertas: Rp 1.980.000\nBox: Rp 8.000.000');
+  });
+
+  it('a "Semua ..." line with no figure does not open a totals section', () =>
+    expect(withoutInventedTotals('Semua ukuran ready kak:\nmulai 5 rim Rp 2.000/pcs\nTotal Rp 8.000.000', [8000000]))
+      .toBe('Semua ukuran ready kak:\nmulai 5 rim Rp 2.000/pcs'));
+
   it('a reply that quotes the tier and adds up the total itself: the total is cut, the tier kept', () => {
     // No tool call: the model did the arithmetic. Rp 2.000 is a real tier on the first line; on the
     // total line it is part of a sum. Only the sum is cut, so the per-item answer can still be sent.
@@ -160,5 +224,37 @@ describe('verifyFit - the strict price check in the pipeline', () => {
     const { judge, calls } = okJudge();
     await verifyFit(draft('Box Ivory 270 gsm cetak full color ready kak, Rp 2.000/pcs.'), PROMPT, 'box ivory ada?', { judge, regenerate: noRegenerate });
     expect(calls).toEqual(['box ivory ada?']);
+  });
+
+  it('a "Totalnya" the model added up without the tool goes to the team, the tier price is sent', async () => {
+    const summed = draft('Box Ivory 270 gsm cetak full color 8 rim harganya Rp 2.000/pcs kak.\nTotalnya Rp 8.000.000');
+    const out = await verifyFit(summed, PROMPT, 'box ivory 8 rim jadi berapa', { judge: okJudge().judge, regenerate: vi.fn(async () => summed) });
+    expect(out).toMatchObject({ confidence: 'high', totalForTeam: true, message: 'Box Ivory 270 gsm cetak full color 8 rim harganya Rp 2.000/pcs kak.' });
+  });
+
+  // Before the client imports a catalog the prompt has no catalog block; a figure is then backed by
+  // nothing but the tool, and the price check must not be skipped along with the judge.
+  describe('with no catalog block in the prompt', () => {
+    const BARE = '## Identity\nKamu adalah CS Imperial Indopack.';
+
+    it('does not send a price the tool did not return - it is repaired, then handed off', async () => {
+      const quoting = draft('Box Ivory 20x20x7,5 Rp 2.000/pcs kak.');
+      const { judge, calls } = okJudge();
+      const regenerate = vi.fn(async () => quoting);
+      const out = await verifyFit(quoting, BARE, 'harga box ivory?', { judge, regenerate });
+      expect(regenerate).toHaveBeenCalledTimes(2);
+      expect(regenerate.mock.calls[0]![0]).toContain('hitung_harga');
+      expect(out).toMatchObject({ confidence: 'low', message: '' });
+      expect(calls).toHaveLength(0);
+    });
+
+    it('sends a price the tool returned, and a reply with no price, as they are', async () => {
+      const { judge, calls } = okJudge();
+      const quote = draft('Box Ivory 20x20x7,5, 8 rim: Rp 2.000/pcs, total Rp 8.000.000 kak.', TOOL);
+      expect(await verifyFit(quote, BARE, 'box ivory 8 rim', { judge, regenerate: noRegenerate })).toBe(quote);
+      const ask = draft('Boleh tahu ukurannya kak?');
+      expect(await verifyFit(ask, BARE, 'box ivory', { judge, regenerate: noRegenerate })).toBe(ask);
+      expect(calls).toHaveLength(0);
+    });
   });
 });

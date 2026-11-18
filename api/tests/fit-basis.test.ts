@@ -331,9 +331,11 @@ describe('verifyFit — the judge pipeline', () => {
     expect(calls).toHaveLength(0);
   });
 
+  // Not the price check: with no catalog block a figure is still checked (tests/reply-checks-tiered).
   it('does nothing when the prompt carries no catalog block', async () => {
     const { judge, calls } = scriptedJudge(OK);
-    await verifyFit(reply(), '## Identity\nKamu adalah Rina.', '', { judge, regenerate: noRegenerate });
+    const noPrice = reply({ message: 'Ada kok! DOORPULL PERTH VINTAGE BLUE pas untuk pintu seperti itu.' });
+    expect(await verifyFit(noPrice, '## Identity\nKamu adalah Rina.', '', { judge, regenerate: noRegenerate })).toBe(noPrice);
     expect(calls).toHaveLength(0);
   });
 });
