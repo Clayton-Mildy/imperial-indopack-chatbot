@@ -8,8 +8,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import 'dotenv/config';
 import { eq } from 'drizzle-orm';
-import { extractFromToolInput, RESPOND_FIELD_DESC, RESPOND_TOOL, RESPOND_SHAPE } from '../src/services/aiLayer.js';
-import { poFormMessage } from '../src/domain/constants.js';
+import { extractFromToolInput, RESPOND_FIELD_DESC, RESPOND_TOOL, RESPOND_SHAPE, catalogPhotoUrls, withCatalogPhotosOnly } from '../src/services/aiLayer.js';
+import { poFormMessage, PO_FORM_PLACEHOLDER_URL as CONSTANTS_PLACEHOLDER } from '../src/domain/constants.js';
 import { formatProducts, REFERENCE_PHOTOS_MARKER } from '../src/services/ragQuery.js';
 import { getDb } from '../src/db/client.js';
 import { appSettings } from '../src/db/schema.js';
@@ -85,6 +85,33 @@ describe('the catalog block carries the photo urls to copy', () => {
   });
 });
 
+// Review fix 3: a photo url is sent only when this turn's catalog block printed it.
+describe('only the catalog\'s own reference photos are sent', () => {
+  const block = formatProducts([
+    { ...SUPREME, referenceImageUrls: ['/uploads/ref/1.jpg', 'https://cdn.example/ref/2.jpg'] },
+    { ...SUPREME, id: 'p-x', name: 'Box Ivory', referenceImageUrls: ['/uploads/ref/3.jpg'] },
+  ]);
+
+  it('reads the urls off every marker line', () =>
+    expect([...catalogPhotoUrls(block)]).toEqual(['/uploads/ref/1.jpg', 'https://cdn.example/ref/2.jpg', '/uploads/ref/3.jpg']));
+
+  it('drops a customer-pasted link and a made-up upload path, keeps the catalog\'s', () => {
+    const r = withCatalogPhotosOnly({
+      message: 'x', confidence: 'high',
+      imageUrls: ['https://customer.example/foto.jpg', '/uploads/ref/1.jpg', '/uploads/ref/made-up.jpg', '/uploads/ref/3.jpg'],
+    }, block);
+    expect(r.imageUrls).toEqual(['/uploads/ref/1.jpg', '/uploads/ref/3.jpg']);
+  });
+
+  it('no catalog block, or none of its photos, means no photos', () => {
+    expect(withCatalogPhotosOnly({ message: 'x', confidence: 'high', imageUrls: ['/uploads/ref/1.jpg'] }, '').imageUrls).toBeUndefined();
+    expect(withCatalogPhotosOnly({ message: 'x', confidence: 'high', imageUrls: ['/uploads/x.jpg'] }, block).imageUrls).toBeUndefined();
+  });
+
+  it('a url that only appears elsewhere in the block does not count', () =>
+    expect(catalogPhotoUrls('Produk: Box /uploads/ref/9.jpg\n[FOTO REFERENSI TERSEDIA] /uploads/ref/1.jpg').has('/uploads/ref/9.jpg')).toBe(false));
+});
+
 describe('the PO form message', () => {
   it('is the fixed line with the link under it', () =>
     expect(poFormMessage('https://forms.gle/abc')).toBe('Untuk pemesanannya, silakan isi form PO berikut ya kak 🙏\nhttps://forms.gle/abc'));
@@ -105,6 +132,7 @@ describe('the PO form link setting', () => {
 
   it('is the placeholder until staff set it', async () => {
     expect(PO_FORM_PLACEHOLDER_URL).toBe('https://forms.gle/REPLACE-ME');
+    expect(PO_FORM_PLACEHOLDER_URL).toBe(CONSTANTS_PLACEHOLDER);
     await getDb().delete(appSettings).where(eq(appSettings.key, KEY));
     expect(await getPoFormUrl()).toBe(PO_FORM_PLACEHOLDER_URL);
   });

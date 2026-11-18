@@ -2,7 +2,7 @@ import { getDb } from '../db/client.js';
 import { appSettings } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import type { PromptSections } from '../domain/types.js';
-import { SYSTEM_PROMPT_SECTIONS } from '../domain/constants.js';
+import { SYSTEM_PROMPT_SECTIONS, PO_FORM_PLACEHOLDER_URL } from '../domain/constants.js';
 
 const DEFAULT_PROMPT_SECTIONS_KEY = 'default_prompt_sections';
 const AI_ENABLED_DEFAULT_KEY = 'ai_enabled_default';
@@ -105,8 +105,8 @@ export async function setLeadSilenceLostDays(days: number): Promise<void> {
 }
 
 const PO_FORM_URL_KEY = 'po_form_url';
-/** Until staff set the real Google Form in Settings. */
-export const PO_FORM_PLACEHOLDER_URL = 'https://forms.gle/REPLACE-ME';
+/** Until staff set the real Google Form in Settings. Defined with the other fixed texts. */
+export { PO_FORM_PLACEHOLDER_URL };
 
 /** The trimmed value when it is an https URL with a host, else null. */
 function httpsUrl(raw: unknown): string | null {

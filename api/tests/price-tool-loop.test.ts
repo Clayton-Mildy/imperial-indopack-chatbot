@@ -27,7 +27,8 @@ vi.mock('../src/services/ragQuery.js', async () => {
   const { CATALOG } = await import('./price-fixtures.js');
   return {
     // Names only: enough for the judge to see a named product, no figures for the price checks.
-    getFullCatalogBlock: vi.fn(async () => 'Merek: Kertas Supreme\nProduk: Kertas Supreme 64 gsm cetak 1 warna\n  - Ukuran: 30 x 30 cm\n'),
+    // One reference photo line, for the photo-url filter.
+    getFullCatalogBlock: vi.fn(async () => 'Merek: Kertas Supreme\nProduk: Kertas Supreme 64 gsm cetak 1 warna\n[FOTO REFERENSI TERSEDIA] /uploads/ref/ks1.jpg\n  - Ukuran: 30 x 30 cm\n'),
     buildCatalogContext: vi.fn(async () => ''),
     getCatalogProducts: vi.fn(async () => CATALOG),
   };
@@ -96,6 +97,14 @@ describe('API path', () => {
     await callAIWithHistory(HISTORY, 'halo');
     expect(mockCreate.mock.calls[0]![0].tools.map((t: { name: string }) => t.name))
       .toEqual(['web_search', 'resolve_link', 'hitung_harga', 'respond_to_customer']);
+  });
+
+  // Review fix 3: the reply's photos are the catalog block's, never a url the model got elsewhere.
+  it('sends only the reference photos this turn\'s catalog block printed', async () => {
+    mockCreate.mockResolvedValueOnce(respondTurn({
+      ...REPLY, image_urls: ['https://customer.example/foto.jpg', '/uploads/ref/ks1.jpg', '/uploads/ref/made-up.jpg'],
+    }));
+    expect((await callAIWithHistory(HISTORY, 'contoh desainnya ada kak?')).imageUrls).toEqual(['/uploads/ref/ks1.jpg']);
   });
 
   it('a turn with no price call has no tool figures', async () => {

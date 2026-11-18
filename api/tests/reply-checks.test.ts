@@ -520,6 +520,13 @@ describe('verifyReplyCatalogClaim — no "sudah dikirim" unless a file went out 
     expect(out.reason).toContain('tipe pembeli');
   });
 
+  // Review fix m6: the price list is "daftar harga" in Indonesian.
+  it('rejects "daftar harganya sudah saya kirim" when nothing went out', () => {
+    expect(verifyReplyCatalogClaim('Daftar harganya sudah saya kirim ya kak 🙏', false, null).ok).toBe(false);
+    expect(verifyReplyCatalogClaim('Daftar harga Kertas Supreme sudah terkirim kak.', false, null).ok).toBe(false);
+    expect(verifyReplyCatalogClaim('Daftar harganya sudah saya kirim ya kak 🙏', true, null).ok).toBe(true);
+  });
+
   it('allows the claim when the note says the file really went out', () => {
     expect(verifyReplyCatalogClaim('Price list Vintage sudah saya kirim ya kak 😊', true, 'reseller').ok).toBe(true);
   });

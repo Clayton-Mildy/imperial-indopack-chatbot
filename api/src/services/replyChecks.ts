@@ -465,7 +465,7 @@ const SEGMENT_RE = /\n|(?<=[.!?])\s+/;
 // went out: Run 2 F-01/F-02 told a customer whose buyer type was unknown (nothing may be sent to
 // him) "katalog semua merek sudah saya kirimkan", then "sudah saya kirim ulang", then to look in
 // his chat and folders. A sentence that refers back ("yang tadi sudah saya kirim") is a real send.
-const CATALOG_WORD_RE = /katalog|catalog|price\s*list|pricelist|brosur/i;
+const CATALOG_WORD_RE = /katalog|catalog|price\s*list|pricelist|daftar\s+harga|brosur/i;
 const SENT_CLAIM_RE = /\b(?:sudah|udah|telah|barusan)\s+(?:saya\s+|aku\s+|kami\s+)?(?:di)?kirim\w*|\bterkirim\b/i;
 const REFERS_BACK_RE = /\b(?:tadi|sebelumnya|kemarin)\b/i;
 const CHECK_YOUR_FILES_RE = /\bcek\s+(?:lagi\s+)?(?:di\s+)?(?:chat|folder|file|galeri|download|unduhan)\b/i;

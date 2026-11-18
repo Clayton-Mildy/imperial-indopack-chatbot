@@ -48,7 +48,7 @@ describe('the price list goes to a price question, by brand', () => {
     const { resolveCatalogDelivery } = await load();
     const d = await resolveCatalogDelivery(C, 'berapa harga kertas supreme?');
     expect(d.files.map((f) => f.url)).toEqual([SUPREME_PDF]);
-    expect(d.files[0]!.filename).toBe('Price List Kertas Supreme.pdf');
+    expect(d.files[0]!.filename).toBe('Daftar Harga Kertas Supreme.pdf');
     expect(d.note.startsWith(CATALOG_SENT_MARKER)).toBe(true);
     expect(d.note).toContain('Daftar harga Kertas Supreme sudah dikirim');
   });
@@ -92,6 +92,22 @@ describe('the price list goes to a price question, by brand', () => {
     expect(d.files).toEqual([]);
     expect(d.note).toContain('hitung_harga');
     expect(d.note).not.toContain(CATALOG_SENT_MARKER);
+  });
+
+  // Review fix R1: asked for the list by name, the customer gets it even once an item is priced.
+  it('an explicit price-list request sends the file even with a priced item', async () => {
+    const { resolveCatalogDelivery } = await load();
+    withFacts({ brands: ['kertas_supreme'], items: [PRICED_ITEM] });
+    const d = await resolveCatalogDelivery(C, 'kirim pricelist dong');
+    expect(urls(d)).toEqual([SUPREME_PDF]);
+    expect(d.note.startsWith(CATALOG_SENT_MARKER)).toBe(true);
+  });
+
+  it('a price-list request inside a longer question is explicit too', async () => {
+    const { resolveCatalogDelivery } = await load();
+    withFacts({ items: [PRICED_ITEM] });
+    expect(urls(await resolveCatalogDelivery(C, 'pricelist box 20x20 berapa ya'))).toEqual([IMPERIAL_PDF]);
+    expect(urls(await resolveCatalogDelivery('contact-2', 'minta daftar harga kertas supreme'))).toEqual([SUPREME_PDF]);
   });
 
   it('a priced item given in this very message also sends no file', async () => {
@@ -157,6 +173,19 @@ describe('once per conversation per brand', () => {
     expect(urls(await resolveCatalogDelivery(C, 'kirim ulang price list kertas supreme dong', { explicit: true }))).toEqual([SUPREME_PDF]);
   });
 
+  it('a price-list request by name re-sends; a price question after it does not', async () => {
+    const { resolveCatalogDelivery } = await load();
+    await resolveCatalogDelivery(C, 'berapa harga kertas supreme?');
+    expect(urls(await resolveCatalogDelivery(C, 'minta daftar harga kertas supreme lagi'))).toEqual([SUPREME_PDF]);
+    expect(urls(await resolveCatalogDelivery(C, 'kertas supreme berapa?'))).toEqual([]);
+  });
+
+  it('the caller can say the message is not an explicit ask (the model-flagged path, after the keyword path)', async () => {
+    const { resolveCatalogDelivery } = await load();
+    expect(urls(await resolveCatalogDelivery(C, 'minta pricelist kertas supreme'))).toEqual([SUPREME_PDF]);
+    expect(urls(await resolveCatalogDelivery(C, 'minta pricelist kertas supreme', { explicit: false }))).toEqual([]);
+  });
+
   it('a fresh start (/new) may send it again', async () => {
     const { resolveCatalogDelivery, forgetSentPriceLists } = await load();
     await resolveCatalogDelivery(C, 'berapa harga kertas supreme?');
@@ -175,9 +204,24 @@ describe('the helpers', () => {
     expect(brandsInText('dus makanan')).toEqual(['imperial_indopack']);
     expect(brandsInText('kardus kue')).toEqual(['imperial_indopack']);
     expect(brandsInText('Lunch BOX')).toEqual(['imperial_indopack']);
+    expect(brandsInText('lunchbox 3 sekat')).toEqual(['imperial_indopack']);
     expect(brandsInText('karton')).toEqual(['imperial_indopack']);
     expect(brandsInText('box dan kertas nasi')).toEqual(['kertas_supreme', 'imperial_indopack']);
     expect(brandsInText('halo kak')).toEqual([]);
+  });
+
+  // Review fix 4: a brand word inside another word is not that brand.
+  it('does not read a brand out of other words', async () => {
+    const { brandsInText } = await load();
+    for (const t of ['kami industri makanan', 'saya produsen kue', 'alamat Dusun Krajan', 'cek inbox ya', 'filenya di dropbox', 'dosen kampus'])
+      expect(brandsInText(t)).toEqual([]);
+  });
+
+  it('reads the everyday box words, with or without -nya', async () => {
+    const { brandsInText } = await load();
+    for (const t of ['nasi kotak 50 pcs', 'dosnya ukuran berapa?', 'boxnya bisa cetak logo?', 'kardusnya', 'dus nasi'])
+      expect(brandsInText(t)).toEqual(['imperial_indopack']);
+    expect(brandsInText('kertas   nasi')).toEqual(['kertas_supreme']);
   });
 
   it('a priced item has product, size and quantity', async () => {
@@ -190,6 +234,12 @@ describe('the helpers', () => {
     expect(hasPricedItem([{ product: ' ', size: '20x20', qty: 1000 }])).toBe(false);
     expect(hasPricedItem([{ product: 'box', size: '20x20', qty: 0 }])).toBe(false);
     for (const junk of [undefined, null, 'box', 42, {}, [null], ['box']]) expect(hasPricedItem(junk)).toBe(false);
+  });
+
+  it('knows a request for the price list itself', async () => {
+    const { asksForPriceList } = await load();
+    for (const t of ['kirim pricelist dong', 'Price List box?', 'minta daftar harga', 'pricelist box 20x20 berapa ya']) expect(asksForPriceList(t)).toBe(true);
+    for (const t of ['berapa harganya?', 'harga box 20x20?', 'minta katalog']) expect(asksForPriceList(t)).toBe(false);
   });
 
   it('knows a price question', async () => {

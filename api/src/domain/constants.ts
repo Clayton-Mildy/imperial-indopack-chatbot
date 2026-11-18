@@ -34,6 +34,18 @@ export function poFormMessage(url: string): string {
   return `Untuk pemesanannya, silakan isi form PO berikut ya kak 🙏\n${url}`;
 }
 
+/** The po_form_url setting until staff set the real Google Form (getPoFormUrl). Never sent to a customer. */
+export const PO_FORM_PLACEHOLDER_URL = 'https://forms.gle/REPLACE-ME';
+
+// Sent instead of the PO link while it is still the placeholder (or cannot be read): a promise, so
+// messageRouter hands the chat to the team, who send the form by hand.
+export const CANNED_PO_FORM_FROM_TEAM = 'Untuk form PO-nya, tim kami kirimkan sebentar lagi ya kak 🙏';
+
+// Marks a product with design reference photos in the catalog block, followed by their urls
+// (ragQuery.formatProducts). respond_to_customer's image_urls must be copied from these lines, and
+// only urls on them are sent (aiLayer.withCatalogPhotosOnly).
+export const REFERENCE_PHOTOS_MARKER = '[FOTO REFERENSI TERSEDIA]';
+
 
 // What the customer sees on EVERY escalation. Deliberately fixed text, not model prose: the
 // model, asked to explain why it could not help, narrates its own data ("katalog kami khusus

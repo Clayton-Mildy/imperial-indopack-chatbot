@@ -3,13 +3,15 @@
  * (brands.catalog_file_url, uploaded in the dashboard). The rule:
  *   - Trigger: the customer asks for a price or the price list (messageRouter: isPriceRequest or a
  *     catalog request, or the model's catalog_url flag) while the profile holds no item with
- *     product, size and quantity yet. Once it does, hitung_harga prices that item instead.
+ *     product, size and quantity yet. Once it does, hitung_harga prices that item instead - unless
+ *     the customer asks for the list itself (asksForPriceList: "daftar harga", "pricelist"), which
+ *     always gets it.
  *   - Which file: every brand in profile.brands plus every brand the message names (brandsInText),
  *     so both files when both brands are in play. The bare ad text "berapa harga kertas supreme?"
  *     from a customer we know nothing about gets the Kertas Supreme list from its own words.
  *   - Brand unknown: nothing is sent, and the note tells the model to ask what they pack first.
  *   - Repeats: each brand's file goes once per conversation (per contact, until /new), unless the
- *     customer asks for it again (`explicit`).
+ *     customer asks for the list itself again (`explicit`).
  *
  * One resolver, called by every send site, and its `note` is fed to the model so the reply and
  * the attachments cannot disagree about what was sent.
@@ -33,15 +35,24 @@ const BRAND_NAMES: Record<BrandSlug, string> = {
 };
 const isBrandSlug = (v: unknown): v is BrandSlug => typeof v === 'string' && Object.hasOwn(BRAND_NAMES, v);
 
-const KERTAS_SUPREME_RE = /supreme|kertas (nasi|bungkus)|greaseproof/i;
-const IMPERIAL_INDOPACK_RE = /box|dus|karton|kardus/i;
+const KERTAS_SUPREME_RE = /supreme|kertas\s+(nasi|bungkus)|greaseproof/i;
+// Whole words only: a bare "dus" is in "industri" and "produsen", a bare "box" in "inbox".
+const IMPERIAL_INDOPACK_RE = /\b(?:box|dus|dos|karton|kardus|kotak)(?:nya)?\b/i;
+const LUNCH_BOX_RE = /\blunch ?box\b/i;
 
 /** The brands a message names, by the words customers use for them. */
 export function brandsInText(text: string): BrandSlug[] {
   const out: BrandSlug[] = [];
   if (KERTAS_SUPREME_RE.test(text)) out.push('kertas_supreme');
-  if (IMPERIAL_INDOPACK_RE.test(text)) out.push('imperial_indopack');
+  if (IMPERIAL_INDOPACK_RE.test(text) || LUNCH_BOX_RE.test(text)) out.push('imperial_indopack');
   return out;
+}
+
+const PRICE_LIST_RE = /daftar harga|price ?list|pricelist/i;
+
+/** The customer asks for the price list itself, not just a price: it is sent even for a priced item, and again. */
+export function asksForPriceList(text: string): boolean {
+  return PRICE_LIST_RE.test(text);
 }
 
 const PRICE_REQUEST_RE = /harga|price ?list|pricelist|berapa/i;
@@ -87,18 +98,22 @@ export async function resolveCatalogDelivery(
   contactId: string | null,
   text: string,
   opts: {
-    /** The customer asked for the file itself, so a brand's list already sent goes again. */
+    /**
+     * The customer asked for the list itself: it goes even for a priced item, and a brand's list
+     * already sent goes again. Defaults to asksForPriceList(text); a caller that already sent this
+     * message's lists passes false.
+     */
     explicit?: boolean;
     /** What the customer said in THIS message, not saved to the profile yet (the model-flagged path runs after the reply). */
     fresh?: { facts?: Record<string, unknown> };
   } = {}
 ): Promise<CatalogDelivery> {
-  const { explicit = false, fresh } = opts;
+  const { explicit = asksForPriceList(text), fresh } = opts;
   const profile = contactId ? await getContactProfile(contactId) : null;
   const facts = asFacts(profile?.profile);
   const freshFacts = asFacts(fresh?.facts);
 
-  if (hasPricedItem(facts['items']) || hasPricedItem(freshFacts['items'])) {
+  if (!explicit && (hasPricedItem(facts['items']) || hasPricedItem(freshFacts['items']))) {
     return { files: [], note: `${NOT_SENT} ${PRICED_ITEM}` };
   }
 
@@ -123,7 +138,7 @@ export async function resolveCatalogDelivery(
       continue;
     }
     if (contactId) sentPriceLists.add(key);
-    files.push({ url, filename: `Price List ${name}.pdf` });
+    files.push({ url, filename: `Daftar Harga ${name}.pdf` });
     sentNow.push(name);
   }
 

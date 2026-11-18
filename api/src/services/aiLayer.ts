@@ -9,6 +9,7 @@ import {
   MAX_CONTEXT_MESSAGES,
   CATALOG_SENT_MARKER,
   LEAKED_TOOL_MARKUP_RE,
+  REFERENCE_PHOTOS_MARKER,
 } from '../domain/constants.js';
 import { buildCatalogContext, getFullCatalogBlock } from './ragQuery.js';
 import { withoutInventedTotals, verifyReplyTieredPrices, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, saysNotCarried, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, verifyReplyNoService, nameGivenIn, ASKS_NAME_RE } from './replyChecks.js';
@@ -164,6 +165,31 @@ function photoUrls(raw: unknown): string[] | undefined {
     .filter((u) => u.startsWith('/') || /^https?:\/\//i.test(u));
   const kept = [...new Set(urls)].slice(0, MAX_IMAGE_URLS);
   return kept.length > 0 ? kept : undefined;
+}
+
+/** The reference photo urls a catalog block prints, from its marker lines only (formatProducts). */
+export function catalogPhotoUrls(catalogBlock: string): Set<string> {
+  const urls = new Set<string>();
+  for (const line of catalogBlock.split('\n')) {
+    const at = line.indexOf(REFERENCE_PHOTOS_MARKER);
+    if (at === -1) continue;
+    for (const url of line.slice(at + REFERENCE_PHOTOS_MARKER.length).trim().split(/\s+/)) if (url) urls.add(url);
+  }
+  return urls;
+}
+
+/**
+ * Keeps only the photo urls this turn's catalog block printed. Anything else - a link the customer
+ * pasted, an upload path the model made up - would go to the customer as our product photo, so it is
+ * dropped (and logged), never sent.
+ */
+export function withCatalogPhotosOnly(r: AIResponse, catalogBlock: string): AIResponse {
+  if (!r.imageUrls?.length) return r;
+  const allowed = catalogPhotoUrls(catalogBlock);
+  const kept = r.imageUrls.filter((u) => allowed.has(u));
+  const dropped = r.imageUrls.filter((u) => !allowed.has(u));
+  if (dropped.length > 0) console.warn(`[aiLayer] image_urls not in the catalog block, not sent: ${dropped.join(' ')}`);
+  return { ...r, imageUrls: kept.length > 0 ? kept : undefined };
 }
 
 export function extractFromToolInput(rawInput: Record<string, unknown>): AIResponse {
@@ -1120,7 +1146,8 @@ async function callClaude(
   // Both transports and every failsafe path exit through here, so the judge cannot be bypassed
   // by whichever branch produced the reply. `situation` is what the customer actually has - for
   // a photo that is the vision extract, the only place the words "pintu kaca" exist at all.
-  return verifyFit(response, systemPrompt, situationStr, {
+  // The photo filter sits here for the same reason: whichever draft is sent, its photos are the catalog's.
+  const verified = await verifyFit(response, systemPrompt, situationStr, {
     // The repair sees only the draft's text, not the tool results behind it, so the figures
     // hitung_harga returned earlier in this turn stay accepted for the rewrite.
     regenerate: async (correction) => {
@@ -1139,6 +1166,7 @@ async function callClaude(
     afterNotCarried: typeof lastBot?.content === 'string' && saysNotCarried(lastBot.content),
     givenName: nameGivenIn(messages),
   });
+  return withCatalogPhotosOnly(verified, extractCatalogBlock(systemPrompt));
 }
 
 // ─── Conversation summarization ──────────────────────────────────────────────

@@ -2,7 +2,7 @@ import { eq, inArray, and, ne } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { products, productVariants, brands, categories, uomTable } from '../db/schema.js';
 import { hybridSearchProducts, listProducts, mapUom, mapVariant } from '../repositories/products.js';
-import { MAX_CATALOG_RAG_RESULTS, LEGACY_BRANDS } from '../domain/constants.js';
+import { MAX_CATALOG_RAG_RESULTS, LEGACY_BRANDS, REFERENCE_PHOTOS_MARKER } from '../domain/constants.js';
 import type { Product } from '../domain/types.js';
 import { toPcs, type PriceTier } from '../domain/pricing.js';
 
@@ -319,7 +319,7 @@ export async function getCatalogProducts(): Promise<Product[]> {
   return (await getCatalogSnapshot()).products;
 }
 
-export const REFERENCE_PHOTOS_MARKER = '[FOTO REFERENSI TERSEDIA]';
+export { REFERENCE_PHOTOS_MARKER };
 
 const idNumber = (n: number): string => n.toLocaleString('id-ID');
 

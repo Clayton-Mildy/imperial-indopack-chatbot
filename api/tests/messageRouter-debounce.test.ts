@@ -1282,7 +1282,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
     expect(mockSendDocumentMessage).toHaveBeenCalledTimes(1);
     expect(mockSendDocumentMessage.mock.calls[0][2]).toBe(SUPREME_PDF);
-    expect(mockSendDocumentMessage.mock.calls[0][3]).toBe('Price List Kertas Supreme.pdf');
+    expect(mockSendDocumentMessage.mock.calls[0][3]).toBe('Daftar Harga Kertas Supreme.pdf');
     expect(mockSendDocumentMessage.mock.invocationCallOrder[0]).toBeLessThan(mockBuildContextAndCallAI.mock.invocationCallOrder[0]);
     expect(catalogNote()).toMatch(/^KATALOG: file terkirim\./);
     // Stored under its wamid, like every file the bot sends.
@@ -1330,6 +1330,50 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(catalogNote()).toContain('hitung_harga');
   });
 
+  // Review fix R1: asked for by name, the list goes even once the item is priced.
+  it.each(['kirim pricelist dong', 'pricelist box 20x20 berapa ya'])('sends the price list for "%s" even with a priced item', async (text) => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue({
+      customerType: null,
+      profile: { brands: ['imperial_indopack'], items: [{ product: 'Box Ivory', size: '20x20x7', qty: 10, qty_unit: 'rim' }] },
+    });
+    withBrandFiles();
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PLX', text));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendDocumentMessage.mock.calls.map((c) => c[2])).toEqual([IMPERIAL_PDF]);
+    expect(catalogNote()).toMatch(/^KATALOG: file terkirim\./);
+  });
+
+  // Review fix m1: a courier's "berapa ongkirnya" is not a price question - no file, no note.
+  it('sends no price list on a non-sales turn', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PLC', 'dari jne kak, mau ambil paket box. berapa ongkirnya?'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendDocumentMessage).not.toHaveBeenCalled();
+    expect(mockListBrands).not.toHaveBeenCalled();
+    expect(mockEscalateConversation).toHaveBeenCalledTimes(1);
+  });
+
+  // Review fix m2: the keyword path ran with no brand known; the model learned it in this turn.
+  it('the AI-flagged path still sends a brand the keyword path could not know yet', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, catalogUrl: 'x', profileUpdate: { brands: ['kertas_supreme'] } });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PLM', 'berapa harganya kak? buat bungkus nasi padang'));
+    await vi.runAllTimersAsync();
+
+    expect(catalogNote()).toContain('Merek belum jelas');
+    expect(mockSendDocumentMessage.mock.calls.map((c) => c[2])).toEqual([SUPREME_PDF]);
+  });
+
   it('sends the brand price list when the AI flags a request the keywords missed', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockGetContactProfile.mockResolvedValue(null);
@@ -1371,6 +1415,21 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'AI reply' }));
   });
 
+  it('image path: a caption asking for the price list by name gets it even with a priced item', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue({
+      customerType: null,
+      profile: { brands: ['kertas_supreme'], items: [{ product: 'Kertas Supreme 64 gsm', size: '30x30', qty: 10 }] },
+    });
+    withBrandFiles();
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, catalogUrl: 'x' });
+
+    await routeInboundBaileysMessage(makeImagePayload('wamid-PL7b', 'minta pricelist nya kak'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendDocumentMessage.mock.calls.map((c) => c[2])).toEqual([SUPREME_PDF]);
+  });
+
   it('keyword-triggered price list is not duplicated by the AI catalogUrl flag', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockGetContactProfile.mockResolvedValue(null);
@@ -1379,8 +1438,12 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-PL8', 'berapa harga kertas supreme?'));
     await vi.runAllTimersAsync();
-
     expect(mockSendDocumentMessage).toHaveBeenCalledTimes(1);
+
+    // A request for the list by name re-sends it before the reply - and the model's flag after it does not add a third.
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PL8b', 'kirim pricelist kertas supreme lagi dong'));
+    await vi.runAllTimersAsync();
+    expect(mockSendDocumentMessage).toHaveBeenCalledTimes(2);
   });
 
   it('sends a brand\'s price list once per conversation, and again after /new', async () => {
@@ -1448,17 +1511,64 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockGetPoFormUrl).not.toHaveBeenCalled();
   });
 
-  it('keeps the reply when the PO link cannot be read', async () => {
+  // Review fix R2: the placeholder link never reaches a customer; the team sends the form.
+  it('sends the team line instead of the placeholder PO link, and hands the chat to the team', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { CANNED_PO_FORM_FROM_TEAM, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+    mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PO5', 'oke kak saya ambil 10 rim'));
+    await vi.runAllTimersAsync();
+
+    expect(CANNED_PO_FORM_FROM_TEAM).toBe('Untuk form PO-nya, tim kami kirimkan sebentar lagi ya kak 🙏');
+    expect(sentTexts()).toEqual(['AI reply', CANNED_PO_FORM_FROM_TEAM]);
+    expect(sentTexts().join(' ')).not.toContain('REPLACE-ME');
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Form PO belum diatur di Pengaturan'));
+    expect(mockNotifyStaff).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining('Form PO belum diatur di Pengaturan') }));
+    expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: CANNED_PO_FORM_FROM_TEAM, metadata: expect.objectContaining({ source: 'po_form' }) }));
+    // A reply, not a hand-off message: the customer is not sent the canned escalation.
+    expect(mockEscalateConversation).not.toHaveBeenCalled();
+  });
+
+  it('photo path: the placeholder PO link is not sent either, and the team takes it', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { CANNED_PO_FORM_FROM_TEAM, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+    mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+
+    await routeInboundBaileysMessage(makeImagePayload('wamid-PO6', 'yang ini kak, saya ambil'));
+    await vi.runAllTimersAsync();
+
+    expect(sentTexts()).toEqual(['AI reply', CANNED_PO_FORM_FROM_TEAM]);
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Form PO belum diatur di Pengaturan'));
+    expect(mockNotifyStaff).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining('Form PO belum diatur di Pengaturan') }));
+  });
+
+  it('a PO link that cannot be read is handled the same way: the reply is kept, the team sends the form', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { CANNED_PO_FORM_FROM_TEAM } = await import('../src/domain/constants.js');
     mockGetPoFormUrl.mockRejectedValue(new Error('db down'));
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-PO4', 'oke saya ambil'));
     await vi.runAllTimersAsync();
 
-    expect(sentTexts()).toEqual(['AI reply']);
+    expect(sentTexts()).toEqual(['AI reply', CANNED_PO_FORM_FROM_TEAM]);
     expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'AI reply', waMessageId: 'wa-sent-id' }));
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Form PO'));
     expect(mockSaveConversationInsights).toHaveBeenCalledTimes(1);
+  });
+
+  it('a real PO link does not hand the chat to the team', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PO7', 'oke saya ambil'));
+    await vi.runAllTimersAsync();
+
+    expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
   });
 
   it('sends each reference image in order and records each', async () => {

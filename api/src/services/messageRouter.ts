@@ -6,9 +6,9 @@ import { getContactProfile, deleteContactProfile } from '../repositories/contact
 import { resetLeadsForContact, tagNonSalesLead } from '../repositories/leads.js';
 import { getFirstPhoneNumber, findPhoneNumberByProviderId } from '../repositories/phoneNumbers.js';
 import { getAiEnabledDefault, getPoFormUrl } from '../repositories/appSettings.js';
-import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormMessage } from '../domain/constants.js';
+import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormMessage, PO_FORM_PLACEHOLDER_URL, CANNED_PO_FORM_FROM_TEAM } from '../domain/constants.js';
 import { buildContextAndCallAI } from './aiLayer.js';
-import { resolveCatalogDelivery, isPriceRequest, forgetSentPriceLists } from './catalogDelivery.js';
+import { resolveCatalogDelivery, isPriceRequest, asksForPriceList, forgetSentPriceLists } from './catalogDelivery.js';
 import { extractCatalogKeywordsFromImage, visionExtractToKeywords, otherBrands, type VisionExtract } from './visionKeywords.js';
 import { matchCustomerPhoto, photoBatchNote, photoHistoryNote, photoLine, captionOf, type PhotoMatch } from './photoMatch.js';
 import { escalateConversation, detectComplaint, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, isNonSalesHandoff, isNonSalesReason, pickProfileGapQuestion, unansweredSizeQuestion, replyPromisesTeamCheck } from './escalationHandler.js';
@@ -260,10 +260,15 @@ const TEAM_CALCULATES_RE = /\btim\b[^.\n]{0,40}\bhitung/i;
  * the customer asked for that the reply does not give (unansweredSizeQuestion - the catalog has no size
  * for most products). Each is a fixed line under the reply and a reason on the hand-off.
  */
-interface TeamFollowUp { total: boolean; size: boolean }
+interface TeamFollowUp {
+  total: boolean;
+  size: boolean;
+  /** The PO form the team sends by hand (poFormToSend's reason), or null. */
+  poForm?: string | null;
+}
 
-function teamFollowUp(r: AIResponse, customerText: string): TeamFollowUp {
-  return { total: Boolean(r.totalForTeam), size: unansweredSizeQuestion(customerText, r.message) };
+function teamFollowUp(r: AIResponse, customerText: string, po?: { teamReason: string | null } | null): TeamFollowUp {
+  return { total: Boolean(r.totalForTeam), size: unansweredSizeQuestion(customerText, r.message), poForm: po?.teamReason ?? null };
 }
 
 /** The reply as sent: the model's answer, plus the team's promise for each thing it left to them. */
@@ -276,17 +281,18 @@ function replyText(r: AIResponse, f: TeamFollowUp = { total: Boolean(r.totalForT
 
 /**
  * A total over several items is the team's to calculate (owner, 2026-10-27), and so is a size the
- * catalog does not have (client 2026-11-11). The reply that answered the rest also hands the chat to
- * them - the canned line is a promise, and an escalation is what makes someone keep it (it is also what
- * the nudge reminds them of).
+ * catalog does not have (client 2026-11-11), and so is the PO form while its link is not set. The reply
+ * that answered the rest also hands the chat to them - the canned line is a promise, and an escalation
+ * is what makes someone keep it (it is also what the nudge reminds them of).
  */
 async function handToTeam(conv: { id: string; status: string }, text: string, f: TeamFollowUp): Promise<void> {
   const reason = [
     f.total ? 'Pelanggan minta total harga - harga per item sudah dikirim, total keseluruhan mohon dihitung tim' : '',
     f.size ? 'Pelanggan menanyakan ukuran/panjang yang tidak ada di data katalog - mohon diinfokan tim' : '',
+    f.poForm ?? '',
   ].filter(Boolean).join('; ');
   await updateConversationStatus(conv.id, 'escalated', reason)
-    .catch((err) => console.warn('[messageRouter] total hand-off status failed:', err instanceof Error ? err.message : err));
+    .catch((err) => console.warn('[messageRouter] team hand-off status failed:', err instanceof Error ? err.message : err));
   notifyStaff({
     title: conv.status === 'escalated' ? 'Pelanggan menunggu balasan' : 'Eskalasi baru',
     body: `${reason}: ${text.slice(0, 120)}`,
@@ -398,11 +404,15 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     if (humanStatuses.includes(conv.status) || conv.assignedAgent !== null) return;
 
     const combinedText = entry.texts.join('\n');
+    // Not about buying (courier, job seeker, payment/order follow-up, supplier) - to the team as it is,
+    // no AI call, no sales question, and no price list: a courier's "berapa ongkirnya" is not a price
+    // question. See detectNonSalesTopic.
+    const nonSales = detectNonSalesTopic(combinedText, await earlierCustomerText(conversationId));
 
     // The brand price lists are keyword-triggered and independent of the AI: a price question, or a
-    // request for the file itself (which also resends a list already sent). The sends are
-    // fire-and-forget - resolving them BEFORE the call is what lets the reply and the attachments
-    // agree, via `catalogNote`. Which brand's file, if any, is catalogDelivery's rule.
+    // request for the list itself (which also resends one already sent, and goes even for a priced
+    // item). The sends are fire-and-forget - resolving them BEFORE the call is what lets the reply
+    // and the attachments agree, via `catalogNote`. Which brand's file, if any, is catalogDelivery's rule.
     // customerType still feeds the prompt's buyer-type line (CUSTOMER_TYPE_LINE); no check reads it.
     const customerType = await getContactProfile(conv.contactId)
       .then((p) => p?.customerType ?? null)
@@ -410,9 +420,8 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
 
     let catalogNote: string | null = null;
     let filesSent = false;
-    const fileAsked = detectCatalogRequest(combinedText);
-    const priceListResolved = fileAsked || isPriceRequest(combinedText);
-    if (priceListResolved) {
+    const fileAsked = detectCatalogRequest(combinedText) || asksForPriceList(combinedText);
+    if (!nonSales && (fileAsked || isPriceRequest(combinedText))) {
       const delivery = await resolveCatalogDelivery(conv.contactId, combinedText, { explicit: fileAsked });
       catalogNote = delivery.note;
       filesSent = delivery.files.length > 0;
@@ -429,9 +438,6 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // a customer can't tell apart from being ignored. Fold it into the low-confidence flow
     // below, which already knows how to escalate or ack per conversation status.
     let aiResponse: AIResponse;
-    // Not about buying (courier, job seeker, payment/order follow-up, supplier) - to the team as it is,
-    // no AI call, no sales question. See detectNonSalesTopic.
-    const nonSales = detectNonSalesTopic(combinedText, await earlierCustomerText(conversationId));
     try {
       aiResponse = nonSales
         ? { message: '', confidence: 'low', escalationReason: `${nonSales} - bukan pertanyaan produk` }
@@ -516,21 +522,22 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // lands during the escalation checks and staff sync above was missed (live 2026-11-08: "Dengan Jovi
     // ka" typed as a reply about Malang was being sent, which then asked the name again).
     if (supersedeStaleTurn(entry, filesSent)) return;
-    const followUp = teamFollowUp(aiResponse, combinedText);
-    if (followUp.total || followUp.size) await handToTeam(conv, combinedText, followUp);
+    const poForm = aiResponse.sendPoForm ? await poFormToSend() : null;
+    const followUp = teamFollowUp(aiResponse, combinedText, poForm);
+    if (followUp.total || followUp.size || followUp.poForm) await handToTeam(conv, combinedText, followUp);
     else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conversationId, combinedText);
     const reply = replyText(aiResponse, followUp);
     let sentId: string | null = null;
     try { sentId = await entry.sendReply(reply); } catch { /* ignore */ }
-    // After the text: the reference photos in order, then the PO form link.
+    // After the text: the reference photos in order, then the PO form link (or the team's promise).
     const photos = await sendReferencePhotos(aiResponse.imageUrls, async (url) => (await entry.sendImage?.(url)) ?? null);
-    const poForm = aiResponse.sendPoForm ? await sendPoFormLink((text) => entry.sendReply(text)) : null;
-    if (aiResponse.catalogUrl && !priceListResolved) {
+    const poSent = poForm ? await sendPoForm(poForm.body, (text) => entry.sendReply(text)) : null;
+    if (aiResponse.catalogUrl) {
       // The model spotted a price-list request the keywords missed (say, the answer to "barang apa
-      // yang mau dikemas?"). Send the real file - never the model-provided URL (closed catalog).
-      // The keyword path above already resolved the common phrasings, hence the guard against a
-      // double send. Same rule as there; it runs after the reply, so the brands and items given in
-      // this very message count.
+      // yang mau dikemas?"), or learned this turn the brand the keyword path did not know yet. Send
+      // the real file - never the model-provided URL (closed catalog). Same rule as the keyword
+      // path, never explicit: the once-per-brand record keeps what that path just sent from going
+      // twice. It runs after the reply, so the brands and items given in this very message count.
       const delivery = await resolveCatalogDelivery(conv.contactId, combinedText, {
         explicit: false,
         fresh: { facts: aiResponse.profileUpdate },
@@ -543,7 +550,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     }
     // Rows in send order, so the thread reads as the customer saw it.
     await insertMessage({ conversationId, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved' });
-    await recordAfterReply(conversationId, photos, poForm);
+    await recordAfterReply(conversationId, photos, poSent);
     saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
   } finally {
     inFlightConversations.delete(conversationId);
@@ -729,20 +736,21 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     return;
   }
 
-  const followUp = teamFollowUp(aiResponse, body);
-  if (followUp.total || followUp.size) await handToTeam(conv, body, followUp);
+  const poForm = aiResponse.sendPoForm ? await poFormToSend() : null;
+  const followUp = teamFollowUp(aiResponse, body, poForm);
+  if (followUp.total || followUp.size || followUp.poForm) await handToTeam(conv, body, followUp);
   else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conv.id, body);
   const reply = replyText(aiResponse, followUp);
   let sentId: string | null = null;
   try { sentId = await sendTextMessage(phoneNumber.phoneNumberId, replyJid, reply); } catch { /* ignore */ }
-  // After the text: the reference photos in order, then the PO form link - as on the text path.
+  // After the text: the reference photos in order, then the PO form link (or the team's promise) - as on the text path.
   const photos = await sendReferencePhotos(aiResponse.imageUrls, (url) => sendImageMessage(phoneNumber.phoneNumberId, replyJid, url, ''));
-  const poForm = aiResponse.sendPoForm ? await sendPoFormLink((text) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text)) : null;
+  const poSent = poForm ? await sendPoForm(poForm.body, (text) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text)) : null;
   if (aiResponse.catalogUrl) {
     // Price list asked for via the photo's caption. No keyword trigger runs on this path,
-    // so without this the model says "katalognya sudah dikirim" and nothing is sent.
+    // so without this the model says "katalognya sudah dikirim" and nothing is sent. Nothing was
+    // sent for this caption yet, so a caption naming the list ("minta pricelist") counts as explicit.
     const delivery = await resolveCatalogDelivery(conv.contactId, body, {
-      explicit: false,
       fresh: { facts: aiResponse.profileUpdate },
     });
     for (const f of delivery.files) {
@@ -752,7 +760,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     }
   }
   await insertMessage({ conversationId: conv.id, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved', metadata: { source: 'vision_recommend' } as Record<string, unknown> });
-  await recordAfterReply(conv.id, photos, poForm);
+  await recordAfterReply(conv.id, photos, poSent);
   saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
 }
 
@@ -776,20 +784,31 @@ async function sendReferencePhotos(
   return sent;
 }
 
+const PO_FORM_NOT_SET_REASON = 'Form PO belum diatur di Pengaturan';
+
 /**
- * The PO form link from settings, as its own message (the model never writes it - spec 7.3).
- * null when the link cannot be read: the reply already went out and must still be stored.
+ * What follows the reply on a send_po_form turn: the PO form link from settings (the model never
+ * writes it - spec 7.3). While the setting is still the placeholder, or cannot be read, no link goes
+ * out: the customer gets the team's promise instead and `teamReason` hands the chat to the team, who
+ * send the form by hand.
  */
-async function sendPoFormLink(send: (text: string) => Promise<string | null>): Promise<{ body: string; wamid: string | null } | null> {
-  let body: string;
+async function poFormToSend(): Promise<{ body: string; teamReason: string | null }> {
+  const fromTeam = (why: string) => ({ body: CANNED_PO_FORM_FROM_TEAM, teamReason: `${why} - pelanggan setuju harga, mohon kirimkan form PO` });
   try {
-    body = poFormMessage(await getPoFormUrl());
+    const url = await getPoFormUrl();
+    if (url !== PO_FORM_PLACEHOLDER_URL) return { body: poFormMessage(url), teamReason: null };
+    console.warn('[messageRouter] PO form link is still the placeholder - the team sends the form');
+    return fromTeam(PO_FORM_NOT_SET_REASON);
   } catch (err) {
-    console.warn('[messageRouter] PO form link unavailable - not sent:', err instanceof Error ? err.message : err);
-    return null;
+    console.warn('[messageRouter] PO form link unavailable - the team sends the form:', err instanceof Error ? err.message : err);
+    return fromTeam('Form PO tidak bisa dibaca dari Pengaturan');
   }
+}
+
+/** Sends the PO message; a failed send is still stored, as 'saved'. */
+async function sendPoForm(body: string, send: (text: string) => Promise<string | null>): Promise<{ body: string; wamid: string | null }> {
   let wamid: string | null = null;
-  try { wamid = await send(body); } catch { /* recorded below as 'saved' */ }
+  try { wamid = await send(body); } catch { /* recorded as 'saved' */ }
   return { body, wamid };
 }
 
