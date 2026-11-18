@@ -1,41 +1,9 @@
 import { upsertContactProfile } from '../repositories/contactProfiles.js';
 import { applyAiLeadUpdate } from '../repositories/leads.js';
 import { updateConversationFollowUp } from '../repositories/conversations.js';
-import { CUSTOMER_TYPES, LEAD_TEMPERATURES } from '../domain/types.js';
-import type { AIResponse, CustomerType, LeadTemperature } from '../domain/types.js';
+import { LEAD_TEMPERATURES } from '../domain/types.js';
+import type { AIResponse, LeadTemperature } from '../domain/types.js';
 import { notifyStaff } from './staffNotify.js';
-
-// The model writes these free-hand, and it does not always pick the snake_case spelling.
-// Normalising rather than rejecting matters: pickProfileGapQuestion only tests customerType
-// for truthiness, so before this function existed a stored "End User" counted as known and
-// stopped the bot re-asking. Dropping those outright would have made it ask again.
-const CUSTOMER_TYPE_ALIASES: Record<string, CustomerType> = {
-  enduser: 'end_user', pengguna: 'end_user', pemakai: 'end_user', retail: 'end_user',
-  dipakaisendiri: 'end_user', pakaisendiri: 'end_user', penggunaakhir: 'end_user',
-  sendiri: 'end_user', pribadi: 'end_user', personal: 'end_user', konsumen: 'end_user',
-  reseller: 'reseller', agen: 'reseller', toko: 'reseller', distributor: 'reseller',
-  project: 'project', proyek: 'project', kontraktor: 'project',
-};
-
-/**
- * customer_type comes from the model and lands in a plain text column with no DB enum, so an
- * unchecked cast let anything at all become the stored buyer type — and buyer type now decides
- * which price the bot may quote. Anything still unrecognised after normalising is dropped
- * rather than written: no value is better than a wrong one the next turn will trust.
- */
-export function parseCustomerType(raw: unknown): CustomerType | undefined {
-  if (typeof raw !== 'string') return undefined;
-  const value = raw.trim().toLowerCase();
-  if (!value) return undefined;
-
-  const exact = CUSTOMER_TYPES.find((t) => t === value);
-  if (exact) return exact;
-
-  const squashed = value.replace(/[\s_-]/g, '');
-  const alias = CUSTOMER_TYPE_ALIASES[squashed];
-  if (!alias) console.warn(`[insights] ignoring unknown customer_type "${raw}"`);
-  return alias;
-}
 
 const TEMPERATURE_ALIASES: Record<string, LeadTemperature> = {
   hot: 'hot', panas: 'hot', warm: 'hot', hangat: 'hot', tinggi: 'hot',
@@ -43,7 +11,7 @@ const TEMPERATURE_ALIASES: Record<string, LeadTemperature> = {
 };
 
 /**
- * Same contract as parseCustomerType: normalise what the model actually writes, drop what
+ * Normalise what the model actually writes, drop what
  * cannot be mapped. The value is rendered as a badge and filtered on, so an unmapped string
  * would show up verbatim in the marketing report.
  *

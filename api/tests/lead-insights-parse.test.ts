@@ -20,6 +20,7 @@ vi.mock('../src/services/claude.js', () => ({
   CLAUDE_MODEL: 'test-model',
 }));
 const mockFill = vi.fn(async () => undefined);
+const mockMerge = vi.fn(async () => undefined);
 const mockLeadUpdate = vi.fn(async () => undefined);
 vi.mock('../src/repositories/contactProfiles.js', () => ({ fillContactProfileGaps: mockFill, upsertContactProfile: vi.fn() }));
 vi.mock('../src/repositories/leads.js', () => ({
@@ -27,6 +28,7 @@ vi.mock('../src/repositories/leads.js', () => ({
   findCurrentLeadForContact: vi.fn(async () => null),
   applyLeadStage: vi.fn(async () => false),
   reopenOrRenewLostLead: vi.fn(),
+  mergeLeadOrderFields: mockMerge,
 }));
 vi.mock('../src/repositories/conversations.js', () => ({
   getLastNMessages: vi.fn(), listConversationsDueForInsights: vi.fn(), markInsightsExtracted: vi.fn(),
@@ -43,22 +45,29 @@ describe('reading the model answer', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('keeps every good field when one value is the wrong shape', async () => {
-    modelSays('{"is_sales_conversation": true, "customer_type": "end user", "lead_temperature": "warm", "product_sought": "Engsel tanam", "quantity": 300, "business_name": null}');
-    expect(await extractLeadInsights('Pelanggan: engsel tanam 300 ya')).toEqual({
+    modelSays('{"is_sales_conversation": true, "lead_temperature": "warm", "name": "Budi", "business_name": null, "brands": "kertas_supreme", "items": [{"product": "Box", "qty": "300"}]}');
+    expect(await extractLeadInsights('Pelanggan: box 300 ya')).toEqual({
       is_sales_conversation: true,
-      customer_type: 'end_user',
       lead_temperature: 'hot',
       lead_kind: null, stage: null, evidence: null, lost_reason: null,
-      product_sought: 'Engsel tanam',
-      quantity: '300',
+      name: 'Budi',
       business_name: null,
+      brands: [],
+      items: [{ product: 'Box', qty: '300' }],
     });
   });
 
+  it('parses brands and items, dropping an unknown brand', async () => {
+    modelSays('{"lead_kind":"lead","brands":["kertas_supreme","legacy"],"items":[{"product":"Kertas Supreme 64 gsm","size":"30x30","qty":10,"qty_unit":"rim"}]}');
+    const r = (await extractLeadInsights('x'))!;
+    expect(r.brands).toEqual(['kertas_supreme']);
+    expect(r.items[0]!.qty).toBe(10);
+  });
+
   it('drops only the field it cannot map, and reads "unknown" as no value', async () => {
-    modelSays('```json\n{"is_sales_conversation": "true", "customer_type": "unknown", "lead_temperature": "lukewarm", "product_sought": ["Handle", "Engsel"]}\n```');
+    modelSays('```json\n{"is_sales_conversation": "true", "lead_temperature": "lukewarm", "items": "box"}\n```');
     const got = await extractLeadInsights('x');
-    expect(got).toMatchObject({ is_sales_conversation: true, customer_type: null, lead_temperature: null, product_sought: 'Handle, Engsel' });
+    expect(got).toMatchObject({ is_sales_conversation: true, lead_temperature: null, items: [] });
   });
 
   it('maps order numbers back to the customer messages, ignoring numbers that are not one', async () => {
@@ -110,22 +119,30 @@ describe('writing what was read', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('writes the fields of an answer that left out is_sales_conversation', async () => {
-    await applyLeadInsights('c1', { is_sales_conversation: null, lead_kind: null, stage: null, evidence: null, lost_reason: null, customer_type: 'project', lead_temperature: null, product_sought: 'Floorhinge', quantity: null, business_name: null });
-    expect(mockFill).toHaveBeenCalledWith('c1', { customerType: 'project', facts: { product_sought: 'Floorhinge' } });
+    await applyLeadInsights('c1', { is_sales_conversation: null, lead_kind: null, stage: null, evidence: null, lost_reason: null, lead_temperature: null, name: 'Budi', brands: [], items: [], business_name: 'Toko Delima' });
+    expect(mockFill).toHaveBeenCalledWith('c1', { facts: { name: 'Budi', business_name: 'Toko Delima' } });
   });
 
   // Live 2026-10-09 (Ika): the model said cold AND "not a sale" for a product we don't carry.
   it('still lets a cold verdict replace a Hot, even on a chat it calls "not a sale"', async () => {
-    await applyLeadInsights('c1', { is_sales_conversation: false, lead_kind: 'lainnya', stage: null, evidence: null, lost_reason: null, customer_type: 'reseller', lead_temperature: 'cold', product_sought: null, quantity: null, business_name: 'Toko Delima' });
+    await applyLeadInsights('c1', { is_sales_conversation: false, lead_kind: 'lainnya', stage: null, evidence: null, lost_reason: null, lead_temperature: 'cold', name: null, brands: [], items: [], business_name: 'Toko Delima' });
     expect(mockLeadUpdate).toHaveBeenCalledWith('c1', { temperature: 'cold' });
     expect(mockFill).not.toHaveBeenCalled();
   });
 
   it('writes nothing for an explicit "not a sale"', async () => {
-    await applyLeadInsights('c1', { is_sales_conversation: false, lead_kind: 'lainnya', stage: null, evidence: null, lost_reason: null, customer_type: 'project', lead_temperature: 'hot', product_sought: 'x', quantity: null, business_name: null });
+    await applyLeadInsights('c1', { is_sales_conversation: false, lead_kind: 'lainnya', stage: null, evidence: null, lost_reason: null, lead_temperature: 'hot', name: null, brands: ['kertas_supreme'], items: [{ product: 'x' }], business_name: null });
     expect(mockFill).not.toHaveBeenCalled();
     expect(mockLeadUpdate).not.toHaveBeenCalled();
   });
+});
+
+it('asks about Imperial Indopack and Kertas Supreme, not Legacy hardware', async () => {
+  modelSays('{}');
+  await extractLeadInsights('x');
+  const system = mockCreate.mock.calls[0]![0].system as string;
+  expect(system).toMatch(/Imperial Indopack \/ Kertas Supreme \(box karton dan kertas bungkus makanan cetak\)/);
+  expect(system).not.toMatch(/Legacy|customer_type|product_sought/);
 });
 
 // Live 2026-10-08: Ika wanted PTA roofing screws, staff answered "kami tidak menyediakan", and the

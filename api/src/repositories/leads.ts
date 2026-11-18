@@ -2,6 +2,7 @@ import { eq, and, or, ilike, inArray, desc, asc, gte, lt, sql, type SQL, type An
 import { getDb } from '../db/client.js';
 import { leads, contacts, contactProfiles, leadOrders, staffProfiles } from '../db/schema.js';
 import { canAdvance, kindFromNonSalesTopic } from '../domain/leadStages.js';
+import { mergeOrderFacts, type BrandSlug, type OrderItem } from '../domain/orderProfile.js';
 import { insertLeadEvent, messageTimeSql } from './leadEvents.js';
 import type {
   LeadActor,
@@ -1240,4 +1241,25 @@ export async function closeSilentLeads(
     if (changed) closed.push({ leadId: r.lead_id, lastAt: r.last_at });
   }
   return closed;
+}
+
+/**
+ * Adds brands and items the chat revealed to the lead, never replacing: brands are a union, items
+ * are matched by product + size (mergeOrderFacts, the same rules as the contact profile). The row
+ * is locked while it is read and written, so two passes cannot lose each other's items.
+ */
+export async function mergeLeadOrderFields(
+  leadId: string,
+  add: { brands: BrandSlug[]; items: OrderItem[] },
+): Promise<void> {
+  await getDb().transaction(async (tx) => {
+    const [row] = await tx.select({ brands: leads.brands, items: leads.items }).from(leads).where(eq(leads.id, leadId)).for('update');
+    if (!row) return;
+    const merged = mergeOrderFacts({ brands: row.brands, items: row.items }, { brands: add.brands, items: add.items });
+    await tx.update(leads).set({
+      brands: merged['brands'] as string[],
+      items: merged['items'] as unknown[],
+      updatedAt: new Date(),
+    }).where(eq(leads.id, leadId));
+  });
 }

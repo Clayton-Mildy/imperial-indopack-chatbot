@@ -85,7 +85,7 @@ describe('lead-insights pass', () => {
     await db.execute(sql`UPDATE conversations SET insights_extracted_at = NULL WHERE id = ${convId}`);
     // Back to a fresh organic lead (renewals from earlier tests are removed first).
     await db.execute(sql`DELETE FROM leads WHERE contact_id = ${contactId} AND id <> ${leadId}`);
-    await db.execute(sql`UPDATE leads SET lead_temperature = NULL, status = 'new', kind = 'lead', kind_set_by = NULL,
+    await db.execute(sql`UPDATE leads SET brands = '{}', items = '[]'::jsonb, lead_temperature = NULL, status = 'new', kind = 'lead', kind_set_by = NULL,
       lost_reason = NULL, outcome_evidence = NULL, outcome_message_id = NULL, closed_at = NULL, human_updated_at = NULL,
       total_orders = 0, total_orders_set_at = NULL, deal_value_set_at = NULL WHERE id = ${leadId}`);
     await db.execute(sql`DELETE FROM lead_orders WHERE lead_id = ${leadId}`);
@@ -110,7 +110,7 @@ describe('lead-insights pass', () => {
     await getDb().execute(sql`UPDATE messages SET created_at = ${minutesAgo(6).toISOString()}::timestamptz WHERE conversation_id = ${convId}`);
     expect(await isDue()).toBe(true);
 
-    answer({ product_sought: 'Floorhinge Dorma' });
+    answer({ lead_temperature: 'hot' });
     expect(await runLeadInsightsPass(1, only())).toBe(1);
     expect(await isDue()).toBe(false);
     // Stamped at the customer's message, not at now(): a message that lands during the call stays due.
@@ -131,7 +131,7 @@ describe('lead-insights pass', () => {
     await getDb().execute(sql`UPDATE messages SET created_at = date_trunc('millisecond', created_at) + interval '504 microseconds'
       WHERE conversation_id = ${convId}`);
     expect(await isDue()).toBe(true);
-    answer({ product_sought: null });
+    answer({ lead_temperature: null });
     expect(await runLeadInsightsPass(1, only())).toBe(1);
     expect(await isDue()).toBe(false);
     expect(await runLeadInsightsPass(1, only())).toBe(0);
@@ -181,31 +181,74 @@ describe('lead-insights pass', () => {
     expect((await getDb().select().from(leads).where(eq(leads.id, leadId)))[0]!.totalOrders).toBe(0);
   });
 
-  it('fills Tipe, Hot/Cold and Minat for a chat the bot never answered', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'Floorhinge Dorma 100 kg ada? untuk proyek', createdAt: minutesAgo(10) });
-    answer({ customer_type: 'project', lead_temperature: 'hot', product_sought: 'Floorhinge Dorma beban 100 kg', quantity: '4 pintu' });
+  it('fills Hot/Cold, name and business for a chat the bot never answered', async () => {
+    await insertMessage({ conversationId: convId, role: 'user', body: 'Saya Budi dari Toko Delima, box makanan 20x20 ada?', createdAt: minutesAgo(10) });
+    answer({ lead_temperature: 'hot', name: 'Budi', business_name: 'Toko Delima' });
 
     await runLeadInsightsPass(1, only());
 
     const profile = await getContactProfile(contactId);
-    expect(profile?.customerType).toBe('project');
-    expect(profile?.profile).toMatchObject({ product_sought: 'Floorhinge Dorma beban 100 kg', quantity: '4 pintu' });
+    expect(profile?.profile).toMatchObject({ name: 'Budi', business_name: 'Toko Delima' });
     const [lead] = await getDb().select().from(leads).where(eq(leads.contactId, contactId));
     expect(lead?.leadTemperature).toBe('hot');
   });
 
-  // customer_type decides which price the bot may quote; the live bot read it with the whole
-  // catalog in view, mid-conversation. A second opinion after the fact only fills gaps.
+  // The live bot read these with the whole catalog in view, mid-conversation. A second opinion
+  // after the fact only fills gaps.
   it('never overwrites what the live bot already wrote, but fills a blank value', async () => {
-    await upsertContactProfile(contactId, { customerType: 'end_user', profilePatch: { product_sought: 'Handle Newton', quantity: '' } });
-    await insertMessage({ conversationId: convId, role: 'user', body: 'jadi 3 set ya', createdAt: minutesAgo(10) });
-    answer({ customer_type: 'reseller', product_sought: 'Engsel', quantity: '3 set' });
+    await upsertContactProfile(contactId, { profilePatch: { name: 'Budi', business_name: '' } });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'dari Toko Delima', createdAt: minutesAgo(10) });
+    answer({ name: 'Andi', business_name: 'Toko Delima' });
 
     await runLeadInsightsPass(1, only());
 
-    const profile = await getContactProfile(contactId);
-    expect(profile?.customerType).toBe('end_user');
-    expect(profile?.profile).toMatchObject({ product_sought: 'Handle Newton', quantity: '3 set' });
+    expect((await getContactProfile(contactId))?.profile).toMatchObject({ name: 'Budi', business_name: 'Toko Delima' });
+  });
+
+  it('leaves the lead with both brands and two items after a chat about paper then boxes', async () => {
+    await insertMessage({ conversationId: convId, role: 'user', body: 'kertas supreme 30x30 10 rim, sama box 20x20 500 pcs', createdAt: minutesAgo(10) });
+    answer({
+      lead_kind: 'lead',
+      brands: ['kertas_supreme', 'imperial_indopack', 'legacy'],
+      items: [
+        { product: 'Kertas Supreme 64 gsm', size: '30x30', qty: 10, qty_unit: 'rim' },
+        { product: 'Box makanan', size: '20x20', qty: '500', qty_unit: 'pcs' },
+      ],
+    });
+
+    await runLeadInsightsPass(1, only());
+
+    const lead = await theLead();
+    expect([...lead.brands].sort()).toEqual(['imperial_indopack', 'kertas_supreme']);
+    expect(lead.items).toHaveLength(2);
+    expect(lead.items[1]).toMatchObject({ product: 'Box makanan', qty: 500, qty_unit: 'pcs' });
+  });
+
+  it('adds to what the lead has: a second pass keeps the old items and updates a matching one', async () => {
+    await getDb().execute(sql`UPDATE leads SET brands = '{kertas_supreme}', items = '[{"product":"Kertas Supreme 64 gsm","size":"30x30","qty":5,"qty_unit":"rim"}]'::jsonb WHERE id = ${leadId}`);
+    await insertMessage({ conversationId: convId, role: 'user', body: 'jadi 10 rim, plus box', createdAt: minutesAgo(10) });
+    answer({
+      lead_kind: 'lead', brands: ['imperial_indopack'],
+      items: [{ product: 'Kertas Supreme 64 gsm', size: '30 x 30', qty: 10 }, { product: 'Box makanan', size: '20x20' }],
+    });
+
+    await runLeadInsightsPass(1, only());
+
+    const lead = await theLead();
+    expect([...lead.brands].sort()).toEqual(['imperial_indopack', 'kertas_supreme']);
+    expect(lead.items).toHaveLength(2);
+    expect(lead.items[0]).toMatchObject({ product: 'Kertas Supreme 64 gsm', qty: 10, qty_unit: 'rim' });
+  });
+
+  it('does not write brands or items to a lead the model calls a courier', async () => {
+    await insertMessage({ conversationId: convId, role: 'user', body: 'saya kurir, ambil paket box', createdAt: minutesAgo(10) });
+    answer({ lead_kind: 'kurir', brands: ['imperial_indopack'], items: [{ product: 'Box' }] });
+
+    await runLeadInsightsPass(1, only());
+
+    const lead = await theLead();
+    expect(lead.brands).toEqual([]);
+    expect(lead.items).toEqual([]);
   });
 
   it('writes nothing for a chat that is not a sale, and does not read it again', async () => {
@@ -426,7 +469,7 @@ describe('lead-insights pass', () => {
     await insertMessage({ conversationId: convId, role: 'user', body: 'mau melamar kerja, ada lowongan admin gudang?', createdAt: minutesAgo(20) });
     mockCreate.mockResolvedValue({
       content: [{ type: 'text', text: JSON.stringify({
-        lead_kind: 'lamaran_kerja', customer_type: 'end_user', product_sought: 'lowongan admin gudang', lead_temperature: 'hot',
+        lead_kind: 'lamaran_kerja', name: 'Budi', lead_temperature: 'hot',
       }) }],
       usage: { input_tokens: 1, output_tokens: 1 },
     });
@@ -460,29 +503,29 @@ describe('lead-insights pass', () => {
   it.each(['quoted', 'won'])('keeps the fills of a %s buyer the model labels status_pesanan', async (status) => {
     await getDb().execute(sql`UPDATE leads SET status = ${status} WHERE id = ${leadId}`);
     await insertMessage({ conversationId: convId, role: 'user', body: 'sudah transfer ya kak, engsel tanam 3D 2 lusin kapan dikirim?', createdAt: minutesAgo(10) });
-    kindAnswer({ lead_kind: 'status_pesanan', lead_temperature: 'hot', product_sought: 'Engsel tanam 3D', quantity: '2 lusin' });
+    kindAnswer({ lead_kind: 'status_pesanan', lead_temperature: 'hot', name: 'Budi', business_name: 'Toko Delima' });
 
     await runLeadInsightsPass(1, only());
 
     const lead = await theLead();
     expect(lead).toMatchObject({ kind: 'lead', status, leadTemperature: 'hot' });
-    expect((await getContactProfile(contactId))?.profile).toMatchObject({ product_sought: 'Engsel tanam 3D', quantity: '2 lusin' });
+    expect((await getContactProfile(contactId))?.profile).toMatchObject({ name: 'Budi', business_name: 'Toko Delima' });
   });
 
   it('keeps the fills when staff set the kind to lead and the model labels it status_pesanan', async () => {
     await getDb().execute(sql`UPDATE leads SET kind_set_by = 'staff' WHERE id = ${leadId}`);
     await insertMessage({ conversationId: convId, role: 'user', body: 'pesanan engsel tanam kemarin sudah dikirim?', createdAt: minutesAgo(10) });
-    kindAnswer({ lead_kind: 'status_pesanan', lead_temperature: 'hot', product_sought: 'Engsel tanam' });
+    kindAnswer({ lead_kind: 'status_pesanan', lead_temperature: 'hot', name: 'Budi' });
 
     await runLeadInsightsPass(1, only());
 
     expect(await theLead()).toMatchObject({ kind: 'lead', kindSetBy: 'staff', leadTemperature: 'hot' });
-    expect((await getContactProfile(contactId))?.profile).toMatchObject({ product_sought: 'Engsel tanam' });
+    expect((await getContactProfile(contactId))?.profile).toMatchObject({ name: 'Budi' });
   });
 
   it('still skips the fills of a new lead the model calls a courier, and tags it', async () => {
     await insertMessage({ conversationId: convId, role: 'user', body: 'saya kurir grab, mau ambil paket', createdAt: minutesAgo(10) });
-    kindAnswer({ lead_kind: 'kurir', lead_temperature: 'hot', product_sought: 'paket' });
+    kindAnswer({ lead_kind: 'kurir', lead_temperature: 'hot', name: 'Budi' });
 
     await runLeadInsightsPass(1, only());
 

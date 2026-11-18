@@ -45,7 +45,7 @@ const TEST_PREFIX = '__leadinsights_err_test__';
 const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000);
 
 const ANSWER = {
-  content: [{ type: 'text', text: JSON.stringify({ lead_kind: 'lead', product_sought: 'Engsel tanam 3D', lead_temperature: 'hot' }) }],
+  content: [{ type: 'text', text: JSON.stringify({ lead_kind: 'lead', name: 'Budi', lead_temperature: 'hot' }) }],
   usage: { input_tokens: 1, output_tokens: 1 },
 };
 
@@ -116,14 +116,14 @@ describe('lead-insights pass, one chat failing', () => {
 
     expect(await stamped(first!.convId)).toBe(false);
     expect(await stamped(second!.convId)).toBe(true);
-    expect((await getContactProfile(second!.contactId))?.profile).toMatchObject({ product_sought: 'Engsel tanam 3D' });
+    expect((await getContactProfile(second!.contactId))?.profile).toMatchObject({ name: 'Budi' });
     expect(await temperature(second!.contactId)).toBe('hot');
 
     // Retried next sweep, and read once the write works again.
     failFor.clear();
     expect(await runLeadInsightsPass(2, ids())).toBe(1);
     expect(await stamped(first!.convId)).toBe(true);
-    expect((await getContactProfile(first!.contactId))?.profile).toMatchObject({ product_sought: 'Engsel tanam 3D' });
+    expect((await getContactProfile(first!.contactId))?.profile).toMatchObject({ name: 'Budi' });
   });
 
   it('still stops the sweep on a model error, stamping nothing', async () => {

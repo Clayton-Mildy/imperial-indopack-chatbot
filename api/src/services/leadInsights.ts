@@ -4,11 +4,12 @@ import { getClient, isDevMode, agentQuery, logUsageLine, CLAUDE_MODEL } from './
 import { getLastNMessages, listConversationsDueForInsights, markInsightsExtracted } from '../repositories/conversations.js';
 import { getLeadReopenAfterDays, getLeadSilenceLostDays } from '../repositories/appSettings.js';
 import { canAdvance, matchEvidence, hasPriceFigure, parseLeadKind, parseLostReason } from '../domain/leadStages.js';
-import type { CustomerType, Lead, LeadKind, LeadStatus, LeadTemperature, LostReason } from '../domain/types.js';
+import type { Lead, LeadKind, LeadStatus, LeadTemperature, LostReason } from '../domain/types.js';
 import { fillContactProfileGaps } from '../repositories/contactProfiles.js';
-import { applyAiLeadUpdate, applyLeadStage, closeSilentLeads, findCurrentLeadForContact, getLeadLifecycleStart, recordLeadOrders, reopenOrRenewLostLead, type LeadStageChange } from '../repositories/leads.js';
-import { parseCustomerType, parseTemperature } from './conversationInsights.js';
+import { applyAiLeadUpdate, applyLeadStage, closeSilentLeads, findCurrentLeadForContact, getLeadLifecycleStart, mergeLeadOrderFields, recordLeadOrders, reopenOrRenewLostLead, type LeadStageChange } from '../repositories/leads.js';
+import { parseTemperature } from './conversationInsights.js';
 import type { Message } from '../domain/types.js';
+import type { BrandSlug, OrderItem } from '../domain/orderProfile.js';
 
 /**
  * Background pass that reads a conversation after the fact and fills the lead's Tipe, Hot/Cold and
@@ -59,17 +60,21 @@ const parseStage = (raw: unknown): AiStage | undefined => {
   return v === 'contacted' || v === 'won' || v === 'lost' ? v : undefined;
 };
 
+// An item as the model wrote it. Kept loose on purpose (a qty of "300", a size of 30 x 30): the
+// merge (mergeOrderFacts) sanitises the fields, so a number in a string costs nothing here.
+const OrderItemSchema = z.unknown().transform((v) => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null));
+
 const InsightsObject = z.object({
   is_sales_conversation: z.unknown().optional().transform((v) => (v === true || v === 'true' ? true : v === false || v === 'false' ? false : null)),
   lead_kind: enumField<LeadKind>(parseLeadKind),
   stage: enumField<AiStage>(parseStage),
   evidence: textField,
   lost_reason: enumField<LostReason>(parseLostReason),
-  customer_type: enumField(parseCustomerType),
   lead_temperature: enumField(parseTemperature),
-  product_sought: textField,
-  quantity: textField,
+  name: textField,
   business_name: textField,
+  brands: z.array(z.unknown()).catch([]).transform((a) => a.filter((b): b is BrandSlug => b === 'imperial_indopack' || b === 'kertas_supreme')),
+  items: z.array(OrderItemSchema).catch([]).transform((a) => a.filter((i): i is Record<string, unknown> => i !== null)),
 });
 // An older answer (or one that kept the old key) says only is_sales_conversation: false = "lainnya".
 const InsightsSchema = InsightsObject.transform((o) => ({
@@ -82,15 +87,15 @@ const InsightsSchema = InsightsObject.transform((o) => ({
  */
 export type LeadInsights = z.infer<typeof InsightsSchema> & { orderMessageIds?: string[] };
 
-const PROMPT = `Kamu membaca percakapan WhatsApp antara pelanggan dan tim penjualan Legacy (distributor hardware: handle, engsel, kunci, rel laci, aksesoris pintu/jendela/furnitur). "Bot" adalah asisten AI, "Staf" adalah orang dari tim.
+const PROMPT = `Kamu membaca percakapan WhatsApp antara pelanggan dan tim penjualan Imperial Indopack / Kertas Supreme (box karton dan kertas bungkus makanan cetak). "Bot" adalah asisten AI, "Staf" adalah orang dari tim.
 
 Isi data lead dari percakapan ini. Hanya dari apa yang benar-benar tertulis - jangan menebak. null selalu boleh.
 
-- customer_type: "end_user" (dipakai sendiri / rumah sendiri), "project" (untuk proyek, kontraktor, pembangunan), "reseller" (dijual lagi, punya toko). Isi HANYA bila pelanggan menyatakannya atau jelas dari kata-katanya sendiri.
-- lead_temperature: "hot" bila ada niat beli nyata untuk barang yang BISA kami jual (menanyakan harga, menyebut jumlah, tenggat waktu, atau cara order). "cold" bila hanya melihat-lihat, sudah tidak membalas, ATAU barang yang dicari ternyata tidak kami jual / tidak tersedia (Bot atau Staf sudah bilang tidak ada) dan pelanggan belum tertarik pada alternatif yang kami tawarkan - niat beli untuk barang yang tidak ada bukan lead panas.
-- product_sought: produk yang dicari pelanggan, frasa singkat (maks 8 kata), mis. "Floorhinge Dorma beban 100 kg" atau "Engsel tanam 3D adjustable".
-- quantity: jumlah yang disebut pelanggan, apa adanya (mis. "3 karton", "20 set").
+- lead_temperature: "hot" bila ada niat beli nyata untuk barang yang BISA kami jual (menanyakan harga, menyebut jumlah, ukuran, atau desain, tenggat waktu, atau cara order). "cold" bila hanya melihat-lihat, sudah tidak membalas, ATAU barang yang dicari ternyata tidak kami jual / tidak tersedia (Bot atau Staf sudah bilang tidak ada) dan pelanggan belum tertarik pada alternatif yang kami tawarkan - niat beli untuk barang yang tidak ada bukan lead panas.
+- name: nama pelanggan bila disebut.
 - business_name: nama toko atau perusahaan pelanggan bila disebut.
+- brands: daftar merek yang diminati pelanggan: "imperial_indopack" (box karton cetak) dan/atau "kertas_supreme" (kertas bungkus makanan cetak). Kosongkan [] bila belum jelas.
+- items: daftar barang yang diminta pelanggan, satu objek per barang: {"product": nama barang, "size": ukuran mis. "30x30", "gsm": gramatur, "print": cetakan/warna, "qty": jumlah (angka), "qty_unit": "rim" atau "pcs", "has_design": true bila pelanggan sudah punya desain, false bila belum}. Isi hanya field yang disebut. Kosongkan [] bila belum ada barang.
 
 - lead_kind: jenis percakapan ini. "lead" = calon pembeli (termasuk yang mencari barang yang tidak kami jual - barang yang tidak kami jual tetap lead). "kurir" = kurir / ojek online / pengantar paket. "status_pesanan" = menanyakan atau menagih pesanan, pembayaran, atau pengiriman yang sudah ada. "lamaran_kerja" = melamar kerja. "supplier" = pihak yang menawarkan barangnya kepada kami. "lainnya" = obrolan pribadi, salah sambung, spam. Pembeli yang menanyakan pesanan / pembayaran / pengiriman miliknya sendiri di chat yang sama tetap "lead", begitu juga pelanggan lama yang memesan lagi di chat ini. Bila bukan "lead", isi stage dengan null. Bila bukan calon pembeli sama sekali, field lain diabaikan.
 - stage (hanya bila lead_kind "lead"): "contacted" = pelanggan menyatakan kebutuhan atau menanyakan produk. "won" = pelanggan JELAS setuju membeli, mis. "oke saya ambil 2 lusin", minta nomor rekening, atau mengirim alamat pengiriman untuk pesanan; tanya harga atau "nanti saya kabari" BUKAN won. "lost" = pelanggan menolak, sudah membeli di tempat lain, atau menutup percakapan setelah kami bilang barangnya tidak ada (mis. "ok makasih" setelah "belum ada di kami"); diam / tidak membalas BUKAN lost. Bila ragu, isi null.
@@ -98,7 +103,7 @@ Isi data lead dari percakapan ini. Hanya dari apa yang benar-benar tertulis - ja
 - lost_reason (hanya bila stage "lost"): "barang_tidak_ada", "harga", "beli_di_tempat_lain", "tidak_jadi", "tidak_cocok", atau "lainnya".
 
 Balas HANYA dengan JSON valid, tanpa teks lain:
-{"lead_kind": "lead", "stage": null, "evidence": null, "lost_reason": null, "customer_type": null, "lead_temperature": null, "product_sought": null, "quantity": null, "business_name": null}`;
+{"lead_kind": "lead", "stage": null, "evidence": null, "lost_reason": null, "lead_temperature": null, "name": null, "business_name": null, "brands": [], "items": []}`;
 
 function toTranscript(rows: Message[]): string {
   return rows
@@ -186,7 +191,8 @@ const clean = (v: string | null | undefined, max = MAX_INTEREST_CHARS): string |
 type PlanStep =
   | { op: 'reopen'; evidence: { body: string; messageId: string } }
   | { op: 'stage'; change: LeadStageChange }
-  | { op: 'profile'; customerType: CustomerType | undefined; facts: Record<string, unknown> }
+  | { op: 'profile'; facts: Record<string, unknown> }
+  | { op: 'order_fields'; brands: BrandSlug[]; items: OrderItem[] }
   | { op: 'temperature'; value: LeadTemperature }
   | { op: 'order'; messageId: string; evidence: string };
 
@@ -386,18 +392,17 @@ export function planLeadInsights(
     return plan;
   }
   const facts: Record<string, unknown> = {};
-  const product = clean(insights.product_sought);
-  const quantity = clean(insights.quantity, 40);
+  const name = clean(insights.name);
   const business = clean(insights.business_name);
-  // The keys the live bot writes (RESPOND_FIELD_DESC.profile_update), so the leads list's Minat
-  // column, pickProfileGapQuestion and the next turn's prompt all read them unchanged.
-  if (product) facts['product_sought'] = product;
-  if (quantity) facts['quantity'] = quantity;
+  if (name) facts['name'] = name;
   if (business) facts['business_name'] = business;
-  const customerType = insights.customer_type ?? undefined;
-  if (customerType || Object.keys(facts).length > 0) {
-    plan.steps.push({ op: 'profile', customerType, facts });
-    plan.wouldChange.push(`profile fill ${[customerType ? `type ${customerType}` : '', ...Object.keys(facts)].filter(Boolean).join(', ')}`);
+  if (Object.keys(facts).length > 0) {
+    plan.steps.push({ op: 'profile', facts });
+    plan.wouldChange.push(`profile fill ${Object.keys(facts).join(', ')}`);
+  }
+  if (insights.brands.length > 0 || insights.items.length > 0) {
+    plan.steps.push({ op: 'order_fields', brands: insights.brands, items: insights.items as OrderItem[] });
+    plan.wouldChange.push(`order fields ${[insights.brands.length ? `brands ${insights.brands.join('+')}` : '', insights.items.length ? `${insights.items.length} item(s)` : ''].filter(Boolean).join(', ')}`);
   }
   if (insights.lead_temperature) {
     plan.steps.push({ op: 'temperature', value: insights.lead_temperature });
@@ -428,7 +433,13 @@ async function applyPlan(contactId: string, plan: InsightsPlan): Promise<void> {
     } else if (step.op === 'stage') {
       if (stageOpen && lead) await applyLeadStage(lead.id, step.change);
     } else if (step.op === 'profile') {
-      await fillContactProfileGaps(contactId, { customerType: step.customerType, facts: step.facts });
+      await fillContactProfileGaps(contactId, { facts: step.facts });
+    } else if (step.op === 'order_fields') {
+      // Only a lead that is still open and is a buyer's: not a courier's, not one left Lost.
+      const target = lead ?? await findCurrentLeadForContact(contactId);
+      if (target && target.kind === 'lead' && target.status !== 'lost') {
+        await mergeLeadOrderFields(target.id, { brands: step.brands, items: step.items });
+      }
     } else {
       await applyAiLeadUpdate(contactId, { temperature: step.value });
     }
