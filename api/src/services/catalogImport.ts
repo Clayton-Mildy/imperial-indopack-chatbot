@@ -3,7 +3,8 @@
  *
  * Identity is by NAME, never UUID. Update in place, never wipe: brands, products and variants
  * are found or created by name, a variant's tiers are REPLACED by the rows in the file, and
- * anything not in the file is left alone and counted as `untouched`.
+ * anything not in the file is left alone and counted as `untouched`. Sizes match by normalizeSize
+ * (case, spaces, "cm", "x" vs "×"), the same way the product editor matches them.
  *
  * A row with a problem is reported by its Excel row number and skipped; the valid rows still
  * apply. A variant with any bad row is skipped whole (parseTemplateRows), so a typo can never
@@ -11,15 +12,20 @@
  */
 
 import readXlsxFile from 'read-excel-file/node';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { brands, products, productVariants } from '../db/schema.js';
+import { brandSlugOfName } from '../domain/brands.js';
+import { normalizeSize } from '../domain/orderProfile.js';
+import { parseProductSpec } from '../domain/productSpec.js';
+import { diffProduct, loadOne, type Actor, type CatalogChange, type ProductInput } from './catalogEditor.js';
+import { recordCatalogChange } from '../repositories/catalogAudit.js';
 import { InvalidXlsxError } from './leadImport.js';
 import { refreshEmbeddingsSequential } from './embeddings.js';
 import { invalidateCatalogCache } from './ragQuery.js';
 import { parseTemplateRows, TEMPLATE_SHEET } from './catalogTemplate.js';
-import { replaceVariantTiers } from '../repositories/priceTiers.js';
-import { lowestTier } from '../domain/pricing.js';
+import { listTiersByVariant, replaceVariantTiers } from '../repositories/priceTiers.js';
+import { lowestTier, toPcs, type PriceTier } from '../domain/pricing.js';
 
 export { InvalidXlsxError };
 
@@ -34,7 +40,17 @@ export interface CatalogImportResult {
   errors: { row: number; reason: string }[];
 }
 
-export async function importCatalogFromXlsx(buffer: Buffer): Promise<CatalogImportResult> {
+export interface ImportPreview {
+  newProducts: number;
+  newSizes: number;
+  changedPrices: number;
+  unchanged: number;
+  validRows: number;
+  totalRows: number;
+  errors: { row: number; message: string }[];
+}
+
+async function parseWorkbook(buffer: Buffer) {
   let sheets: Awaited<ReturnType<typeof readXlsxFile>>;
   try {
     sheets = await readXlsxFile(buffer);
@@ -42,7 +58,78 @@ export async function importCatalogFromXlsx(buffer: Buffer): Promise<CatalogImpo
     throw new InvalidXlsxError(err);
   }
   const sheet = sheets.find((s) => s.sheet.trim().toLowerCase() === TEMPLATE_SHEET.toLowerCase()) ?? sheets[0];
-  const parsed = parseTemplateRows((sheet?.data ?? []) as unknown[][]);
+  return parseTemplateRows((sheet?.data ?? []) as unknown[][]);
+}
+
+const sameTier = (a: PriceTier, b: PriceTier) =>
+  a.priceIdr === b.priceIdr && a.priceUnit === b.priceUnit && a.includesDelivery === b.includesDelivery;
+
+/**
+ * What importing this file would do, counted against the database. Writes nothing and touches no cache.
+ * Counts per product / size / tier row, over variants that survive parsing (a variant with a bad row is
+ * skipped whole, so its rows change nothing). A row that only changes the description or use text, or
+ * whose variant drops tiers the file omits, is not counted as a change.
+ */
+export async function previewCatalogImport(buffer: Buffer): Promise<ImportPreview> {
+  const parsed = await parseWorkbook(buffer);
+  const preview: ImportPreview = {
+    newProducts: 0,
+    newSizes: 0,
+    changedPrices: 0,
+    unchanged: 0,
+    validRows: parsed.validRows,
+    totalRows: parsed.totalRows,
+    errors: parsed.errors,
+  };
+  if (parsed.variants.length === 0) {
+    preview.unchanged = parsed.validRows;
+    return preview;
+  }
+
+  const db = getDb();
+  const productRows = await db.select({ id: products.id, name: products.name }).from(products);
+  const productIds = new Map(productRows.map((p) => [p.name.toLowerCase(), p.id]));
+  const variantRows = await db.select({ id: productVariants.id, productId: productVariants.productId, name: productVariants.name }).from(productVariants);
+  const tierMap = await listTiersByVariant(variantRows.map((v) => v.id), db);
+
+  const newProducts = new Set<string>();
+  const newSizes = new Set<string>();
+  let changedRows = 0;
+  for (const v of parsed.variants) {
+    const productKey = v.product.toLowerCase();
+    const productId = productIds.get(productKey);
+    if (productId === undefined) {
+      newProducts.add(productKey);
+      changedRows += v.tiers.length;
+      continue;
+    }
+    const existing = variantRows.find((r) => r.productId === productId && normalizeSize(r.name) === normalizeSize(v.size));
+    if (!existing) {
+      newSizes.add(`${productKey}\u0000${normalizeSize(v.size)}`);
+      changedRows += v.tiers.length;
+      continue;
+    }
+    const stored = new Map((tierMap.get(existing.id) ?? []).map((t) => [toPcs(t.minQty, t.qtyUnit), t]));
+    v.tiers.forEach((t) => {
+      const was = stored.get(toPcs(t.minQty, t.qtyUnit));
+      if (!was || !sameTier(was, t)) {
+        preview.changedPrices++;
+        changedRows++;
+      }
+    });
+  }
+  preview.newProducts = newProducts.size;
+  preview.newSizes = newSizes.size;
+  preview.unchanged = Math.max(0, parsed.validRows - changedRows);
+  return preview;
+}
+
+export async function importCatalogFromXlsx(
+  buffer: Buffer,
+  opts: { fileName?: string; actor?: Actor } = {}
+): Promise<CatalogImportResult> {
+  const parsed = await parseWorkbook(buffer);
+  const actor: Actor = opts.actor ?? { staffId: null, name: 'Sistem' };
 
   const result: CatalogImportResult = {
     productsCreated: 0,
@@ -60,10 +147,16 @@ export async function importCatalogFromXlsx(buffer: Buffer): Promise<CatalogImpo
   const changed = new Set<string>();
 
   await db.transaction(async (tx) => {
+    // The editor's lock: its case-insensitive name check and this import never interleave.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('catalog_editor'))`);
     const brandMap = new Map((await tx.select({ id: brands.id, name: brands.name }).from(brands)).map((b) => [b.name.toLowerCase(), b.id]));
     const productRows = await tx.select({ id: products.id, name: products.name }).from(products);
     const productMap = new Map(productRows.map((p) => [p.name.toLowerCase(), p.id]));
     const touchedProducts = new Set<string>();
+    // For history: each existing product as it was, and as the file leaves it.
+    const before = new Map<string, ProductInput>();
+    const after = new Map<string, ProductInput>();
+    const created = new Set<string>();
 
     for (const v of parsed.variants) {
       let brandId = brandMap.get(v.brand.toLowerCase());
@@ -88,8 +181,17 @@ export async function importCatalogFromXlsx(buffer: Buffer): Promise<CatalogImpo
         productId = row!.id;
         productMap.set(v.product.toLowerCase(), productId);
         touchedProducts.add(productId);
+        created.add(productId);
         result.productsCreated++;
       } else {
+        if (!created.has(productId) && !before.has(productId)) {
+          const was = await loadOne(tx, productId);
+          if (was) {
+            const { id: _id, referenceImages: _r, updatedAt: _u, ...input } = was;
+            before.set(productId, input);
+            after.set(productId, structuredClone(input));
+          }
+        }
         await tx
           .update(products)
           .set({ brandId, ...blankless, updatedAt: new Date() })
@@ -103,10 +205,11 @@ export async function importCatalogFromXlsx(buffer: Buffer): Promise<CatalogImpo
 
       // The smallest-quantity tier's price, the rule the product editor uses too.
       const basePrice = lowestTier(v.tiers)!.priceIdr;
-      const [existing] = await tx
-        .select({ id: productVariants.id })
+      const sizeRows = await tx
+        .select({ id: productVariants.id, name: productVariants.name })
         .from(productVariants)
-        .where(and(eq(productVariants.productId, productId), sql`lower(${productVariants.name}) = ${v.size.toLowerCase()}`));
+        .where(eq(productVariants.productId, productId));
+      const existing = sizeRows.find((r) => normalizeSize(r.name) === normalizeSize(v.size));
       let variantId: string;
       if (existing) {
         variantId = existing.id;
@@ -124,6 +227,30 @@ export async function importCatalogFromXlsx(buffer: Buffer): Promise<CatalogImpo
         result.variantsCreated++;
       }
       await replaceVariantTiers(tx, variantId, v.tiers);
+
+      const next = after.get(productId);
+      if (next) {
+        next.brand = brandSlugOfName(v.brand)!;
+        if (v.description !== null) {
+          const spec = parseProductSpec(v.description);
+          next.gsm = spec.gsm;
+          next.print = spec.print;
+          next.finishing = spec.finishing;
+        }
+        if (v.fungsi !== null) next.use = v.fungsi;
+        const slot = next.sizes.find((s) => s.id === variantId);
+        if (slot) slot.tiers = v.tiers;
+        else next.sizes.push({ id: variantId, size: v.size, tiers: v.tiers });
+      }
+    }
+
+    for (const id of created) {
+      const changes: CatalogChange[] = [{ kind: 'created', via: 'import', ...(opts.fileName ? { fileName: opts.fileName } : {}) }];
+      await recordCatalogChange(tx, id, 'created', changes, actor);
+    }
+    for (const [id, was] of before) {
+      const changes = diffProduct(was, after.get(id)!);
+      if (changes.length > 0) await recordCatalogChange(tx, id, 'imported', changes, actor);
     }
 
     result.untouched = productRows.length - result.productsUpdated;

@@ -6,7 +6,7 @@
 
 import writeExcelFile from 'write-excel-file/node';
 import { listProducts } from '../repositories/products.js';
-import { TEMPLATE_SHEET, buildTemplateRows } from './catalogTemplate.js';
+import { TEMPLATE_COLUMNS, TEMPLATE_SHEET, buildTemplateRows } from './catalogTemplate.js';
 import type { Product } from '../domain/types.js';
 
 const PRICE_COLUMN = 9; // 'Harga'
@@ -28,4 +28,10 @@ export function buildCatalogSheet(products: Product[]) {
 export async function buildCatalogWorkbook(): Promise<Buffer> {
   const { products } = await listProducts({ limit: 0 });
   return writeExcelFile([buildCatalogSheet(products)] as never).toBuffer();
+}
+
+/** The blank import template: the header row and nothing else. */
+export async function buildTemplateWorkbook(): Promise<Buffer> {
+  const data = [[...TEMPLATE_COLUMNS].map((value) => ({ value, fontWeight: 'bold' as const }))];
+  return writeExcelFile([{ sheet: TEMPLATE_SHEET, stickyRowsCount: 1, data }] as never).toBuffer();
 }

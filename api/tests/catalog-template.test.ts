@@ -118,6 +118,7 @@ describe('parseTemplateRows', () => {
       {
         brand: BRAND, product: PRODUCT, size: SIZE,
         description: 'Gramasi: 64 gsm · Cetak: 1 warna', fungsi: 'Bungkus nasi',
+        tierRows: [2, 3],
         tiers: [
           { minQty: 5, qtyUnit: 'rim', priceIdr: 185000, priceUnit: 'rim', includesDelivery: false },
           { minQty: 10, qtyUnit: 'rim', priceIdr: 165000, priceUnit: 'rim', includesDelivery: true, note: 'gratis ongkir' },
@@ -130,7 +131,7 @@ describe('parseTemplateRows', () => {
     const p = parseTemplateRows([
       HEADER,
       ROW(BRAND, PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'ya'),
-      ROW('Merek Lain', PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'ya'),
+      ROW('Imperial Indopack', PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'ya'),
       ROW(BRAND, PRODUCT, '40 x 40 cm', 5, 'rim', 1, 'rim', 'ya'),
       ROW('', PRODUCT, SIZE, 10, 'rim', 165000, 'rim', 'ya'),
     ]);
@@ -146,5 +147,30 @@ describe('parseTemplateRows', () => {
     for (const bad of ['1,5', '1500.50', 1500.5]) {
       expect(ok(bad).errors[0]!.message).toMatch(/bilangan bulat rupiah/);
     }
+  });
+
+  it('error copy matches the dialog', () => {
+    const msgs = (rows: unknown[][]) => parseTemplateRows([HEADER, ...rows]).errors.map((e) => e.message);
+    expect(msgs([
+      ROW(BRAND, PRODUCT, SIZE, 5, 'box', 185000, 'rim', 'tidak'),
+      ROW(BRAND, PRODUCT, SIZE, 10, 'rim', '0', 'rim', 'tidak'),
+      ROW('', PRODUCT, SIZE, 20, 'rim', 150000, 'rim', 'tidak'),
+    ])).toEqual([
+      'Satuan "box" tidak dikenal. Pakai rim atau pcs.',
+      'Harga 0. Harga harus lebih dari 0.',
+      'Kolom Merek kosong. Isi Kertas Supreme atau Imperial Indopack.',
+    ]);
+    expect(msgs([ROW('Merek Lain', PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'tidak')]))
+      .toEqual(['Merek "Merek Lain" tidak dikenal. Isi Kertas Supreme atau Imperial Indopack.']);
+    expect(msgs([ROW(BRAND, '', SIZE, 5, 'rim', 185000, 'rim', 'tidak')])).toEqual(['Kolom Produk kosong.']);
+    expect(msgs([ROW(BRAND, PRODUCT, '', 5, 'rim', 185000, 'rim', 'tidak')])).toEqual(['Kolom Ukuran kosong.']);
+    expect(msgs([ROW(BRAND, PRODUCT, SIZE, 'abc', 'rim', 185000, 'rim', 'tidak')])).toEqual(['Min Qty "abc" bukan angka bulat lebih dari 0.']);
+    expect(msgs([ROW(BRAND, PRODUCT, SIZE, 5, 'rim', 185000, 'dus', 'tidak')])).toEqual(['Satuan "dus" tidak dikenal. Pakai rim atau pcs.']);
+  });
+
+  it('matches the brand case-insensitively and counts rows', () => {
+    const p = parseTemplateRows([HEADER, ROW('kertas supreme', PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'tidak'), ROW(BRAND, PRODUCT, SIZE, 10, 'rim', 0, 'rim', 'tidak')]);
+    expect(p).toMatchObject({ totalRows: 2, validRows: 1 });
+    expect(p.variants).toEqual([]); // the bad row poisons the variant
   });
 });

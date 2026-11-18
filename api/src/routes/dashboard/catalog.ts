@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import type { StockStatus } from '../../domain/types.js';
 import { apiKeyAuth } from '../../middleware/apiKey.js';
 import {
@@ -24,8 +25,8 @@ import {
   deleteVariant,
 } from '../../repositories/products.js';
 import { refreshEmbeddingAsync } from '../../services/embeddings.js';
-import { buildCatalogWorkbook } from '../../services/catalogExport.js';
-import { importCatalogFromXlsx, InvalidXlsxError } from '../../services/catalogImport.js';
+import { buildCatalogWorkbook, buildTemplateWorkbook } from '../../services/catalogExport.js';
+import { importCatalogFromXlsx, previewCatalogImport, InvalidXlsxError } from '../../services/catalogImport.js';
 import { storeUploadedImage } from '../../services/imageStorage.js';
 import {
   MAX_REFERENCE_IMAGES_PER_PRODUCT,
@@ -63,6 +64,14 @@ const XLSX_MIME_TYPES = new Set([
 ]);
 const XLSX_MAX_BYTES = 5 * 1024 * 1024;
 
+// The dashboard server adds the signed-in staff member (same 100-character cap as the product editor).
+const ImportQuerySchema = z.object({
+  dryRun: z.enum(['1', 'true', '0', 'false']).optional(),
+  fileName: z.string().trim().max(200).optional(),
+  staffName: z.string().trim().max(100).optional(),
+  staffId: z.string().uuid().optional(),
+});
+
 export async function catalogRoutes(app: FastifyInstance): Promise<void> {
   // Every successful write in this file invalidates the bot's cached catalog (catalogCache.ts).
   invalidateCatalogOnWrite(app);
@@ -78,12 +87,25 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       .send(workbook);
   });
 
+  // GET /api/v1/catalog/template - the empty template (header row only), for the import dialog.
+  app.get('/api/v1/catalog/template', { preHandler: [apiKeyAuth] }, async (_request, reply) => {
+    return reply
+      .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('Content-Disposition', 'attachment; filename="template-katalog.xlsx"')
+      .send(await buildTemplateWorkbook());
+  });
+
   // POST /api/v1/catalog/import - the export, edited and uploaded back.
   //
   // Lives in this file so the onResponse hook above invalidates the rendered catalog block for
   // free. Update-in-place: a product in the database but absent from the file is left alone and
   // counted as `untouched`, so a human who filtered the sheet cannot empty the catalog.
+  // ?dryRun=1 only counts what it would do ({ preview }) and writes nothing; the cache hook skips it.
+  // Otherwise it applies and answers { preview, result } (the preview is of the file as it was before).
   app.post('/api/v1/catalog/import', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const query = ImportQuerySchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
+    const q = query.data;
     const data = await request.file();
     if (!data) return reply.code(400).send({ data: null, error: 'NO_FILE' });
 
@@ -108,8 +130,13 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      const result = await importCatalogFromXlsx(buffer);
-      return reply.send({ data: result, error: null });
+      const preview = await previewCatalogImport(buffer);
+      if (q.dryRun === '1' || q.dryRun === 'true') return reply.send({ data: { preview }, error: null });
+      const result = await importCatalogFromXlsx(buffer, {
+        ...(q.fileName ? { fileName: q.fileName } : {}),
+        actor: { staffId: q.staffId ?? null, name: q.staffName || 'Sistem' },
+      });
+      return reply.send({ data: { preview, result }, error: null });
     } catch (err) {
       // Only "your file is broken" is a 400; anything else is ours and stays a 500.
       if (err instanceof InvalidXlsxError) {

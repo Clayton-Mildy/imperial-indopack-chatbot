@@ -10,6 +10,7 @@ import type { Product } from '../domain/types.js';
 import { toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
 import { formatProductSpec, parseProductSpec } from '../domain/productSpec.js';
 import { normalizeHeader } from './leadImport.js';
+import { BRAND_NAME, brandSlugOfName } from '../domain/brands.js';
 
 export const TEMPLATE_SHEET = 'Katalog';
 export const TEMPLATE_COLUMNS = [
@@ -25,10 +26,15 @@ export interface TemplateVariant {
   description: string | null;
   fungsi: string | null;
   tiers: PriceTier[];
+  /** The Excel row each tier came from, parallel to `tiers`. */
+  tierRows: number[];
 }
 export interface ParsedTemplate {
   variants: TemplateVariant[];
   errors: { row: number; message: string }[];
+  /** Data rows (blank rows skipped) and how many of them carry no error of their own; counted past the error list's cap. */
+  totalRows: number;
+  validRows: number;
 }
 
 const MAX_ERRORS = 50;
@@ -57,8 +63,10 @@ function unit(v: unknown): QtyUnit | null {
 }
 
 export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
-  const out: ParsedTemplate = { variants: [], errors: [] };
+  const out: ParsedTemplate = { variants: [], errors: [], totalRows: 0, validRows: 0 };
+  const errorRows = new Set<number>();
   const err = (row: number, message: string) => {
+    errorRows.add(row);
     if (out.errors.length < MAX_ERRORS) out.errors.push({ row, message });
   };
 
@@ -86,12 +94,16 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
     const row = i + 1; // 1-based, as the uploader sees it in Excel
     const cell = (c: Col) => r[idx[c]];
     if (TEMPLATE_COLUMNS.every((c) => text(cell(c)) === null)) continue;
+    out.totalRows++;
 
-    const brand = text(cell('Merek'));
+    const brandRaw = text(cell('Merek'));
     const product = text(cell('Produk'));
     const size = text(cell('Ukuran'));
+    const brandNames = `${BRAND_NAME.kertas_supreme} atau ${BRAND_NAME.imperial_indopack}`;
+    const brandSlug = brandRaw ? brandSlugOfName(brandRaw) : null;
+    const brand = brandSlug ? BRAND_NAME[brandSlug] : brandRaw;
     if (!brand || !product || !size) {
-      err(row, `${!brand ? 'Merek' : !product ? 'Produk' : 'Ukuran'} kosong.`);
+      err(row, !brand ? `Kolom Merek kosong. Isi ${brandNames}.` : !product ? 'Kolom Produk kosong.' : 'Kolom Ukuran kosong.');
       // Whose tier was this? Every variant matching the keys that ARE filled is suspect.
       if (brand || product || size) blankKeyRows.push({ brand, product, size });
       continue;
@@ -102,14 +114,17 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
     // partial set, silently dropping the tier the bad row was meant to carry.
     const bad = (message: string) => { err(row, message); failed.add(key); };
 
+    if (!brandSlug) { bad(`Merek "${brandRaw}" tidak dikenal. Isi ${brandNames}.`); continue; }
+
     const minQty = number(cell('Min Qty'));
-    if (!Number.isInteger(minQty) || minQty <= 0) { bad(`Min Qty harus bilangan bulat lebih dari 0: "${text(cell('Min Qty')) ?? ''}".`); continue; }
+    if (!Number.isInteger(minQty) || minQty <= 0) { bad(`Min Qty "${text(cell('Min Qty')) ?? ''}" bukan angka bulat lebih dari 0.`); continue; }
     const qtyUnit = unit(cell('Satuan Qty'));
-    if (!qtyUnit) { bad(`Satuan Qty harus rim atau pcs: "${text(cell('Satuan Qty')) ?? ''}".`); continue; }
+    if (!qtyUnit) { bad(`Satuan "${text(cell('Satuan Qty')) ?? ''}" tidak dikenal. Pakai rim atau pcs.`); continue; }
     const priceIdr = number(cell('Harga'));
-    if (!Number.isInteger(priceIdr) || priceIdr <= 0) { bad(`Harga harus bilangan bulat rupiah lebih dari 0: "${text(cell('Harga')) ?? ''}".`); continue; }
+    if (priceIdr <= 0) { bad(`Harga ${text(cell('Harga')) ?? priceIdr}. Harga harus lebih dari 0.`); continue; }
+    if (!Number.isInteger(priceIdr)) { bad(`Harga harus bilangan bulat rupiah lebih dari 0: "${text(cell('Harga')) ?? ''}".`); continue; }
     const priceUnit = unit(cell('Satuan Harga'));
-    if (!priceUnit) { bad(`Satuan Harga harus rim atau pcs: "${text(cell('Satuan Harga')) ?? ''}".`); continue; }
+    if (!priceUnit) { bad(`Satuan "${text(cell('Satuan Harga')) ?? ''}" tidak dikenal. Pakai rim atau pcs.`); continue; }
     const deliveryRaw = text(cell('Termasuk Ongkir'))?.toLowerCase() ?? 'tidak';
     if (deliveryRaw !== 'ya' && deliveryRaw !== 'tidak') { bad(`Termasuk Ongkir harus ya atau tidak: "${deliveryRaw}".`); continue; }
 
@@ -129,10 +144,11 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
     let variant = groups.get(key);
     if (!variant) {
       const description = formatProductSpec({ gsm: text(cell('Gramasi')), print: text(cell('Cetak')), finishing: text(cell('Finishing')) });
-      variant = { brand, product, size, description, fungsi: text(cell('Kegunaan')), tiers: [] };
+      variant = { brand, product, size, description, fungsi: text(cell('Kegunaan')), tiers: [], tierRows: [] };
       groups.set(key, variant);
     }
     const note = text(cell('Catatan'));
+    variant.tierRows.push(row);
     variant.tiers.push({ minQty, qtyUnit, priceIdr, priceUnit, includesDelivery: deliveryRaw === 'ya', ...(note ? { note } : {}) });
   }
   const poisoned = (v: TemplateVariant) =>
@@ -142,6 +158,7 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
         (!b.product || b.product.toLowerCase() === v.product.toLowerCase()) &&
         (!b.size || b.size.toLowerCase() === v.size.toLowerCase())
     );
+  out.validRows = out.totalRows - errorRows.size;
   out.variants = [...groups].filter(([k, v]) => !failed.has(k) && !poisoned(v)).map(([, v]) => v);
   return out;
 }

@@ -7,7 +7,7 @@ import 'dotenv/config';
 import writeExcelFile from 'write-excel-file/node';
 import { eq, like } from 'drizzle-orm';
 import { getDb } from '../src/db/client.js';
-import { brands, products, productVariants } from '../src/db/schema.js';
+import { products, productVariants } from '../src/db/schema.js';
 import { importCatalogFromXlsx } from '../src/services/catalogImport.js';
 import { listTiersByVariant } from '../src/repositories/priceTiers.js';
 import { TEMPLATE_COLUMNS, TEMPLATE_SHEET } from '../src/services/catalogTemplate.js';
@@ -18,7 +18,7 @@ vi.mock('../src/services/embeddings.js', () => ({
 }));
 
 const P = '__tpl_import_test__';
-const BRAND = `${P}Brand`;
+const BRAND = 'Kertas Supreme'; // the template accepts only the two real brands
 const PROD = `${P}Kertas 64 gsm`;
 const OTHER = `${P}Produk Lain`;
 const SIZE = '30 x 30 cm';
@@ -40,7 +40,6 @@ async function variantOf(productName: string) {
 async function cleanup() {
   const db = getDb();
   await db.delete(products).where(like(products.name, `${P}%`));
-  await db.delete(brands).where(like(brands.name, `${P}%`));
 }
 
 describe('importCatalogFromXlsx with the Imperial template', () => {
@@ -53,7 +52,7 @@ describe('importCatalogFromXlsx with the Imperial template', () => {
       await xlsxOf([row(PROD, 10, 'rim', 165000, { gramasi: '64 gsm', kegunaan: 'Bungkus' }), row(PROD, 5, 'rim', 185000), row(PROD, 600, 'pcs', 190000)])
     );
     expect(first.errors).toEqual([]);
-    expect(first).toMatchObject({ productsCreated: 1, variantsCreated: 1, lookupsCreated: 1 });
+    expect(first).toMatchObject({ productsCreated: 1, variantsCreated: 1 });
 
     let { p, v } = await variantOf(PROD);
     expect(p.description).toBe('Gramasi: 64 gsm');
@@ -86,7 +85,7 @@ describe('importCatalogFromXlsx with the Imperial template', () => {
 
   it('reports a bad row by number and leaves that variant as it was', async () => {
     const r = await importCatalogFromXlsx(await xlsxOf([row(PROD, 20, 'box', 1)]));
-    expect(r.errors).toEqual([{ row: 2, reason: expect.stringMatching(/Satuan Qty/) }]);
+    expect(r.errors).toEqual([{ row: 2, reason: expect.stringMatching(/^Satuan "box" tidak dikenal/) }]);
     const { v } = await variantOf(PROD);
     expect((await listTiersByVariant([v.id])).get(v.id)).toHaveLength(1);
   });

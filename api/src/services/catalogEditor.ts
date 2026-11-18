@@ -397,7 +397,8 @@ async function loadCatalogProducts(db: DbOrTx, where?: SQL): Promise<CatalogProd
   });
 }
 
-async function loadOne(db: DbOrTx, id: string): Promise<CatalogProduct | null> {
+/** One product as the editor shows it, read through `db` (a caller's transaction, or the pool). */
+export async function loadOne(db: DbOrTx, id: string): Promise<CatalogProduct | null> {
   return (await loadCatalogProducts(db, eq(products.id, id)))[0] ?? null;
 }
 
