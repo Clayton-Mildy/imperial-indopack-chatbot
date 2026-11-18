@@ -10,6 +10,8 @@ import {
   setLeadReopenAfterDays,
   getLeadSilenceLostDays,
   setLeadSilenceLostDays,
+  getPoFormUrl,
+  setPoFormUrl,
 } from '../../repositories/appSettings.js';
 
 const PromptSectionSchema = z.object({
@@ -27,6 +29,16 @@ const PatchAiDefaultBodySchema = z.object({
 
 const PatchReopenDaysBodySchema = z.object({
   days: z.number().int().min(1).max(365),
+});
+
+const PatchReopenMonthsBodySchema = z.object({
+  months: z.number().int().min(1).max(12),
+});
+
+const PatchPoFormUrlBodySchema = z.object({
+  url: z.string().max(2000).refine((u) => {
+    try { return new URL(u).protocol === 'https:'; } catch { return false; }
+  }),
 });
 
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {
@@ -76,6 +88,35 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     }
     await setLeadReopenAfterDays(result.data.days);
     return reply.send({ data: { days: result.data.days }, error: null });
+  });
+
+  // GET|PATCH /api/v1/settings/lead-reopen-months - the same setting in months, stored as days (x 30)
+  app.get('/api/v1/settings/lead-reopen-months', { preHandler: [apiKeyAuth] }, async (_request, reply) => {
+    const months = Math.max(1, Math.round((await getLeadReopenAfterDays()) / 30));
+    return reply.send({ data: { months }, error: null });
+  });
+
+  app.patch('/api/v1/settings/lead-reopen-months', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const result = PatchReopenMonthsBodySchema.safeParse(request.body);
+    if (!result.success) {
+      return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
+    }
+    await setLeadReopenAfterDays(result.data.months * 30);
+    return reply.send({ data: { months: result.data.months }, error: null });
+  });
+
+  // GET|PATCH /api/v1/settings/po-form-url - the link the bot sends when a customer agrees to a price
+  app.get('/api/v1/settings/po-form-url', { preHandler: [apiKeyAuth] }, async (_request, reply) => {
+    return reply.send({ data: { url: await getPoFormUrl() }, error: null });
+  });
+
+  app.patch('/api/v1/settings/po-form-url', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const result = PatchPoFormUrlBodySchema.safeParse(request.body);
+    if (!result.success) {
+      return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
+    }
+    await setPoFormUrl(result.data.url);
+    return reply.send({ data: { url: await getPoFormUrl() }, error: null });
   });
 
   // GET /api/v1/settings/lead-silence-days

@@ -1,8 +1,5 @@
-import { randomUUID } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
-import { join } from 'path';
 import { eq, sql } from 'drizzle-orm';
-import sharp from 'sharp';
+import { storeUploadedImage } from './imageStorage.js';
 import { getDb } from '../db/client.js';
 import { products, productVariants } from '../db/schema.js';
 
@@ -81,14 +78,8 @@ async function loadIndex(): Promise<Map<string, ImageTarget[]>> {
   return buildImageIndex({ products: productRows, variants: variantRows });
 }
 
-// Phone photos are 3-12 MP. 1200px is plenty to send to a customer and to compare against, and keeps
-// the uploads folder small. JPEG, because WhatsApp rejects webp images.
-const MAX_SIDE = 1200;
-
 export async function importCatalogImages(files: { filename: string; buffer: Buffer }[]): Promise<ImageFileResult[]> {
   const index = await loadIndex();
-  const dir = join(process.cwd(), 'uploads', 'images');
-  await mkdir(dir, { recursive: true });
   const db = getDb();
 
   const results: ImageFileResult[] = [];
@@ -98,16 +89,13 @@ export async function importCatalogImages(files: { filename: string; buffer: Buf
       results.push(match);
       continue;
     }
-    let jpeg: Buffer;
+    let url: string;
     try {
-      // rotate(): honour the phone's EXIF orientation, or portrait shots land sideways.
-      jpeg = await sharp(buffer).rotate().resize(MAX_SIDE, MAX_SIDE, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+      url = await storeUploadedImage(buffer);
     } catch {
       results.push({ file: filename, status: 'rejected', reason: 'bukan file gambar yang bisa dibaca' });
       continue;
     }
-    const url = `/uploads/images/${randomUUID()}.jpg`;
-    await writeFile(join(process.cwd(), url), jpeg);
     const { kind, id } = match.target;
     if (kind === 'product') {
       await db.update(products).set({ imageUrl: url, updatedAt: sql`now()` }).where(eq(products.id, id));

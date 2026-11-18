@@ -26,7 +26,17 @@ import {
 import { refreshEmbeddingAsync } from '../../services/embeddings.js';
 import { buildCatalogWorkbook } from '../../services/catalogExport.js';
 import { importCatalogFromXlsx, InvalidXlsxError } from '../../services/catalogImport.js';
+import { storeUploadedImage } from '../../services/imageStorage.js';
+import {
+  MAX_REFERENCE_IMAGES_PER_PRODUCT,
+  addReferenceImage,
+  countReferenceImages,
+  deleteReferenceImageIfExists,
+  productExists,
+} from '../../repositories/referenceImages.js';
 import { importCatalogImages, type ImageFileResult } from '../../services/catalogImages.js';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Per request, not per folder: the dashboard sends a folder in batches of this many photos.
 const IMAGE_BATCH_MAX_FILES = 10;
@@ -143,6 +153,49 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     if (files.length + rejected.length === 0) return reply.code(400).send({ data: null, error: 'NO_FILE' });
     const results = [...(await importCatalogImages(files)), ...rejected];
     return reply.send({ data: { results }, error: null });
+  });
+
+  // POST /api/v1/products/:id/reference-images - one design-reference photo (max 3 per product);
+  // the bot sends these as examples. Stored the way the catalog photos are.
+  app.post<{ Params: { id: string } }>('/api/v1/products/:id/reference-images', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const { id } = request.params;
+    const part = await request.file();
+    if (!part) return reply.code(400).send({ data: null, error: 'NO_FILE' });
+    if (!part.mimetype.startsWith('image/')) {
+      await part.toBuffer().catch(() => {});
+      return reply.code(400).send({ data: null, error: 'UNSUPPORTED_MIME_TYPE' });
+    }
+    let buffer: Buffer;
+    try {
+      buffer = await part.toBuffer();
+    } catch {
+      return reply.code(413).send({ data: null, error: 'FILE_TOO_LARGE' });
+    }
+    if (!UUID_RE.test(id) || !(await productExists(id))) {
+      return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
+    }
+    if ((await countReferenceImages(id)) >= MAX_REFERENCE_IMAGES_PER_PRODUCT) {
+      return reply.code(409).send({ data: null, error: 'REFERENCE_IMAGE_LIMIT' });
+    }
+    let imageUrl: string;
+    try {
+      imageUrl = await storeUploadedImage(buffer);
+    } catch {
+      return reply.code(400).send({ data: null, error: 'INVALID_IMAGE' });
+    }
+    const { id: imageId } = await addReferenceImage(id, imageUrl);
+    invalidateCatalogCache();
+    return reply.code(201).send({ data: { id: imageId, imageUrl }, error: null });
+  });
+
+  // DELETE /api/v1/reference-images/:id
+  app.delete<{ Params: { id: string } }>('/api/v1/reference-images/:id', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const { id } = request.params;
+    if (!UUID_RE.test(id) || !(await deleteReferenceImageIfExists(id))) {
+      return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
+    }
+    invalidateCatalogCache();
+    return reply.code(204).send();
   });
 
   // GET /api/v1/uom

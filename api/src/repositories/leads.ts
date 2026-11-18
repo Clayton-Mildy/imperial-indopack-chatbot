@@ -8,7 +8,6 @@ import type {
   LeadActor,
   ContactProfileFollowUpStatus,
   ConversationStatus,
-  CustomerType,
   Lead,
   LeadCampaignSummary,
   LeadStatus,
@@ -355,6 +354,11 @@ export function isRecentWaitSql(waitingSince: SQL) {
 const staffName = (col: AnyColumn) =>
   sql<string | null>`(SELECT ${staffProfiles.name} FROM ${staffProfiles} WHERE ${staffProfiles.id} = ${col})`;
 
+function profileText(profile: unknown, key: string): string | null {
+  const v = (profile as Record<string, unknown> | null)?.[key];
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
 export async function listLeads(
   params: PaginationParams & {
     search?: string;
@@ -363,7 +367,7 @@ export async function listLeads(
     status?: LeadStatus;
     startDate?: string;
     endDate?: string;
-    customerType?: CustomerType;
+    brand?: BrandSlug;
     followUpStatus?: ContactProfileFollowUpStatus;
     kind?: LeadKind | 'non_lead';
     unreplied?: boolean;
@@ -394,7 +398,7 @@ export async function listLeads(
   }
   if (params.status) conditions.push(eq(leads.status, params.status));
   if (params.source) conditions.push(eq(leads.utmSource, params.source));
-  if (params.customerType) conditions.push(eq(contactProfiles.customerType, params.customerType));
+  if (params.brand) conditions.push(sql`${params.brand} = ANY(${leads.brands})`);
   if (params.followUpStatus) {
     conditions.push(eq(contactProfiles.followUpStatus, params.followUpStatus));
   }
@@ -512,13 +516,14 @@ export async function listLeads(
         firstContactAt: leads.firstContactAt,
         brands: leads.brands,
         items: leads.items,
+        orderFieldsSetAt: leads.orderFieldsSetAt,
+        orderFieldsSetBy: leads.orderFieldsSetBy,
         createdAt: leads.createdAt,
         updatedAt: leads.updatedAt,
         waId: contacts.waId,
         displayName: contacts.displayName,
         aiEnabled: contacts.aiEnabled,
         lastSeen: contacts.lastSeen,
-        customerType: contactProfiles.customerType,
         contactProfile: contactProfiles.profile,
         followUpStatus: contactProfiles.followUpStatus,
         followUpNotes: contactProfiles.followUpNotes,
@@ -562,7 +567,8 @@ export async function listLeads(
     statusSetByName: row.statusSetByName ?? null,
     totalOrdersSetByName: row.totalOrdersSetByName ?? null,
     dealValueSetByName: row.dealValueSetByName ?? null,
-    customerType: (row.customerType as CustomerType | null) ?? null,
+    name: profileText(row.contactProfile, 'name'),
+    company: profileText(row.contactProfile, 'business_name'),
     contactProfile: (row.contactProfile as Record<string, unknown>) ?? {},
     followUpStatus: (row.followUpStatus as ContactProfileFollowUpStatus | null) ?? null,
     followUpNotes: row.followUpNotes ?? null,
@@ -695,6 +701,8 @@ export async function resetLeadsForContact(contactId: string): Promise<void> {
         totalOrdersSetBy: null,
         dealValueSetAt: null,
         dealValueSetBy: null,
+        orderFieldsSetAt: null,
+        orderFieldsSetBy: null,
         updatedAt: new Date(),
       })
       .where(inArray(leads.id, before.map((l) => l.id)));
@@ -735,6 +743,8 @@ export async function patchLead(
     totalOrders?: number;
     kind?: LeadKind;
     lostReason?: LostReason | null;
+    brands?: BrandSlug[];
+    items?: OrderItem[];
     staffId?: string;
   }
 ): Promise<Lead | null | typeof LEAD_ALREADY_OPEN> {
@@ -801,6 +811,13 @@ async function patchLeadTx(
       set['totalOrders'] = updates.totalOrders;
       set['totalOrdersSetAt'] = now;
       set['totalOrdersSetBy'] = by;
+    }
+    // Staff's list replaces what the AI collected, and locks it against the next lead pass.
+    if (updates.brands !== undefined || updates.items !== undefined) {
+      if (updates.brands !== undefined) set['brands'] = updates.brands;
+      if (updates.items !== undefined) set['items'] = updates.items;
+      set['orderFieldsSetAt'] = now;
+      set['orderFieldsSetBy'] = by;
     }
     for (const key of ['utmId', 'utmSource', 'utmMedium', 'utmCampaign', 'utmTerm', 'utmContent'] as const) {
       if (updates[key] !== undefined) set[key] = updates[key];
@@ -1154,6 +1171,10 @@ function mapLead(row: typeof leads.$inferSelect): Lead {
     totalOrdersSetBy: row.totalOrdersSetBy ?? null,
     dealValueSetAt: row.dealValueSetAt ?? null,
     dealValueSetBy: row.dealValueSetBy ?? null,
+    brands: (row.brands ?? []) as BrandSlug[],
+    items: (row.items ?? []) as OrderItem[],
+    orderFieldsSetAt: row.orderFieldsSetAt ?? null,
+    orderFieldsSetBy: row.orderFieldsSetBy ?? null,
     submittedAt: row.submittedAt,
     matchedAt: row.matchedAt,
     kind: row.kind as LeadKind,
@@ -1253,8 +1274,8 @@ export async function mergeLeadOrderFields(
   add: { brands: BrandSlug[]; items: OrderItem[] },
 ): Promise<void> {
   await getDb().transaction(async (tx) => {
-    const [row] = await tx.select({ brands: leads.brands, items: leads.items }).from(leads).where(eq(leads.id, leadId)).for('update');
-    if (!row) return;
+    const [row] = await tx.select({ brands: leads.brands, items: leads.items, lockedAt: leads.orderFieldsSetAt }).from(leads).where(eq(leads.id, leadId)).for('update');
+    if (!row || row.lockedAt) return; // staff set these by hand: the AI no longer adds to them
     const merged = mergeOrderFacts({ brands: row.brands, items: row.items }, { brands: add.brands, items: add.items });
     await tx.update(leads).set({
       brands: merged['brands'] as string[],

@@ -1,6 +1,6 @@
 import { asc, eq, inArray } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
-import { productReferenceImages } from '../db/schema.js';
+import { productReferenceImages, products } from '../db/schema.js';
 
 export const MAX_REFERENCE_IMAGES_PER_PRODUCT = 3;
 
@@ -34,4 +34,23 @@ export async function addReferenceImage(productId: string, imageUrl: string): Pr
 
 export async function deleteReferenceImage(id: string): Promise<void> {
   await getDb().delete(productReferenceImages).where(eq(productReferenceImages.id, id));
+}
+
+export async function countReferenceImages(productId: string): Promise<number> {
+  const rows = await getDb()
+    .select({ id: productReferenceImages.id })
+    .from(productReferenceImages)
+    .where(eq(productReferenceImages.productId, productId));
+  return rows.length;
+}
+
+export async function productExists(productId: string): Promise<boolean> {
+  const rows = await getDb().select({ id: products.id }).from(products).where(eq(products.id, productId)).limit(1);
+  return rows.length > 0;
+}
+
+/** True when a photo with this id existed and is gone. */
+export async function deleteReferenceImageIfExists(id: string): Promise<boolean> {
+  const rows = await getDb().delete(productReferenceImages).where(eq(productReferenceImages.id, id)).returning({ id: productReferenceImages.id });
+  return rows.length > 0;
 }

@@ -16,6 +16,7 @@
 import writeExcelFile from 'write-excel-file/node';
 import type { Sheet } from 'write-excel-file/node';
 import { campaignOf, listLeads } from '../repositories/leads.js';
+import { BRAND_NAMES, type OrderItem } from '../domain/orderProfile.js';
 import type { LeadKind, LeadStatus, LeadWithContact, LostReason } from '../domain/types.js';
 
 // Same order as the columns on /leads, starting with the date.
@@ -29,7 +30,6 @@ const HEADERS = [
   'utm_medium',
   'utm_content',
   'request_id',
-  'tipe_pelanggan',
   'kebutuhan',
   'hot_cold',
   'status',
@@ -39,6 +39,10 @@ const HEADERS = [
   'Jenis',
   'Alasan Kalah',
   'Tanggal Closing',
+  'Merek',
+  'Barang',
+  'Nama',
+  'Usaha',
 ] as const;
 
 const KIND_ID: Record<LeadKind, string> = {
@@ -69,11 +73,12 @@ const STATUS_ID: Record<LeadStatus, string> = {
   lost: 'Kalah',
 };
 
-const CUSTOMER_TYPE_ID: Record<string, string> = {
-  reseller: 'Reseller',
-  end_user: 'Pengguna Akhir',
-  project: 'Proyek',
-};
+function itemText(i: OrderItem): string {
+  const name = [i.product, i.gsm ? `${i.gsm} gsm` : '', i.size, i.print ? `cetak ${i.print}` : '']
+    .filter(Boolean).join(' ');
+  const qty = i.qty !== undefined ? `${i.qty} ${i.qty_unit ?? ''}`.trim() : '';
+  return [name, qty].filter(Boolean).join(' x ');
+}
 
 // Same key-probing the leads table does: the marketing form's labels differ per landing
 // page, so try what production actually sends rather than assuming one schema.
@@ -115,7 +120,6 @@ export function buildLeadsSheet(items: LeadWithContact[]): Sheet<Buffer>[] {
       lead.utmMedium,
       lead.utmContent,
       lead.requestId,
-      lead.customerType ? CUSTOMER_TYPE_ID[lead.customerType] ?? lead.customerType : null,
       pick(lead.payload, NEED_KEYS) ?? pick(lead.contactProfile, INTEREST_KEYS),
       lead.leadTemperature === 'hot' ? 'Hot' : lead.leadTemperature === 'cold' ? 'Cold' : null,
       STATUS_ID[lead.status] ?? lead.status,
@@ -127,6 +131,10 @@ export function buildLeadsSheet(items: LeadWithContact[]): Sheet<Buffer>[] {
       KIND_ID[lead.kind] ?? lead.kind,
       lead.lostReason ? LOST_REASON_ID[lead.lostReason] ?? lead.lostReason : null,
       wib(lead.closedAt),
+      lead.brands.length ? lead.brands.map((b) => BRAND_NAMES[b] ?? b).join(', ') : null,
+      lead.items.length ? lead.items.map(itemText).filter(Boolean).join('; ') : null,
+      lead.name,
+      lead.company,
     ]);
   }
 

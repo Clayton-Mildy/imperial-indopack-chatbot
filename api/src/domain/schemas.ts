@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { LEAD_KINDS, LOST_REASONS } from './types.js';
 
+const BRAND_SLUGS = ['imperial_indopack', 'kertas_supreme'] as const;
+
 // ─── Baileys Inbound Payload ───────────────────────────────────────────────
 
 export const BaileysInboundPayloadSchema = z.object({
@@ -229,6 +231,16 @@ export const ActivityLogQuerySchema = z.object({
 
 // ─── Leads ─────────────────────────────────────────────────────────────────
 
+const OrderItemSchema = z.object({
+  product: z.string().max(200).optional(),
+  size: z.string().max(100).optional(),
+  gsm: z.string().max(50).optional(),
+  print: z.string().max(100).optional(),
+  qty: z.number().positive().optional(),
+  qty_unit: z.enum(['rim', 'pcs']).optional(),
+  has_design: z.boolean().optional(),
+}).strict();
+
 export const LeadStatusSchema = z.enum(['new', 'contacted', 'quoted', 'won', 'lost']);
 
 // startDate/endDate are YYYY-MM-DD and read in WIB — see repositories/leads.ts.
@@ -242,7 +254,7 @@ const LEAD_FILTER_SHAPE = {
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   // From the retired /contacts page — same rows, so the filters moved here too.
-  customerType: z.enum(['reseller', 'end_user', 'project']).optional(),
+  brand: z.enum(BRAND_SLUGS).optional(),
   followUpStatus: z.enum(['none', 'needs_followup', 'done']).optional(),
   // Absent = real leads only; 'non_lead' = every other kind (couriers, job seekers ...).
   kind: z.enum([...LEAD_KINDS, 'non_lead']).optional(),
@@ -303,6 +315,9 @@ export const PatchLeadBodySchema = LeadCampaignFieldsSchema.extend({
   totalOrders: z.number().int().nonnegative().optional(),
   kind: z.enum(LEAD_KINDS).optional(),
   lostReason: z.enum(LOST_REASONS).nullable().optional(),
+  // Staff's own brands and item lines: they replace what the AI collected.
+  brands: z.array(z.enum(BRAND_SLUGS)).max(2).optional(),
+  items: z.array(OrderItemSchema).max(50).optional(),
   // Who made the edit, so lead_events records the person.
   staffId: z.string().uuid().optional(),
 });

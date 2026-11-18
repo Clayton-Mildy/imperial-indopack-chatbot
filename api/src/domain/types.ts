@@ -7,6 +7,7 @@ export type AIConfidence = 'high' | 'low';
 export type StockStatus = 'normal' | 'no_stock' | 'price_rise' | 'price_drop';
 
 import type { PriceTier } from './pricing.js';
+import type { BrandSlug, OrderItem } from './orderProfile.js';
 
 export type Brand = {
   id: string;
@@ -260,6 +261,12 @@ export interface Lead {
   /** Staff typed the deal value: the AI never writes it again. */
   dealValueSetAt: Date | null;
   dealValueSetBy: string | null;
+  /** Brands the customer asked about, and their item lines. */
+  brands: BrandSlug[];
+  items: OrderItem[];
+  /** Staff edited brands/items: the AI pass leaves them alone. */
+  orderFieldsSetAt: Date | null;
+  orderFieldsSetBy: string | null;
   submittedAt: Date;
   matchedAt: Date | null;
   kind: LeadKind;
@@ -299,7 +306,9 @@ export interface LeadWithContact extends Lead {
   statusSetByName: string | null;
   totalOrdersSetByName: string | null;
   dealValueSetByName: string | null;
-  customerType: CustomerType | null;
+  /** Profile `name` / `business_name`, for the list columns. */
+  name: string | null;
+  company: string | null;
   /** The AI-extracted profile — distinct from `payload`, which is the marketing form. */
   contactProfile: Record<string, unknown>;
   followUpStatus: ContactProfileFollowUpStatus | null;

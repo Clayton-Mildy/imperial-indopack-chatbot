@@ -37,7 +37,12 @@ function lead(over: Partial<LeadWithContact> = {}): LeadWithContact {
     conversationStatus: 'active',
     conversationStartedAt: new Date('2026-09-01T04:30:00Z'),
     lastChatAt: new Date('2026-09-03T09:15:00Z'),
-    customerType: null,
+    name: null,
+    company: null,
+    brands: [],
+    items: [],
+    orderFieldsSetAt: null,
+    orderFieldsSetBy: null,
     contactProfile: {},
     followUpStatus: null,
     followUpNotes: null,
@@ -58,8 +63,9 @@ function lead(over: Partial<LeadWithContact> = {}): LeadWithContact {
 
 const HEADERS = [
   'mulai_chat', 'chat_terakhir', 'nama', 'nomor_whatsapp', 'campaign', 'utm_source', 'utm_medium',
-  'utm_content', 'request_id', 'tipe_pelanggan', 'kebutuhan', 'hot_cold', 'status',
+  'utm_content', 'request_id', 'kebutuhan', 'hot_cold', 'status',
   'total_order', 'nilai_deal_idr', 'tanggal_masuk', 'Jenis', 'Alasan Kalah', 'Tanggal Closing',
+  'Merek', 'Barang', 'Nama', 'Usaha',
 ];
 
 function rowFor(over: Partial<LeadWithContact>): unknown[] {
@@ -100,6 +106,14 @@ describe('buildLeadsSheet', () => {
     expect(cell({}, 'kebutuhan')).toBeNull();
   });
 
+  it('writes brands, items, profile name and company', () => {
+    expect(cell({ brands: ['imperial_indopack', 'kertas_supreme'] }, 'Merek')).toBe('Imperial Indopack, Kertas Supreme');
+    expect(cell({ items: [{ product: 'Box Nasi', size: '10x10x5', qty: 100, qty_unit: 'pcs' }] }, 'Barang')).toBe('Box Nasi 10x10x5 x 100 pcs');
+    expect(cell({ name: 'Budi', company: 'RM Siang' }, 'Nama')).toBe('Budi');
+    expect(cell({ name: 'Budi', company: 'RM Siang' }, 'Usaha')).toBe('RM Siang');
+    expect(cell({}, 'Merek')).toBeNull();
+  });
+
   it('keeps rupiah and counts as real numbers, not formatted text', () => {
     // Excel must be able to sum these; a "Rp 450.000" string cannot be summed.
     expect(cell({ dealValueIdr: 450000 }, 'nilai_deal_idr')).toEqual({
@@ -111,9 +125,8 @@ describe('buildLeadsSheet', () => {
     expect(cell({}, 'nilai_deal_idr')).toBeNull();
   });
 
-  it('renders the statuses and buyer types in Indonesian', () => {
+  it('renders the statuses in Indonesian', () => {
     expect(cell({ status: 'won' }, 'status')).toBe('Menang');
-    expect(cell({ customerType: 'end_user' }, 'tipe_pelanggan')).toBe('Pengguna Akhir');
     expect(cell({ leadTemperature: 'hot' }, 'hot_cold')).toBe('Hot');
     expect(cell({}, 'hot_cold')).toBeNull();
   });

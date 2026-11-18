@@ -401,6 +401,9 @@ export const leads = pgTable(
     // Brands the customer asked about, and their item lines (0026). Filled from the chat.
     brands: text('brands').array().notNull().default(sql`'{}'::text[]`),
     items: jsonb('items').$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    // Staff edited brands/items by hand: the lead pass no longer merges into them (0027).
+    orderFieldsSetAt: timestamp('order_fields_set_at', { withTimezone: true }),
+    orderFieldsSetBy: uuid('order_fields_set_by').references(() => staffProfiles.id, { onDelete: 'set null' }),
     submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
     matchedAt: timestamp('matched_at', { withTimezone: true }),
     // 'lead' | 'kurir' | 'status_pesanan' | 'lamaran_kerja' | 'supplier' | 'lainnya'

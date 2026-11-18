@@ -36,11 +36,11 @@ export async function setAiEnabledDefault(aiEnabled: boolean): Promise<void> {
 }
 
 const LEAD_REOPEN_AFTER_DAYS_KEY = 'lead_reopen_after_days';
-const DEFAULT_LEAD_REOPEN_AFTER_DAYS = 30;
+const DEFAULT_LEAD_REOPEN_AFTER_DAYS = 90;
 
 /**
  * How long after a lead was Lost the same lead is reopened when the customer writes again;
- * after that a new lead is opened instead. Absent or unusable row means 30.
+ * after that a new lead is opened instead. Absent or unusable row means 90.
  */
 export async function getLeadReopenAfterDays(): Promise<number> {
   const db = getDb();
