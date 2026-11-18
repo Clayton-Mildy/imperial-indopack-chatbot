@@ -104,6 +104,50 @@ export async function setLeadSilenceLostDays(days: number): Promise<void> {
     });
 }
 
+const PO_FORM_URL_KEY = 'po_form_url';
+/** Until staff set the real Google Form in Settings. */
+export const PO_FORM_PLACEHOLDER_URL = 'https://forms.gle/REPLACE-ME';
+
+/** The trimmed value when it is an https URL with a host, else null. */
+function httpsUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const url = raw.trim();
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && u.hostname ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The PO form link the bot sends when the customer agrees to a price (messageRouter, send_po_form).
+ * Absent or unusable row means the placeholder.
+ */
+export async function getPoFormUrl(): Promise<string> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(appSettings)
+    .where(eq(appSettings.key, PO_FORM_URL_KEY))
+    .limit(1);
+  return httpsUrl(row?.value) ?? PO_FORM_PLACEHOLDER_URL;
+}
+
+/** https only: the link goes to customers as it is. */
+export async function setPoFormUrl(url: string): Promise<void> {
+  const value = httpsUrl(url);
+  if (!value) throw new Error('po_form_url must be an https URL');
+  const db = getDb();
+  await db
+    .insert(appSettings)
+    .values({ key: PO_FORM_URL_KEY, value })
+    .onConflictDoUpdate({
+      target: appSettings.key,
+      set: { value, updatedAt: new Date() },
+    });
+}
+
 /**
  * Where the ChakraHQ history sync got to. watermarkMs is the newest chat.updatedAt seen;
  * the next run stops paging once it drops below it, so re-runs are cheap.

@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const mockGetFirstPhoneNumber = vi.fn();
 const mockFindPhoneNumberByProviderId = vi.fn();
 const mockGetAiEnabledDefault = vi.fn();
+const mockGetPoFormUrl = vi.fn();
 const mockUpsertContact = vi.fn();
 const mockUpsertConversation = vi.fn();
 const mockInsertMessageIfNew = vi.fn();
@@ -63,6 +64,7 @@ vi.mock('../src/repositories/contacts.js', () => ({
 }));
 vi.mock('../src/repositories/appSettings.js', () => ({
   getAiEnabledDefault: mockGetAiEnabledDefault,
+  getPoFormUrl: mockGetPoFormUrl,
 }));
 vi.mock('../src/repositories/conversations.js', () => ({
   upsertConversation: mockUpsertConversation,
@@ -182,7 +184,6 @@ const BASE_AI_RESPONSE = {
   message: 'AI reply',
   confidence: 'high',
   escalationReason: null,
-  imageUrl: null,
 };
 
 function makeTextPayload(waMessageId: string, text = 'Halo saya mau tanya produk', quotedWaMessageId?: string) {
@@ -222,6 +223,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     mockGetFirstPhoneNumber.mockResolvedValue(BASE_PHONE);
     mockFindPhoneNumberByProviderId.mockResolvedValue(null);
     mockGetAiEnabledDefault.mockResolvedValue(true);
+    mockGetPoFormUrl.mockResolvedValue('https://forms.gle/REPLACE-ME');
     mockUpsertContact.mockResolvedValue(BASE_CONTACT);
     mockUpsertConversation.mockResolvedValue({ ...BASE_CONVERSATION });
     mockResetConversationToActive.mockResolvedValue(null);
@@ -239,6 +241,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE });
     mockSendTextMessage.mockResolvedValue('wa-sent-id');
     mockSendImageMessage.mockResolvedValue('wa-img-id');
+    mockSendDocumentMessage.mockResolvedValue('wa-doc-id');
     mockListBrands.mockResolvedValue([]);
     mockEscalateConversation.mockResolvedValue(undefined);
     mockDetectHumanRequest.mockReturnValue(false);
@@ -1258,143 +1261,269 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(1);
   });
 
-  // ─── AI-flagged catalog request: the keyword list is not the only trigger ─────
+  // ─── The price list: a price question, by brand (spec 7.3) ────────────────
 
-  // The brand price lists print PRICELIST figures, so who may receive one is a gate, not a
-  // preference. A CONFIRMED reseller (store name + city, client 2026-10-16) with two brands on file
-  // is the "allowed" fixture.
-  const asReseller = () => {
-    mockGetContactProfile.mockResolvedValue({ customerType: 'reseller', profile: { business_name: 'Toko Jaya', city: 'Sidoarjo' } });
-    mockListBrands.mockResolvedValue([
-      { id: 'b1', name: 'Vintage', catalogFileUrl: 'https://cdn.example/vintage.pdf' },
-      { id: 'b2', name: 'Blossom', catalogFileUrl: 'https://cdn.example/blossom.pdf' },
-    ]);
-  };
+  const IMPERIAL_PDF = 'https://cdn.example/daftar-harga-imperial.pdf';
+  const SUPREME_PDF = 'https://cdn.example/daftar-harga-supreme.pdf';
+  const withBrandFiles = () => mockListBrands.mockResolvedValue([
+    { id: 'b1', name: 'Imperial Indopack', catalogFileUrl: IMPERIAL_PDF },
+    { id: 'b2', name: 'Kertas Supreme', catalogFileUrl: SUPREME_PDF },
+  ]);
+  const catalogNote = () => mockBuildContextAndCallAI.mock.calls.at(-1)![6]?.catalogNote as string | null;
 
-  it('sends the brand price list when the AI flags a request the keyword list missed', async () => {
+  // Review focus 4: the ad's own text from a customer the system has never seen.
+  it('sends the Kertas Supreme price list for the bare ad text, before the reply, and tells the model', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    asReseller();
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PL1', 'berapa harga kertas supreme?'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendDocumentMessage).toHaveBeenCalledTimes(1);
+    expect(mockSendDocumentMessage.mock.calls[0][2]).toBe(SUPREME_PDF);
+    expect(mockSendDocumentMessage.mock.calls[0][3]).toBe('Price List Kertas Supreme.pdf');
+    expect(mockSendDocumentMessage.mock.invocationCallOrder[0]).toBeLessThan(mockBuildContextAndCallAI.mock.invocationCallOrder[0]);
+    expect(catalogNote()).toMatch(/^KATALOG: file terkirim\./);
+    // Stored under its wamid, like every file the bot sends.
+    expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({
+      waMessageId: 'wa-doc-id',
+      metadata: expect.objectContaining({ attachmentType: 'document', mediaUrl: SUPREME_PDF }),
+    }));
+  });
+
+  it('sends both price lists when both brands are known', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue({ customerType: null, profile: { brands: ['kertas_supreme', 'imperial_indopack'] } });
+    withBrandFiles();
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PL2', 'minta pricelist nya kak'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendDocumentMessage.mock.calls.map((c) => c[2])).toEqual([SUPREME_PDF, IMPERIAL_PDF]);
+  });
+
+  it('sends nothing while the brand is unknown, and tells the model to ask what they pack', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PL3', 'berapa harganya kak?'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendDocumentMessage).not.toHaveBeenCalled();
+    expect(catalogNote()).toContain('Merek belum jelas: tanyakan dulu barang apa yang mau dikemas');
+  });
+
+  it('sends no price list once the item, size and quantity are known', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue({
+      customerType: null,
+      profile: { brands: ['kertas_supreme'], items: [{ product: 'Kertas Supreme 64 gsm', size: '30x30', qty: 10, qty_unit: 'rim' }] },
+    });
+    withBrandFiles();
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PL4', 'jadi berapa harganya kak?'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendDocumentMessage).not.toHaveBeenCalled();
+    expect(catalogNote()).toContain('hitung_harga');
+  });
+
+  it('sends the brand price list when the AI flags a request the keywords missed', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, catalogUrl: 'https://model-invented.example/x.pdf' });
 
-    // No CATALOG_NOUNS hit in this phrasing, but it does name a brand.
-    await routeInboundBaileysMessage(makeTextPayload('wamid-CAT1', 'boleh minta file lengkap produk vintage kak?'));
+    // The answer to "barang apa yang mau dikemas?": no price word, but it names what they pack.
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PL5', 'buat box nasi kak'));
     await vi.runAllTimersAsync();
 
     expect(mockSendDocumentMessage).toHaveBeenCalledTimes(1);
     // Always the real file, never the model-provided URL (closed catalog).
-    expect(mockSendDocumentMessage.mock.calls[0][2]).toBe('https://cdn.example/vintage.pdf');
+    expect(mockSendDocumentMessage.mock.calls[0][2]).toBe(IMPERIAL_PDF);
   });
 
-  it('image path: AI-flagged catalog request via caption sends the real PDF too', async () => {
+  it('the AI-flagged path counts the brand recorded in this very turn', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    asReseller();
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, catalogUrl: 'x', profileUpdate: { brands: ['kertas_supreme'] } });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PL6', 'untuk nasi padang kak'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendDocumentMessage.mock.calls.map((c) => c[2])).toEqual([SUPREME_PDF]);
+  });
+
+  it('image path: AI-flagged price list via caption sends the real file too', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, catalogUrl: 'https://model-invented.example/x.pdf' });
 
-    await routeInboundBaileysMessage(makeImagePayload('wamid-CAT3', 'minta katalog vintage'));
+    await routeInboundBaileysMessage(makeImagePayload('wamid-PL7', 'minta price list kertas supreme'));
     await vi.runAllTimersAsync();
 
     expect(mockSendDocumentMessage).toHaveBeenCalledTimes(1);
-    expect(mockSendDocumentMessage.mock.calls[0][2]).toBe('https://cdn.example/vintage.pdf');
+    expect(mockSendDocumentMessage.mock.calls[0][2]).toBe(SUPREME_PDF);
+    expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'AI reply' }));
   });
 
-  it('keyword-triggered catalog send is not duplicated by the AI catalogUrl flag', async () => {
+  it('keyword-triggered price list is not duplicated by the AI catalogUrl flag', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    asReseller();
-    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, catalogUrl: '/uploads/catalogs/vintage.pdf' });
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, catalogUrl: '/uploads/catalogs/x.pdf' });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-CAT2', 'minta katalog vintage dong'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PL8', 'berapa harga kertas supreme?'));
     await vi.runAllTimersAsync();
 
     expect(mockSendDocumentMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('sends every brand price list when the customer asks for all of them', async () => {
+  it('sends a brand\'s price list once per conversation, and again after /new', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    asReseller();
+    mockGetContactProfile.mockResolvedValue(null);
+    withBrandFiles();
+    const T = Math.floor(Date.now() / 1000);
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-CAT4', 'boleh minta katalog semua merek?'));
+    await routeInboundBaileysMessage({ ...makeTextPayload('wamid-PL9a', 'berapa harga kertas supreme?'), timestamp: T - 60 });
     await vi.runAllTimersAsync();
+    await routeInboundBaileysMessage({ ...makeTextPayload('wamid-PL9b', 'kertas supreme harganya berapa ya?'), timestamp: T - 30 });
+    await vi.runAllTimersAsync();
+    expect(mockSendDocumentMessage).toHaveBeenCalledTimes(1);
+    expect(catalogNote()).toContain('sudah dikirim sebelumnya');
 
+    await routeInboundBaileysMessage({ ...makeTextPayload('wamid-PL9c', '/new'), timestamp: T });
+    await routeInboundBaileysMessage({ ...makeTextPayload('wamid-PL9d', 'berapa harga kertas supreme?'), timestamp: T + 1 });
+    await vi.runAllTimersAsync();
     expect(mockSendDocumentMessage).toHaveBeenCalledTimes(2);
   });
 
-  it('sends no price list to an end user - the file carries reseller pricing', async () => {
+  // ─── Reference photos and the PO form, after the reply (spec 7.2, 7.3) ──────
+
+  const PO_URL = 'https://forms.gle/imperial-po';
+  const sentTexts = () => mockSendTextMessage.mock.calls.map((c) => c[2]);
+  const imageRows = () => mockInsertMessage.mock.calls.map((c) => c[0]).filter((r) => r.metadata?.attachmentType === 'image');
+
+  it('sends the PO form link from settings after the reply when sendPoForm', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    mockGetContactProfile.mockResolvedValue({ customerType: 'end_user', profile: {} });
-    mockListBrands.mockResolvedValue([
-      { id: 'b1', name: 'Vintage', catalogFileUrl: 'https://cdn.example/vintage.pdf' },
+    const { poFormMessage } = await import('../src/domain/constants.js');
+    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockSendTextMessage.mockResolvedValueOnce('wa-reply').mockResolvedValueOnce('wa-po');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Siap kak, 10 rim ya 🙏', sendPoForm: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PO1', 'oke kak saya ambil 10 rim'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendTextMessage).toHaveBeenCalledTimes(2);
+    expect(mockSendTextMessage.mock.calls[1][2]).toBe(poFormMessage(PO_URL));
+    expect(sentTexts()).toEqual(['Siap kak, 10 rim ya 🙏', `Untuk pemesanannya, silakan isi form PO berikut ya kak 🙏\n${PO_URL}`]);
+    // Each send is its own row, in send order, under its own wamid.
+    const rows = mockInsertMessage.mock.calls.map((c) => c[0]).filter((r) => r.role === 'assistant');
+    expect(rows.map((r) => [r.body, r.waMessageId])).toEqual([['Siap kak, 10 rim ya 🙏', 'wa-reply'], [poFormMessage(PO_URL), 'wa-po']]);
+    expect(rows[1].metadata).toMatchObject({ source: 'po_form' });
+  });
+
+  it('sends no PO form without the flag', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PO2', 'oke kak'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendTextMessage).toHaveBeenCalledTimes(1);
+    expect(mockGetPoFormUrl).not.toHaveBeenCalled();
+  });
+
+  it('sends no PO form on a hand-off', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: 'x', sendPoForm: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PO3', 'oke saya ambil'));
+    await vi.runAllTimersAsync();
+
+    expect(mockEscalateConversation).toHaveBeenCalledTimes(1);
+    expect(mockGetPoFormUrl).not.toHaveBeenCalled();
+  });
+
+  it('keeps the reply when the PO link cannot be read', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockGetPoFormUrl.mockRejectedValue(new Error('db down'));
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PO4', 'oke saya ambil'));
+    await vi.runAllTimersAsync();
+
+    expect(sentTexts()).toEqual(['AI reply']);
+    expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'AI reply', waMessageId: 'wa-sent-id' }));
+    expect(mockSaveConversationInsights).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends each reference image in order and records each', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const photos = ['/uploads/reference/1.jpg', '/uploads/reference/2.jpg', '/uploads/reference/3.jpg'];
+    mockSendImageMessage.mockResolvedValueOnce('wa-img-1').mockResolvedValueOnce('wa-img-2').mockResolvedValueOnce('wa-img-3');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, imageUrls: photos });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-IMG1', 'belum ada desain kak'));
+    await vi.runAllTimersAsync();
+
+    expect(mockSendImageMessage.mock.calls.map((c) => c[2])).toEqual(photos);
+    // After the text.
+    expect(mockSendTextMessage.mock.invocationCallOrder[0]).toBeLessThan(mockSendImageMessage.mock.invocationCallOrder[0]);
+    expect(imageRows().map((r) => [r.metadata.mediaUrl, r.waMessageId])).toEqual([
+      ['/uploads/reference/1.jpg', 'wa-img-1'], ['/uploads/reference/2.jpg', 'wa-img-2'], ['/uploads/reference/3.jpg', 'wa-img-3'],
     ]);
-
-    await routeInboundBaileysMessage(makeTextPayload('wamid-CAT5', 'minta katalog vintage dong'));
-    await vi.runAllTimersAsync();
-
-    expect(mockSendDocumentMessage).not.toHaveBeenCalled();
-    // ...and the model is told so, or it cheerfully says "sudah dikirim" over no attachment.
-    const note = mockBuildContextAndCallAI.mock.calls.at(-1)![6]?.catalogNote;
-    expect(note).toContain('JANGAN katakan katalog sudah dikirim');
-    // Owner's call 2026-09-24: point end users at the store, and give the model no reason to
-    // repeat - "Katalog price list kami khusus untuk reseller dan proyek" was the old leak (F-15).
-    expect(note).toContain('https://shopee.co.id/vintage_indo');
-    expect(note).not.toMatch(/pengguna akhir|khusus untuk reseller/);
+    // The reply's row comes first, so the thread reads in send order.
+    const bodies = mockInsertMessage.mock.calls.map((c) => c[0].body);
+    expect(bodies.indexOf('AI reply')).toBeLessThan(bodies.indexOf('[Foto]'));
   });
 
-  it('sends nothing until the buyer type is known, and says why', async () => {
+  it('a photo that fails to send does not stop the others', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    mockGetContactProfile.mockResolvedValue({ customerType: null, profile: {} });
-    mockListBrands.mockResolvedValue([
-      { id: 'b1', name: 'Vintage', catalogFileUrl: 'https://cdn.example/vintage.pdf' },
-    ]);
+    mockSendImageMessage.mockResolvedValueOnce('wa-img-1').mockRejectedValueOnce(new Error('404')).mockResolvedValueOnce('wa-img-3');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, imageUrls: ['/r/1.jpg', '/r/2.jpg', '/r/3.jpg'] });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-CAT6', 'minta katalog vintage dong'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-IMG2', 'contohnya ada kak?'));
     await vi.runAllTimersAsync();
 
-    expect(mockSendDocumentMessage).not.toHaveBeenCalled();
-    expect(mockBuildContextAndCallAI.mock.calls.at(-1)![6]?.catalogNote).toMatch(/tipe pembeli belum diketahui/i);
+    expect(mockSendImageMessage).toHaveBeenCalledTimes(3);
+    expect(imageRows().map((r) => r.metadata.mediaUrl)).toEqual(['/r/1.jpg', '/r/3.jpg']);
   });
 
-  // "dijual lagi" alone is not confirmed: the chat withholds pricelist until the store is known, and
-  // so does the file (client, 2026-10-16).
-  it('sends no price list to a reseller whose store details are not known yet, and asks for them', async () => {
+  it('sends the text, then the photos, then the PO form', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    mockGetContactProfile.mockResolvedValue({ customerType: 'reseller', profile: {} });
-    mockListBrands.mockResolvedValue([{ id: 'b1', name: 'Vintage', catalogFileUrl: 'https://cdn.example/vintage.pdf' }]);
+    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, imageUrls: ['/r/1.jpg', '/r/2.jpg'], sendPoForm: true });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-CAT8', 'minta price list vintage dong'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-IMG3', 'oke ambil yang ini'));
     await vi.runAllTimersAsync();
 
-    expect(mockSendDocumentMessage).not.toHaveBeenCalled();
-    expect(mockBuildContextAndCallAI.mock.calls.at(-1)![6]?.catalogNote).toContain('Daftar harga per merek BELUM dikirim');
+    const [reply, po] = mockSendTextMessage.mock.invocationCallOrder;
+    const [img1, img2] = mockSendImageMessage.mock.invocationCallOrder;
+    expect(reply).toBeLessThan(img1!);
+    expect(img1).toBeLessThan(img2!);
+    expect(img2).toBeLessThan(po!);
   });
 
-  // Live 2026-10-16: the team reported the AI never sent the catalog - end users got no file at all.
-  it('sends the company catalogue (no prices) to an end user once it is configured', async () => {
-    process.env.CATALOG_FILE_URL = 'https://cdn.example/katalog-2026.pdf';
-    try {
-      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-      mockGetContactProfile.mockResolvedValue({ customerType: 'end_user', profile: {} });
-      mockListBrands.mockResolvedValue([{ id: 'b1', name: 'Vintage', catalogFileUrl: 'https://cdn.example/vintage.pdf' }]);
-
-      await routeInboundBaileysMessage(makeTextPayload('wamid-CAT9', 'minta katalog vintage dong'));
-      await vi.runAllTimersAsync();
-
-      expect(mockSendDocumentMessage).toHaveBeenCalledTimes(1);
-      expect(mockSendDocumentMessage.mock.calls[0][2]).toBe('https://cdn.example/katalog-2026.pdf');
-      expect(mockSendDocumentMessage.mock.calls[0][3]).toBe('Katalog Legacy.pdf');
-      expect(mockBuildContextAndCallAI.mock.calls.at(-1)![6]?.catalogNote).toContain('tanpa harga');
-    } finally {
-      delete process.env.CATALOG_FILE_URL;
-    }
-  });
-
-  it('asks which brand instead of guessing when none is named', async () => {
+  it('photo path: sends the reference photos and the PO form after the reply too', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    asReseller();
+    const { poFormMessage } = await import('../src/domain/constants.js');
+    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockSendImageMessage.mockResolvedValueOnce('wa-img-1').mockResolvedValueOnce('wa-img-2');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, imageUrls: ['/r/1.jpg', '/r/2.jpg'], sendPoForm: true });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-CAT7', 'minta katalog dong'));
+    await routeInboundBaileysMessage(makeImagePayload('wamid-IMG4', 'yang seperti ini kak, saya ambil'));
     await vi.runAllTimersAsync();
 
-    expect(mockSendDocumentMessage).not.toHaveBeenCalled();
-    expect(mockBuildContextAndCallAI.mock.calls.at(-1)![6]?.catalogNote).toContain('merek belum disebut');
+    expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+    expect(mockSendImageMessage.mock.calls.map((c) => c[2])).toEqual(['/r/1.jpg', '/r/2.jpg']);
+    expect(mockSendTextMessage.mock.invocationCallOrder[0]).toBeLessThan(mockSendImageMessage.mock.invocationCallOrder[0]);
+    expect(mockSendImageMessage.mock.invocationCallOrder[1]).toBeLessThan(mockSendTextMessage.mock.invocationCallOrder[1]);
+    expect(imageRows().map((r) => [r.metadata.mediaUrl, r.waMessageId])).toEqual([['/r/1.jpg', 'wa-img-1'], ['/r/2.jpg', 'wa-img-2']]);
+    expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: poFormMessage(PO_URL), metadata: expect.objectContaining({ source: 'po_form' }) }));
   });
 
   // Live 2026-09-21: two numbers were configured and getFirstPhoneNumber() picked the older
@@ -1441,17 +1570,6 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
       expect(mockSendTextMessage.mock.calls[0][0]).toBe(BASE_PHONE.phoneNumberId);
     });
-  });
-
-  it('a price question is not a request for the price list file', async () => {
-    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    asReseller();
-
-    // "daftar harga" is in CATALOG_NOUNS, and as a bare substring this used to fire a send.
-    await routeInboundBaileysMessage(makeTextPayload('wamid-CAT8', 'berapa daftar harga handle newton untuk pintu kayu ya?'));
-    await vi.runAllTimersAsync();
-
-    expect(mockSendDocumentMessage).not.toHaveBeenCalled();
   });
 
   it('already-escalated + low confidence → still-checking ack, no second escalation, never silence', async () => {

@@ -5,10 +5,10 @@ import { upsertConversation, insertMessage, insertMessageIfNew, claimSyncedInbou
 import { getContactProfile, deleteContactProfile } from '../repositories/contactProfiles.js';
 import { resetLeadsForContact, tagNonSalesLead } from '../repositories/leads.js';
 import { getFirstPhoneNumber, findPhoneNumberByProviderId } from '../repositories/phoneNumbers.js';
-import { getAiEnabledDefault } from '../repositories/appSettings.js';
-import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES } from '../domain/constants.js';
+import { getAiEnabledDefault, getPoFormUrl } from '../repositories/appSettings.js';
+import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormMessage } from '../domain/constants.js';
 import { buildContextAndCallAI } from './aiLayer.js';
-import { resolveCatalogDelivery } from './catalogDelivery.js';
+import { resolveCatalogDelivery, isPriceRequest, forgetSentPriceLists } from './catalogDelivery.js';
 import { extractCatalogKeywordsFromImage, visionExtractToKeywords, otherBrands, type VisionExtract } from './visionKeywords.js';
 import { matchCustomerPhoto, photoBatchNote, photoHistoryNote, photoLine, captionOf, type PhotoMatch } from './photoMatch.js';
 import { escalateConversation, detectComplaint, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, isNonSalesHandoff, isNonSalesReason, pickProfileGapQuestion, unansweredSizeQuestion, replyPromisesTeamCheck } from './escalationHandler.js';
@@ -399,22 +399,21 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
 
     const combinedText = entry.texts.join('\n');
 
-    // Catalog is keyword-triggered and independent of the AI. The sends are fire-and-forget (the brand
-    // price lists are 0.3-7 MB, the company catalogue ~35 MB) - resolving them BEFORE the call is
-    // what lets the reply and the attachments agree, via `catalogNote`.
-    //
-    // The company catalogue (no prices) goes to anyone; the brand price lists print PRICELIST figures,
-    // so resolveCatalogDelivery sends those only to a confirmed reseller or project buyer.
-    // The buyer type is already resolved on the profile; the model must be TOLD which of the
-    // two catalog prices applies rather than inferring it from a block that prints both.
+    // The brand price lists are keyword-triggered and independent of the AI: a price question, or a
+    // request for the file itself (which also resends a list already sent). The sends are
+    // fire-and-forget - resolving them BEFORE the call is what lets the reply and the attachments
+    // agree, via `catalogNote`. Which brand's file, if any, is catalogDelivery's rule.
+    // customerType still feeds the prompt's buyer-type line (CUSTOMER_TYPE_LINE); no check reads it.
     const customerType = await getContactProfile(conv.contactId)
       .then((p) => p?.customerType ?? null)
       .catch(() => null);
 
     let catalogNote: string | null = null;
     let filesSent = false;
-    if (detectCatalogRequest(combinedText)) {
-      const delivery = await resolveCatalogDelivery(conv.contactId, combinedText);
+    const fileAsked = detectCatalogRequest(combinedText);
+    const priceListResolved = fileAsked || isPriceRequest(combinedText);
+    if (priceListResolved) {
+      const delivery = await resolveCatalogDelivery(conv.contactId, combinedText, { explicit: fileAsked });
       catalogNote = delivery.note;
       filesSent = delivery.files.length > 0;
       for (const f of delivery.files) {
@@ -523,21 +522,18 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     const reply = replyText(aiResponse, followUp);
     let sentId: string | null = null;
     try { sentId = await entry.sendReply(reply); } catch { /* ignore */ }
-    let imageId: string | null = null;
-    if (aiResponse.imageUrl) {
-      try { imageId = (await entry.sendImage?.(aiResponse.imageUrl)) ?? null; } catch (err) {
-        console.warn('[messageRouter] Failed to send image:', err instanceof Error ? err.message : err);
-      }
-    }
-    if (aiResponse.catalogUrl && !detectCatalogRequest(combinedText)) {
-      // The model spotted a catalog request the keyword list missed. Send the real file —
-      // never the model-provided URL (closed catalog). The keyword path above already covered
-      // the common phrasings, hence the !detectCatalogRequest guard against a double send.
-      // The same gates apply: the model asking for a catalog does not override them. It runs after the
-      // reply, so the buyer type and store details given in this very message count.
+    // After the text: the reference photos in order, then the PO form link.
+    const photos = await sendReferencePhotos(aiResponse.imageUrls, async (url) => (await entry.sendImage?.(url)) ?? null);
+    const poForm = aiResponse.sendPoForm ? await sendPoFormLink((text) => entry.sendReply(text)) : null;
+    if (aiResponse.catalogUrl && !priceListResolved) {
+      // The model spotted a price-list request the keywords missed (say, the answer to "barang apa
+      // yang mau dikemas?"). Send the real file - never the model-provided URL (closed catalog).
+      // The keyword path above already resolved the common phrasings, hence the guard against a
+      // double send. Same rule as there; it runs after the reply, so the brands and items given in
+      // this very message count.
       const delivery = await resolveCatalogDelivery(conv.contactId, combinedText, {
         explicit: false,
-        fresh: { customerType: aiResponse.customerType, facts: aiResponse.profileUpdate },
+        fresh: { facts: aiResponse.profileUpdate },
       });
       for (const f of delivery.files) {
         void Promise.resolve(entry.sendDoc?.(f.url, f.filename)).catch((err) =>
@@ -545,10 +541,9 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
         );
       }
     }
+    // Rows in send order, so the thread reads as the customer saw it.
     await insertMessage({ conversationId, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved' });
-    if (imageId !== null && aiResponse.imageUrl) {
-      await recordOutboundMedia({ conversationId, kind: 'image', link: aiResponse.imageUrl, wamid: imageId, source: 'bot_media' });
-    }
+    await recordAfterReply(conversationId, photos, poForm);
     saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
   } finally {
     inFlightConversations.delete(conversationId);
@@ -740,18 +735,15 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   const reply = replyText(aiResponse, followUp);
   let sentId: string | null = null;
   try { sentId = await sendTextMessage(phoneNumber.phoneNumberId, replyJid, reply); } catch { /* ignore */ }
-  let imageId: string | null = null;
-  if (aiResponse.imageUrl) {
-    try { imageId = await sendImageMessage(phoneNumber.phoneNumberId, replyJid, aiResponse.imageUrl, ''); } catch (err) {
-      console.warn('[messageRouter] Failed to send image reply:', err instanceof Error ? err.message : err);
-    }
-  }
+  // After the text: the reference photos in order, then the PO form link - as on the text path.
+  const photos = await sendReferencePhotos(aiResponse.imageUrls, (url) => sendImageMessage(phoneNumber.phoneNumberId, replyJid, url, ''));
+  const poForm = aiResponse.sendPoForm ? await sendPoFormLink((text) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text)) : null;
   if (aiResponse.catalogUrl) {
-    // Catalog asked for via the photo's caption. No keyword trigger runs on this path,
+    // Price list asked for via the photo's caption. No keyword trigger runs on this path,
     // so without this the model says "katalognya sudah dikirim" and nothing is sent.
     const delivery = await resolveCatalogDelivery(conv.contactId, body, {
       explicit: false,
-      fresh: { customerType: aiResponse.customerType, facts: aiResponse.profileUpdate },
+      fresh: { facts: aiResponse.profileUpdate },
     });
     for (const f of delivery.files) {
       void sendDocumentMessage(phoneNumber.phoneNumberId, replyJid, f.url, f.filename)
@@ -760,10 +752,63 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     }
   }
   await insertMessage({ conversationId: conv.id, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved', metadata: { source: 'vision_recommend' } as Record<string, unknown> });
-  if (imageId !== null && aiResponse.imageUrl) {
-    await recordOutboundMedia({ conversationId: conv.id, kind: 'image', link: aiResponse.imageUrl, wamid: imageId, source: 'bot_media' });
-  }
+  await recordAfterReply(conv.id, photos, poForm);
   saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
+}
+
+/**
+ * Sends each reference photo in order (at most 3, extractFromToolInput's cap) and returns the ones
+ * that went out, for recordAfterReply. A failed photo is logged and skipped - the rest still go.
+ */
+async function sendReferencePhotos(
+  urls: string[] | undefined,
+  send: (url: string) => Promise<string | null>
+): Promise<{ url: string; wamid: string }[]> {
+  const sent: { url: string; wamid: string }[] = [];
+  for (const url of urls ?? []) {
+    try {
+      const wamid = await send(url);
+      if (wamid !== null) sent.push({ url, wamid });
+    } catch (err) {
+      console.warn('[messageRouter] Failed to send reference photo:', err instanceof Error ? err.message : err);
+    }
+  }
+  return sent;
+}
+
+/**
+ * The PO form link from settings, as its own message (the model never writes it - spec 7.3).
+ * null when the link cannot be read: the reply already went out and must still be stored.
+ */
+async function sendPoFormLink(send: (text: string) => Promise<string | null>): Promise<{ body: string; wamid: string | null } | null> {
+  let body: string;
+  try {
+    body = poFormMessage(await getPoFormUrl());
+  } catch (err) {
+    console.warn('[messageRouter] PO form link unavailable - not sent:', err instanceof Error ? err.message : err);
+    return null;
+  }
+  let wamid: string | null = null;
+  try { wamid = await send(body); } catch { /* recorded below as 'saved' */ }
+  return { body, wamid };
+}
+
+/** The rows for what followed the reply, after the reply's own row and in the same order. */
+async function recordAfterReply(
+  conversationId: string,
+  photos: { url: string; wamid: string }[],
+  poForm: { body: string; wamid: string | null } | null
+): Promise<void> {
+  for (const p of photos) {
+    await recordOutboundMedia({ conversationId, kind: 'image', link: p.url, wamid: p.wamid, source: 'bot_media' });
+  }
+  if (poForm) {
+    await insertMessage({
+      conversationId, role: 'assistant', body: poForm.body,
+      waMessageId: poForm.wamid || undefined, status: poForm.wamid ? 'sent' : 'saved',
+      metadata: { source: 'po_form' } as Record<string, unknown>,
+    });
+  }
 }
 
 // A noun that could name the document...
@@ -914,6 +959,7 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
     await resetConversationContext(conversation.id, floor);
     await deleteContactProfile(contact.id);
     await resetLeadsForContact(contact.id);
+    forgetSentPriceLists(contact.id);
     // inFlightConversations is a mutex freed in finally - clearing it would let a second turn in;
     // the running turn drops its own reply instead (resetGeneration). escalationNudge reconciles
     // itself once status is back to 'active'.

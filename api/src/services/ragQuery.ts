@@ -348,7 +348,9 @@ export function formatProducts(items: Product[]): string {
     if (product.ketebalan) lines.push(`Ketebalan: ${product.ketebalan}`);
     if (product.kelengkapan) lines.push(`Kelengkapan: ${product.kelengkapan}`);
     if (product.usp) lines.push(`Keunggulan: ${product.usp}`);
-    if ((product.referenceImageUrls ?? []).length > 0) lines.push(REFERENCE_PHOTOS_MARKER);
+    // The urls themselves, in order: respond_to_customer's image_urls are copied from this line.
+    const photos = product.referenceImageUrls ?? [];
+    if (photos.length > 0) lines.push(`${REFERENCE_PHOTOS_MARKER} ${photos.join(' ')}`);
 
     const variants = (product.variants ?? []).filter((v) => v.isActive);
     if (variants.length === 0) {

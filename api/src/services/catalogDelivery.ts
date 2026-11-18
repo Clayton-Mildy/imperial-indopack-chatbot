@@ -1,14 +1,15 @@
 /**
- * Which catalog files, if any, this message earns.
- *
- * Two kinds, two rules (client, 2026-10-16):
- *   - The company catalogue (KATALOG LEGACY 2026, CATALOG_FILE_URL): photos and specs for every brand,
- *     NO prices. Anyone who asks gets it - end users and unknown buyers included. Before it existed
- *     end users got no file at all, and the team read that as "AI-nya belum berhasil kirim katalog".
- *   - The six brand price lists (brands.catalog_file_url, "DAFTAR HARGA <merek>") print PRICELIST
- *     figures - the reseller number. Only a CONFIRMED reseller or project buyer gets them: the same
- *     point at which the chat may quote pricelist (Kebijakan Harga's store-identity gate). Before,
- *     "dijual lagi, minta price list vintage" got the PDF while the chat still withheld the prices.
+ * Which price-list files, if any, this message earns (spec 7.3). Each brand has one price list
+ * (brands.catalog_file_url, uploaded in the dashboard). The rule:
+ *   - Trigger: the customer asks for a price or the price list (messageRouter: isPriceRequest or a
+ *     catalog request, or the model's catalog_url flag) while the profile holds no item with
+ *     product, size and quantity yet. Once it does, hitung_harga prices that item instead.
+ *   - Which file: every brand in profile.brands plus every brand the message names (brandsInText),
+ *     so both files when both brands are in play. The bare ad text "berapa harga kertas supreme?"
+ *     from a customer we know nothing about gets the Kertas Supreme list from its own words.
+ *   - Brand unknown: nothing is sent, and the note tells the model to ask what they pack first.
+ *   - Repeats: each brand's file goes once per conversation (per contact, until /new), unless the
+ *     customer asks for it again (`explicit`).
  *
  * One resolver, called by every send site, and its `note` is fed to the model so the reply and
  * the attachments cannot disagree about what was sent.
@@ -16,8 +17,8 @@
 
 import { getContactProfile } from '../repositories/contactProfiles.js';
 import { listBrands } from '../repositories/products.js';
-import { detectBrand } from './ragQuery.js';
-import { CATALOG_FILE_URL, CATALOG_SENT_MARKER, END_USER_CATALOG_URL } from '../domain/constants.js';
+import { CATALOG_SENT_MARKER } from '../domain/constants.js';
+import type { BrandSlug } from '../domain/orderProfile.js';
 
 export interface CatalogDelivery {
   files: { url: string; filename: string }[];
@@ -25,92 +26,112 @@ export interface CatalogDelivery {
   note: string;
 }
 
-/** "semua brand", "all", "semuanya" - the one case where six documents is the right answer. */
-const ALL_BRANDS_RE = /\b(semua|semuanya|seluruh|all)\b/i;
-/** Asked for the price list by name, as opposed to "the catalog". */
-const PRICE_LIST_RE = /daftar harga|price ?list|pricelist/i;
-const CATALOGUE_RE = /katalog|catalog|brosur|daftar produk|product list/i;
-/** A model-flagged request (no keyword) does not resend the 35 MB catalogue within this window. */
-const CATALOGUE_RESEND_MS = 6 * 60 * 60_000;
-const catalogueSentAt = new Map<string, number>();
+/** brands.name of each slug - the rows Task 1 seeds. */
+const BRAND_NAMES: Record<BrandSlug, string> = {
+  imperial_indopack: 'Imperial Indopack',
+  kertas_supreme: 'Kertas Supreme',
+};
+const isBrandSlug = (v: unknown): v is BrandSlug => typeof v === 'string' && Object.hasOwn(BRAND_NAMES, v);
 
-export function companyCatalogue(): { url: string; filename: string } | null {
-  return /^https?:\/\//i.test(CATALOG_FILE_URL) ? { url: CATALOG_FILE_URL, filename: 'Katalog Legacy.pdf' } : null;
+const KERTAS_SUPREME_RE = /supreme|kertas (nasi|bungkus)|greaseproof/i;
+const IMPERIAL_INDOPACK_RE = /box|dus|karton|kardus/i;
+
+/** The brands a message names, by the words customers use for them. */
+export function brandsInText(text: string): BrandSlug[] {
+  const out: BrandSlug[] = [];
+  if (KERTAS_SUPREME_RE.test(text)) out.push('kertas_supreme');
+  if (IMPERIAL_INDOPACK_RE.test(text)) out.push('imperial_indopack');
+  return out;
 }
 
-const filled = (v: unknown): boolean => (typeof v === 'string' ? v.trim() !== '' : v != null && v !== false);
+const PRICE_REQUEST_RE = /harga|price ?list|pricelist|berapa/i;
+
+/** A price or price-list question: what earns the price list. */
+export function isPriceRequest(text: string): boolean {
+  return PRICE_REQUEST_RE.test(text);
+}
+
+const present = (v: unknown): boolean =>
+  typeof v === 'string' ? v.trim() !== '' : typeof v === 'number' && Number.isFinite(v) && v > 0;
 
 /**
- * A buyer the price lists may go to: a reseller whose store is known (name + city or address), or a
- * freelance/online seller who has said so; a project buyer with a company or project named. The
- * fields are the ones respond_to_customer's profile_update records (RESPOND_FIELD_DESC).
+ * Some item has product, size and qty - enough for hitung_harga to price it, so the whole list is
+ * not sent. Profile facts are written by the model, so anything malformed reads as no item.
  */
-export function priceListConfirmed(customerType: string | null, facts: Record<string, unknown>): boolean {
-  if (customerType === 'reseller') {
-    const store = filled(facts['business_name']) && (filled(facts['city']) || filled(facts['store_address']));
-    const noStore = /freelance|online|marketplace|belum punya toko|tidak punya toko/i.test(String(facts['business_type'] ?? ''));
-    return store || noStore;
-  }
-  if (customerType === 'project') return filled(facts['company_name']) || filled(facts['project_location']);
-  return false;
+export function hasPricedItem(items: unknown): boolean {
+  return Array.isArray(items) && items.some((it) => {
+    if (!it || typeof it !== 'object') return false;
+    const i = it as Record<string, unknown>;
+    return present(i['product']) && present(i['size']) && present(i['qty']);
+  });
 }
+
+const slugsIn = (v: unknown): BrandSlug[] => (Array.isArray(v) ? v.filter(isBrandSlug) : []);
+const asFacts = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+const sameName = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** `${contactId}:${brand}` for every price list sent, until /new (forgetSentPriceLists). */
+const sentPriceLists = new Set<string>();
+
+/** /new starts the conversation over, so its price lists may go out again. */
+export function forgetSentPriceLists(contactId: string): void {
+  for (const slug of Object.keys(BRAND_NAMES)) sentPriceLists.delete(`${contactId}:${slug}`);
+}
+
+const NOT_SENT = 'KATALOG: belum ada file yang dikirim - JANGAN katakan katalog sudah dikirim.';
+const UNKNOWN_BRAND = 'Merek belum jelas: tanyakan dulu barang apa yang mau dikemas, JANGAN bilang daftar harga sudah dikirim.';
+const PRICED_ITEM = 'Barang, ukuran, dan jumlahnya sudah diketahui, jadi daftar harga tidak dikirim: sebutkan harganya lewat hitung_harga.';
 
 export async function resolveCatalogDelivery(
   contactId: string | null,
   text: string,
   opts: {
-    /** The message itself asked (keyword path). False when the model flagged a request the keywords missed. */
+    /** The customer asked for the file itself, so a brand's list already sent goes again. */
     explicit?: boolean;
     /** What the customer said in THIS message, not saved to the profile yet (the model-flagged path runs after the reply). */
-    fresh?: { customerType?: string | null; facts?: Record<string, unknown> };
+    fresh?: { facts?: Record<string, unknown> };
   } = {}
 ): Promise<CatalogDelivery> {
-  const { explicit = true, fresh } = opts;
+  const { explicit = false, fresh } = opts;
   const profile = contactId ? await getContactProfile(contactId) : null;
-  const customerType = fresh?.customerType ?? profile?.customerType ?? null;
-  const facts = { ...((profile?.profile as Record<string, unknown> | undefined) ?? {}), ...(fresh?.facts ?? {}) };
-  const confirmed = priceListConfirmed(customerType, facts);
+  const facts = asFacts(profile?.profile);
+  const freshFacts = asFacts(fresh?.facts);
 
-  // Price lists: a confirmed buyer, and a brand named (or "semua").
-  const brands = confirmed ? (await listBrands()).filter((b) => b.catalogFileUrl) : [];
-  const brandName = detectBrand(text);
-  const priceLists = ALL_BRANDS_RE.test(text)
-    ? brands
-    : brands.filter((b) => b.name === brandName);
-
-  // The catalogue: everyone, except a confirmed buyer who asked for a price list by name and got it.
-  const catalogue = companyCatalogue();
-  const onlyPriceList = priceLists.length > 0 && PRICE_LIST_RE.test(text) && !CATALOGUE_RE.test(text);
-  const recentlySent = !explicit && !!contactId && Date.now() - (catalogueSentAt.get(contactId) ?? 0) < CATALOGUE_RESEND_MS;
-  const sendCatalogue = !!catalogue && !onlyPriceList && !recentlySent;
-  if (sendCatalogue && contactId) catalogueSentAt.set(contactId, Date.now());
-
-  const files = [
-    ...(sendCatalogue ? [catalogue!] : []),
-    ...priceLists.map((b) => ({ url: b.catalogFileUrl!, filename: `Price List ${b.name}.pdf` })),
-  ];
-
-  const sent: string[] = [];
-  if (sendCatalogue) sent.push('Katalog produk Legacy (foto dan spesifikasi, tanpa harga) sudah dikirim.');
-  if (priceLists.length) sent.push(`Daftar harga ${priceLists.map((b) => b.name).join(', ')} sudah dikirim.`);
-
-  let next: string;
-  if (customerType === null) {
-    next = 'Tipe pembeli belum diketahui: tanyakan dulu sesuai Rules. JANGAN menyebut price list atau daftar harga.';
-  } else if (customerType === 'end_user') {
-    // Owner's call (2026-09-24): end users see their prices at the store. And no reason at all - told
-    // the price list "is not for end users", the model told the customer exactly that (UAT F-15).
-    next = `JANGAN menyebut price list, reseller, atau tipe harga apa pun, dan JANGAN menjelaskan alasannya. Sampaikan dengan hangat bahwa produk beserta harganya juga bisa dilihat di ${END_USER_CATALOG_URL}, lalu tawarkan untuk membantu memilihkan langsung di chat ini.`;
-  } else if (!confirmed) {
-    next = 'Daftar harga per merek BELUM dikirim - JANGAN katakan daftar harga atau price list sudah dikirim. Daftar harga baru dikirim setelah identitas sesuai Kebijakan Harga lengkap (reseller: nama toko, kota/lokasi, dan alamat - atau, kalau freelance, produk yang biasa dijual; proyek: nama perusahaan atau proyeknya): tanyakan yang belum ada, dan catat jawabannya di profile_update.';
-  } else if (brands.length === 0) {
-    next = 'Belum ada file daftar harga per merek. JANGAN katakan daftar harga sudah dikirim.';
-  } else if (priceLists.length === 0) {
-    next = `Daftar harga per merek belum dikirim karena merek belum disebut: tanyakan merek mana (${brands.map((b) => b.name).join(', ')}), dan sampaikan boleh minta semuanya sekaligus.`;
-  } else {
-    next = '';
+  if (hasPricedItem(facts['items']) || hasPricedItem(freshFacts['items'])) {
+    return { files: [], note: `${NOT_SENT} ${PRICED_ITEM}` };
   }
 
-  const head = files.length > 0 ? CATALOG_SENT_MARKER : 'KATALOG: belum ada file yang dikirim - JANGAN katakan katalog sudah dikirim.';
-  return { files, note: [head, ...sent, next].filter(Boolean).join(' ') };
+  const wanted = [...new Set([...slugsIn(facts['brands']), ...slugsIn(freshFacts['brands']), ...brandsInText(text)])];
+  if (wanted.length === 0) return { files: [], note: `${NOT_SENT} ${UNKNOWN_BRAND}` };
+
+  const rows = await listBrands();
+  const files: CatalogDelivery['files'] = [];
+  const sentNow: string[] = [];
+  const sentBefore: string[] = [];
+  const noFile: string[] = [];
+  for (const slug of wanted) {
+    const name = BRAND_NAMES[slug];
+    const url = rows.find((b) => sameName(b.name, name))?.catalogFileUrl;
+    if (!url) {
+      noFile.push(name);
+      continue;
+    }
+    const key = `${contactId}:${slug}`;
+    if (contactId && !explicit && sentPriceLists.has(key)) {
+      sentBefore.push(name);
+      continue;
+    }
+    if (contactId) sentPriceLists.add(key);
+    files.push({ url, filename: `Price List ${name}.pdf` });
+    sentNow.push(name);
+  }
+
+  const note = [
+    files.length > 0 ? CATALOG_SENT_MARKER : NOT_SENT,
+    sentNow.length > 0 ? `Daftar harga ${sentNow.join(', ')} sudah dikirim.` : '',
+    sentBefore.length > 0 ? `Daftar harga ${sentBefore.join(', ')} sudah dikirim sebelumnya di chat ini, jadi tidak dikirim ulang.` : '',
+    ...noFile.map((name) => `Daftar harga ${name} belum tersedia - JANGAN bilang daftar harga ${name} sudah dikirim; tanyakan barang, ukuran, dan jumlahnya supaya harganya bisa dihitung.`),
+  ];
+  return { files, note: note.filter(Boolean).join(' ') };
 }

@@ -21,7 +21,6 @@ import {
 } from '../repositories/conversations.js';
 import { getDefaultPromptSections } from '../repositories/appSettings.js';
 import { listBrands } from '../repositories/products.js';
-import { CUSTOMER_TYPES } from '../domain/types.js';
 import type { AIResponse, PromptSection } from '../domain/types.js';
 import { resolveLink } from './linkResolver.js';
 import { PRICE_TOOL, PRICE_TOOL_DESC, PRICE_TOOL_NAME, PriceToolInput, runPriceTool } from './priceTool.js';
@@ -41,16 +40,15 @@ export const RESPOND_FIELD_DESC = {
     '"high" for normal helpful responses, including honest hedged ones - and for telling the customer plainly that we do not carry what they asked for (no relevant product, or the data rules it out): that is a complete answer, not a hand-off. "low" whenever a human must take over: the customer explicitly asked for one, or insists an item exists after you said we do not have it. A product that exists but is out of stock is still relevant: say it is empty, offer what is ready, keep "high". "Are you a bot?" is not a request for a human - answer it with the Scope line, "high". One relevant supporting field (usually Fungsi) is enough to claim fit with "high" even if other fields are silent. When ALL relevant fields are silent, keep "high" but hedge honestly ("sepertinya cocok, saya pastikan dulu ya") instead of claiming certainty.',
   escalation_reason: 'Internal escalation reason. Set only when confidence is "low". When the customer is not a buyer at all - a supplier or factory offering its goods or services to us, a job seeker, a courier - start it with "BUKAN PEMBELI:".',
   total_for_team:
-    'When the customer asks for a total ("jadi total berapa", "totalkan"), compute it yourself whenever you can: every item is in the catalog block with its price and the quantity of each is known. Write one line per item - quantity x catalog price = amount - then the total; for several units, the total for one unit then "Total N unit" = N x it. The system checks the arithmetic. Set this true ONLY when you cannot: an item we do not carry or that has no price in the block, a quantity you do not know, or a list too unclear to price. Then give the items you can price, leave the total out of message, and do not write that someone will calculate it - the system adds that line and tells the team, who calculate it. Never promise to calculate it yourself later. Keep confidence "high".',
+    'Set this true ONLY when hitung_harga cannot price the order (e.g. mixed catalog and custom items): the team calculates the total. Never add up a total yourself. Give the prices hitung_harga returned for the items it can price, leave the total out of message, and do not write that someone will calculate it - the system adds that line and tells the team, who calculate it. Never promise to calculate it yourself later. Keep confidence "high".',
   topics_detected: 'Key topics detected in the customer message.',
-  catalog_url: 'URL to a catalog file if the customer explicitly requested one. Which file goes out, if any, is decided by the system (the KATALOG line in INFORMASI PELANGGAN); never write a path in message.',
-  image_url: 'When the catalog block shows [FOTO TERSEDIA: url] for a product your message names, put that url here - without asking first. Never write the url in message.',
+  catalog_url: 'Set it (any text) when the customer wants our price list and the KATALOG line in INFORMASI PELANGGAN does not already cover it - including the turn they answer what they want to pack after asking for prices. Which brand\'s file goes out, if any, is decided by the system; never write a link or path in message.',
+  image_urls: 'reference photo urls of the product you recommend, copied from the catalog block',
+  send_po_form: 'true only on the turn the customer clearly agrees to buy at the quoted price',
   profile_update:
-    'CATAT: customer profile fields learned in this turn (the buyer type goes in customer_type, not here). Reseller fields: business_name, store_address, city, business_type, target_buyer, pain_points (array), estimated_volume, price_range. End-user fields: name, product_sought, usage_location, object_material, object_condition, style_preference, quantity, budget, deadline, recommended_product. Project fields: name, company_name, project_location, product_sought, quantity, budget, deadline. Whatever the buyer type, write "quantity" on the turn the customer states how many they need, in their own words (e.g. "300 an per ukuran") - if your message says you noted it, it must be here. Upsell/cross-sell tracking: upsell_offered (boolean, set true when you offered an upsell this turn), upsell_accepted (boolean, set when customer responded to upsell offer), crosssell_offered (boolean, set true when you offered cross-sell this turn), crosssell_accepted (boolean, set when customer responded to cross-sell offer). Only set upsell/crosssell fields when relevant — do not set them on every turn. Lead tracking (these three go on the sales report, not the customer profile): "lead_temperature" ("hot" when this person shows real buying intent for something we can supply — asked a price, named a quantity, gave a deadline, or asked how to order; "cold" when they are only browsing, have gone quiet, or what they want is not something we sell or have, and they have not taken up an alternative you offered). "order_confirmed" (true ONLY on the single turn the customer first commits to a concrete order — a product plus a quantity, e.g. "mau order 3 karton". Never repeat it on later turns about the same order, it is counted each time). "order_value_idr" (integer rupiah total for THAT order only, not a running total: quantity x the price you quoted from the catalog block. Omit it entirely if you are not sure — a missing number is fine, a guessed one is not). Only include fields learned in THIS turn.',
+    'CATAT: customer profile fields learned in this turn. Order fields: brands (array of "imperial_indopack" for boxes, "kertas_supreme" for food paper), items (array of { product, size, gsm, print, qty, qty_unit ("rim" or "pcs"), has_design }) - send only the items that changed this turn, each with its product and size, never the whole list. Reseller fields: business_name, store_address, city, business_type, target_buyer, pain_points (array), estimated_volume, price_range. End-user fields: name, product_sought, usage_location, object_material, object_condition, style_preference, quantity, budget, deadline, recommended_product. Project fields: name, company_name, project_location, product_sought, quantity, budget, deadline. Write "quantity" on the turn the customer states how many they need, in their own words (e.g. "300 an per ukuran") - if your message says you noted it, it must be here. Upsell/cross-sell tracking: upsell_offered (boolean, set true when you offered an upsell this turn), upsell_accepted (boolean, set when customer responded to upsell offer), crosssell_offered (boolean, set true when you offered cross-sell this turn), crosssell_accepted (boolean, set when customer responded to cross-sell offer). Only set upsell/crosssell fields when relevant — do not set them on every turn. Lead tracking (these three go on the sales report, not the customer profile): "lead_temperature" ("hot" when this person shows real buying intent for something we can supply — asked a price, named a quantity, gave a deadline, or asked how to order; "cold" when they are only browsing, have gone quiet, or what they want is not something we sell or have, and they have not taken up an alternative you offered). "order_confirmed" (true ONLY on the single turn the customer first commits to a concrete order — a product plus a quantity, e.g. "mau order 3 karton". Never repeat it on later turns about the same order, it is counted each time). "order_value_idr" (integer rupiah total for THAT order only, not a running total: the total hitung_harga returned for it. Omit it entirely when hitung_harga gave no total — a missing number is fine, a guessed one is not). Only include fields learned in THIS turn.',
   follow_up_notes:
     'Fill when a follow-up action is required before the conversation can proceed, OR when the customer has just stated a concrete intent to order (a product plus a quantity, e.g. "mau order 3 karton") — record what they want in one line so a human can follow up and close it, even when your own message this turn already handles everything else. E.g. "Tunggu foto handle lama dari Kak Budi untuk cocokkan tipe body kunci." / "Order: knob handle 3 karton (150 Lsn), tunggu konfirmasi nama toko." Leave empty if no follow-up needed.',
-  customer_type:
-    'REQUIRED every turn. The buyer type the customer has STATED so far in this conversation, this message included: "end_user" (dipakai sendiri), "project" (for a construction/contractor project), "reseller" (dijual lagi), or "unknown" if they have not said it. Never infer it from the product, the quantity or the tone. When INFORMASI PELANGGAN states the type, repeat it unless the customer has just said otherwise. Price figures are checked against this: with "unknown" the message may not contain any Rp figure.',
   fit_basis:
     'REQUIRED whenever your message names a product from the catalog block. For each product you name, copy the exact text from that product\'s own [DATA KATALOG RESMI] fields (Fungsi / Bahan / Ketebalan / Kelengkapan) that shows it fits the customer\'s situation. Copy it verbatim, character for character — do not paraphrase, summarise or translate, and never quote the "Kategori (petunjuk pencarian)" line, the Playbook, or your own reasoning. One supporting field is enough. If the fields explicitly CONTRADICT or restrict against the situation, put the single word DIAM instead and set confidence "low". If they are merely silent (no field mentions the situation either way), put DIAM but keep confidence "high" and hedge honestly in the message. Leave this empty only when your message names no product at all (greetings, asking for a name, sending the catalog).',
 };
@@ -85,8 +83,11 @@ const RESOLVE_LINK_TOOL: Anthropic.Tool = {
   },
 };
 
+/** Reference photos per turn: the most a product has (MAX_REFERENCE_IMAGES_PER_PRODUCT). */
+const MAX_IMAGE_URLS = 3;
+
 // Structured output — the model must reply through this tool, never free text.
-const RESPOND_TOOL: Anthropic.Tool = {
+export const RESPOND_TOOL: Anthropic.Tool = {
   name: RESPOND_TOOL_NAME,
   description: RESPOND_TOOL_DESC,
   input_schema: {
@@ -99,7 +100,8 @@ const RESPOND_TOOL: Anthropic.Tool = {
       total_for_team: { type: 'boolean', description: RESPOND_FIELD_DESC.total_for_team },
       topics_detected: { type: 'array', items: { type: 'string' }, description: RESPOND_FIELD_DESC.topics_detected },
       catalog_url: { type: 'string', description: RESPOND_FIELD_DESC.catalog_url },
-      image_url: { type: 'string', description: RESPOND_FIELD_DESC.image_url },
+      image_urls: { type: 'array', items: { type: 'string' }, maxItems: MAX_IMAGE_URLS, description: RESPOND_FIELD_DESC.image_urls },
+      send_po_form: { type: 'boolean', description: RESPOND_FIELD_DESC.send_po_form },
       profile_update: {
         type: 'object',
         description: RESPOND_FIELD_DESC.profile_update,
@@ -107,14 +109,13 @@ const RESPOND_TOOL: Anthropic.Tool = {
       },
       follow_up_notes: { type: 'string', description: RESPOND_FIELD_DESC.follow_up_notes },
       fit_basis: { type: 'array', items: { type: 'string' }, description: RESPOND_FIELD_DESC.fit_basis },
-      customer_type: { type: 'string', enum: [...CUSTOMER_TYPES, 'unknown'], description: RESPOND_FIELD_DESC.customer_type },
     },
-    required: ['message', 'confidence', 'fit_basis', 'customer_type'],
+    required: ['message', 'confidence', 'fit_basis'],
   },
 };
 
 // Same contract as RESPOND_TOOL, expressed as a zod shape for the Agent SDK.
-const RESPOND_SHAPE = {
+export const RESPOND_SHAPE = {
   message: z.string().describe(RESPOND_FIELD_DESC.message),
   confidence: z.enum(['high', 'low']).describe(RESPOND_FIELD_DESC.confidence),
   escalation_reason: z.string().optional().describe(RESPOND_FIELD_DESC.escalation_reason),
@@ -122,11 +123,11 @@ const RESPOND_SHAPE = {
   total_for_team: z.boolean().optional().describe(RESPOND_FIELD_DESC.total_for_team),
   topics_detected: z.array(z.string()).optional().describe(RESPOND_FIELD_DESC.topics_detected),
   catalog_url: z.string().optional().describe(RESPOND_FIELD_DESC.catalog_url),
-  image_url: z.string().optional().describe(RESPOND_FIELD_DESC.image_url),
+  image_urls: z.array(z.string()).max(MAX_IMAGE_URLS).optional().describe(RESPOND_FIELD_DESC.image_urls),
+  send_po_form: z.boolean().optional().describe(RESPOND_FIELD_DESC.send_po_form),
   profile_update: z.record(z.string(), z.unknown()).optional().describe(RESPOND_FIELD_DESC.profile_update),
   follow_up_notes: z.string().optional().describe(RESPOND_FIELD_DESC.follow_up_notes),
   fit_basis: z.array(z.string()).describe(RESPOND_FIELD_DESC.fit_basis),
-  customer_type: z.enum(['reseller', 'end_user', 'project', 'unknown']).describe(RESPOND_FIELD_DESC.customer_type),
 };
 
 // One array for the loop, the failsafe and the cache warmup: the tools are part of the cached
@@ -150,6 +151,21 @@ export function recoverLeakedFields(input: Record<string, unknown>): Record<stri
   return { ...leaked, ...input, message: message.slice(0, leak.index) };
 }
 
+/**
+ * The photo urls worth sending: a path on our host or an http(s) link, each once, at most
+ * MAX_IMAGE_URLS, in the model's order. Anything else (a "javascript:" string, a bare word) is not
+ * a photo and is dropped rather than sent.
+ */
+function photoUrls(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const urls = raw
+    .filter((u): u is string => typeof u === 'string')
+    .map((u) => u.trim())
+    .filter((u) => u.startsWith('/') || /^https?:\/\//i.test(u));
+  const kept = [...new Set(urls)].slice(0, MAX_IMAGE_URLS);
+  return kept.length > 0 ? kept : undefined;
+}
+
 export function extractFromToolInput(rawInput: Record<string, unknown>): AIResponse {
   const input = recoverLeakedFields(rawInput);
   const fallbackEscalationMsg = 'Pertanyaan Anda akan saya teruskan ke tim kami ya! Sebentar lagi mereka akan menghubungi Anda. 🙏';
@@ -167,7 +183,8 @@ export function extractFromToolInput(rawInput: Record<string, unknown>): AIRespo
     escalationReason,
     topicsDetected: Array.isArray(input.topics_detected) ? input.topics_detected as string[] : undefined,
     catalogUrl: typeof input.catalog_url === 'string' ? input.catalog_url : undefined,
-    imageUrl: typeof input.image_url === 'string' ? input.image_url : undefined,
+    imageUrls: photoUrls(input.image_urls),
+    sendPoForm: input.send_po_form === true || undefined,
     profileUpdate: input.profile_update && typeof input.profile_update === 'object' && !Array.isArray(input.profile_update)
       ? input.profile_update as Record<string, unknown>
       : undefined,
@@ -177,7 +194,6 @@ export function extractFromToolInput(rawInput: Record<string, unknown>): AIRespo
     fitBasis: Array.isArray(input.fit_basis)
       ? input.fit_basis.filter((q): q is string => typeof q === 'string')
       : [],
-    customerType: CUSTOMER_TYPES.find((t) => t === input.customer_type) ?? null,
   };
 }
 

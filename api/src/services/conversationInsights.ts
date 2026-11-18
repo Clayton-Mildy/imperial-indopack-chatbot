@@ -79,18 +79,16 @@ export async function saveConversationInsights(
 ): Promise<void> {
   const tasks: Promise<unknown>[] = [];
 
-  // The buyer type is its own required field, answered every turn. It used to ride in
-  // profile_update, which the model fills only with what it thinks is NEW - so a type stated two
-  // turns earlier was often never written, the tier line never rendered, and the end-user price
-  // check never ran (UAT F-06 / F-08). profile_update's copy stays as a fallback.
-  const customerType = aiResponse.customerType ?? parseCustomerType(aiResponse.profileUpdate?.['customer_type']);
+  // No buyer type: the price does not depend on who buys (spec 7.3), so the turn no longer records
+  // one. contact_profiles.customer_type stays, unused by the turn.
 
   // ── Contact profile (CATAT) ──────────────────────────────────────────────
   if (aiResponse.profileUpdate && Object.keys(aiResponse.profileUpdate).length > 0) {
     const patch = aiResponse.profileUpdate;
     // Lead-level fields ride in the same bag (profile_update is additionalProperties:true, so
     // documenting a key in RESPOND_FIELD_DESC is the whole contract) but belong on `leads`,
-    // not in contact_profiles.profile. Destructured out so they never land in the jsonb.
+    // not in contact_profiles.profile. Destructured out so they never land in the jsonb - and a
+    // stray customer_type with them.
     const {
       customer_type: _type,
       lead_temperature: _temp,
@@ -102,7 +100,6 @@ export async function saveConversationInsights(
 
     tasks.push(
       upsertContactProfile(contactId, {
-        customerType,
         profilePatch: rest,
         followUpStatus: aiResponse.followUpNotes ? 'needs_followup' : undefined,
         followUpNotes: aiResponse.followUpNotes ?? undefined,
@@ -110,11 +107,10 @@ export async function saveConversationInsights(
         console.error('[insights] Failed to upsert contact profile:', err);
       })
     );
-  } else if (aiResponse.followUpNotes || customerType) {
-    // Even if no profile data, still record the buyer type and mark follow-up on the profile
+  } else if (aiResponse.followUpNotes) {
+    // Even if no profile data, still mark follow-up on the profile
     tasks.push(
       upsertContactProfile(contactId, {
-        customerType,
         followUpStatus: aiResponse.followUpNotes ? 'needs_followup' : undefined,
         followUpNotes: aiResponse.followUpNotes ?? undefined,
       }).catch((err) => {

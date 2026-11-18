@@ -373,14 +373,16 @@ export interface AIResponse {
   confidence: AIConfidence;
   escalationReason?: string;
   topicsDetected?: string[];
+  /** Set when the turn asks for the price list; which file goes out is catalogDelivery's call, never this value. */
   catalogUrl?: string;
-  imageUrl?: string;
+  /** Reference photos of the recommended product (at most 3, in order), sent after the text. */
+  imageUrls?: string[];
+  /** The customer just agreed to buy at the quoted price: the PO form link from settings follows the reply. */
+  sendPoForm?: boolean;
   profileUpdate?: Record<string, unknown>;
   followUpNotes?: string;
   /** Verbatim quotes from the catalog block backing each product named in `message`. */
   fitBasis?: string[];
-  /** The buyer type the customer has stated so far, as the model read it; null = not stated yet. */
-  customerType?: CustomerType | null;
   /** The customer only acknowledged or closed ("baik kak", "terima kasih"): the model chose to send nothing. */
   noReply?: boolean;
   /**

@@ -16,8 +16,8 @@ import { getConfig } from '../config.js';
 //   POST {CHAKRA_BASE_URL}/v1/ext/plugin/whatsapp/{pluginId}/upload-public-media
 //   multipart: file, filename  ->  { _data: { publicMediaUrl } }
 // It returns a Chakra-hosted public URL (not a Meta media id), and absolute URLs pass through
-// toLink() untouched — which is how the ~50MB catalogue is kept off this server's bandwidth
-// (see CATALOG_FILE_URL and "Host the catalog PDF on Chakra" in docs/deploy-runbook.md).
+// toLink() untouched — which is how large files such as the brand price lists
+// (brands.catalog_file_url) are kept off this server's bandwidth.
 // Large or rarely-changing files are uploaded once by hand rather than on every send;
 // per-send upload would re-transfer the file each time.
 

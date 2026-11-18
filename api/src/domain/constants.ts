@@ -14,12 +14,6 @@ export const MAX_CATALOG_RAG_RESULTS = 20;
 // and now for any variant rather than one hardcoded brand: no MP means the block says
 // "tanya tim" and carries no digits to quote.
 
-// The ONE company-wide product catalogue (KATALOG LEGACY 2026): photos and specs for every brand,
-// NO prices, so it goes to anyone who asks - end users included (client, 2026-10-16). A Chakra
-// public-media URL, set in api/.env. Only an http(s) URL counts: the old default pointed at a local
-// catalog.pdf deleted in September, and unset now simply means "no company catalogue".
-export const CATALOG_FILE_URL = process.env['CATALOG_FILE_URL'] ?? '';
-
 // Where an END USER sees products with the prices they pay. The per-brand price lists print
 // pricelist figures and are never sent to them (catalogDelivery.ts); the owner's call (2026-09-24)
 // is this store, alongside the price-free company catalogue.
@@ -32,6 +26,13 @@ export const SHOWROOM_MAPS_URL = 'https://maps.app.goo.gl/VQpJ61Ar3BrtBTFNA';
 // Opens resolveCatalogDelivery's note ONLY when files really went out this turn. verifyFit reads it
 // back out of the prompt: without it, a reply may not say a catalog was sent (UAT Run 2 F-27).
 export const CATALOG_SENT_MARKER = 'KATALOG: file terkirim.';
+
+// Sent as its own message after the reply on the turn the model sets send_po_form (the customer
+// agreed to buy at the quoted price). The link comes from settings (getPoFormUrl), never from the
+// model: it is the one place the order is placed (spec 7.3).
+export function poFormMessage(url: string): string {
+  return `Untuk pemesanannya, silakan isi form PO berikut ya kak 🙏\n${url}`;
+}
 
 
 // What the customer sees on EVERY escalation. Deliberately fixed text, not model prose: the
