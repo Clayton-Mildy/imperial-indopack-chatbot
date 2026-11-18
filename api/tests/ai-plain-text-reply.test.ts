@@ -175,6 +175,14 @@ describe('no_reply', () => {
     expect(r.confidence).toBe('high');
   });
 
+  // Final review M9: the PO form or the team's examples promise still goes on a turn with nothing else to say.
+  it('is ignored when send_po_form or examples_for_team is set', () => {
+    const po = extractFromToolInput(input({ no_reply: true, send_po_form: true }));
+    expect(po.noReply).toBeUndefined();
+    expect(po.sendPoForm).toBe(true);
+    expect(extractFromToolInput(input({ no_reply: true, examples_for_team: true })).noReply).toBeUndefined();
+  });
+
   it('is ignored when there is text (the text is a reply) or when it is a hand-off', () => {
     expect(extractFromToolInput(input({ no_reply: true, message: 'Siap kak' })).noReply).toBeUndefined();
     expect(extractFromToolInput(input({ no_reply: true, confidence: 'low', escalation_reason: 'x' })).noReply).toBeUndefined();

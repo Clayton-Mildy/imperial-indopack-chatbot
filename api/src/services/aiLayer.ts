@@ -183,7 +183,9 @@ export function catalogPhotoUrls(catalogBlock: string): Set<string> {
 /**
  * Keeps only the photo urls this turn's catalog block printed. Anything else - a link the customer
  * pasted, an upload path the model made up - would go to the customer as our product photo, so it is
- * dropped (and logged), never sent.
+ * dropped (and logged), never sent. When every one is dropped, the reply's "contohnya saya kirim"
+ * would be a promise nobody keeps: the team sends the examples instead (examplesForTeam - final
+ * review M8), so staff are told and the customer reads the team's line.
  */
 export function withCatalogPhotosOnly(r: AIResponse, catalogBlock: string): AIResponse {
   if (!r.imageUrls?.length) return r;
@@ -191,7 +193,8 @@ export function withCatalogPhotosOnly(r: AIResponse, catalogBlock: string): AIRe
   const kept = r.imageUrls.filter((u) => allowed.has(u));
   const dropped = r.imageUrls.filter((u) => !allowed.has(u));
   if (dropped.length > 0) console.warn(`[aiLayer] image_urls not in the catalog block, not sent: ${dropped.join(' ')}`);
-  return { ...r, imageUrls: kept.length > 0 ? kept : undefined };
+  if (kept.length === 0) return { ...r, imageUrls: undefined, examplesForTeam: true };
+  return { ...r, imageUrls: kept };
 }
 
 export function extractFromToolInput(rawInput: Record<string, unknown>): AIResponse {
@@ -201,8 +204,11 @@ export function extractFromToolInput(rawInput: Record<string, unknown>): AIRespo
   const escalationReason = typeof input.escalation_reason === 'string' ? input.escalation_reason : undefined;
   const confidence = input.confidence === 'low' ? 'low' : 'high';
   // Honoured only as a bare "send nothing": text in `message` is a reply and goes out, and a "low"
-  // is a hand-off, which has its own flow - either one wins over a stray no_reply.
-  const noReply = input.no_reply === true && !msg && confidence === 'high';
+  // is a hand-off, which has its own flow - either one wins over a stray no_reply. So do the PO form and
+  // the team's examples promise, which go out on their own (final review M9: "oke kak" agreeing to the
+  // quote lost its PO form).
+  const flagged = input.send_po_form === true || input.examples_for_team === true;
+  const noReply = input.no_reply === true && !msg && confidence === 'high' && !flagged;
   return {
     message: msg || (escalationReason ? fallbackEscalationMsg : ''),
     confidence,

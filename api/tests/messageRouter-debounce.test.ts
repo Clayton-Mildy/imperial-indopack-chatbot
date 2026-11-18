@@ -1626,6 +1626,23 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   const sentTexts = () => mockSendTextMessage.mock.calls.map((c) => c[2]);
   const imageRows = () => mockInsertMessage.mock.calls.map((c) => c[0]).filter((r) => r.metadata?.attachmentType === 'image');
 
+  // Final review M9: "oke kak" agreeing to the quote has nothing to answer, but the PO form still goes -
+  // on its own, with no empty reply before it and no hand-off.
+  it.each([['text', false], ['photo', true]] as const)('sends the PO form alone on a %s turn with no reply text', async (_path, photo) => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { poFormMessage } = await import('../src/domain/constants.js');
+    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockBuildContextAndCallAI.mockResolvedValue({ message: '', confidence: 'high', sendPoForm: true });
+
+    await routeInboundBaileysMessage(photo ? makeImagePayload('wamid-PO0p', 'oke kak') : makeTextPayload('wamid-PO0', 'oke kak'));
+    await vi.runAllTimersAsync();
+
+    expect(sentTexts()).toEqual([poFormMessage(PO_URL)]);
+    expect(mockEscalateConversation).not.toHaveBeenCalled();
+    expect(mockInsertMessage.mock.calls.map((c) => c[0]).filter((r) => r.role === 'assistant').map((r) => r.body)).toEqual([poFormMessage(PO_URL)]);
+    expect(mockNotifyStaff).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Balasan bot gagal terkirim' }));
+  });
+
   it('sends the PO form link from settings after the reply when sendPoForm', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { poFormMessage } = await import('../src/domain/constants.js');

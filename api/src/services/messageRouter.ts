@@ -330,15 +330,22 @@ function withExamplesAsked(reason: string, r: AIResponse): string {
   return r.examplesForTeam ? `${reason}; ${DESIGN_EXAMPLES_REASON}` : reason;
 }
 
+/**
+ * A turn with no text but a fixed line to send (the PO form, the team's examples promise): not a failed
+ * turn - the line goes out on its own (final review M9).
+ */
+const onlyFixedLines = (r: AIResponse): boolean =>
+  !r.message && r.confidence !== 'low' && Boolean(r.sendPoForm || r.examplesForTeam);
+
 /** Anything in the follow-up the team has to act on. */
 const needsTeam = (f: TeamFollowUp): boolean => f.total || f.size || Boolean(f.poForm) || Boolean(f.examples);
 
-/** The reply as sent: the model's answer, plus the team's promise for each thing it left to them. */
+/** The reply as sent: the model's answer, plus the team's promise for each thing it left to them. Empty for a fixed-lines-only turn. */
 function replyText(r: AIResponse, f: TeamFollowUp = { total: Boolean(r.totalForTeam), size: false }): string {
   const lines = [r.message];
   if (f.total && !TEAM_CALCULATES_RE.test(r.message)) lines.push(CANNED_TOTAL_FOR_TEAM);
   if (f.size && !replyPromisesTeamCheck(r.message)) lines.push(CANNED_SIZE_FOR_TEAM);
-  return lines.join('\n\n');
+  return lines.filter(Boolean).join('\n\n');
 }
 
 /**
@@ -605,7 +612,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // question - the model's own hand-off reason included (taxHandoff).
     const notBuyer = notABuyer(nonSales, aiResponse, conv);
     const askGap = !humanRequested && !isNonSalesHandoff(combinedText) && !notBuyer && !ppnAsked && !taxHandoff(aiResponse);
-    if (aiResponse.confidence === 'low' || humanRequested || ppnAsked || !aiResponse.message) {
+    if (aiResponse.confidence === 'low' || humanRequested || ppnAsked || (!aiResponse.message && !onlyFixedLines(aiResponse))) {
       // Save this turn's profile facts BEFORE escalating: the hand-off question reads the
       // profile and must not re-ask something the customer said in this very message.
       await saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
@@ -658,8 +665,10 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conversationId, combinedText);
     const reply = replyText(aiResponse, followUp);
     let sentId: string | null = null;
-    try { sentId = await entry.sendReply(reply); } catch { /* ignore */ }
-    if (!sentId) notifyReplyNotSent(conversationId, reply);
+    if (reply) {
+      try { sentId = await entry.sendReply(reply); } catch { /* ignore */ }
+      if (!sentId) notifyReplyNotSent(conversationId, reply);
+    }
     // After the text: the reference photos in order, the team's design-examples promise, then the PO
     // form link (or the team's promise).
     const photos = await sendReferencePhotos(aiResponse.imageUrls, async (url) => (await entry.sendImage?.(url)) ?? null);
@@ -667,7 +676,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     const poSent = poForm ? await sendFixedLine(poForm.body, 'po_form', (text) => entry.sendReply(text)) : null;
     await deliverPriceList(reply, Boolean(aiResponse.catalogUrl));
     // Rows in send order, so the thread reads as the customer saw it.
-    await insertMessage({ conversationId, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved' });
+    if (reply) await insertMessage({ conversationId, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved' });
     await recordAfterReply(conversationId, photos, [examplesSent, poSent]);
   } finally {
     inFlightConversations.delete(conversationId);
@@ -818,7 +827,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   // computed here and used below for askProfileGap, but left OUT of the gate, so a photo
   // captioned "ini fotonya, tolong sambungkan ke CS" kept talking to the bot whenever the
   // model answered confidently. Asking for a human must not depend on the AI also failing.
-  if (aiResponse.confidence === 'low' || humanRequested || ppnAsked || nonSales || !aiResponse.message) {
+  if (aiResponse.confidence === 'low' || humanRequested || ppnAsked || nonSales || (!aiResponse.message && !onlyFixedLines(aiResponse))) {
     // Same as the text path: profile facts from the escalating turn still count, and
     // must land before the hand-off question picks what to ask.
     await saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
@@ -861,8 +870,10 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conv.id, body);
   const reply = replyText(aiResponse, followUp);
   let sentId: string | null = null;
-  try { sentId = await sendTextMessage(phoneNumber.phoneNumberId, replyJid, reply); } catch { /* ignore */ }
-  if (!sentId) notifyReplyNotSent(conv.id, reply);
+  if (reply) {
+    try { sentId = await sendTextMessage(phoneNumber.phoneNumberId, replyJid, reply); } catch { /* ignore */ }
+    if (!sentId) notifyReplyNotSent(conv.id, reply);
+  }
   // After the text: the reference photos, the design-examples promise, then the PO form - as on the text path.
   const photos = await sendReferencePhotos(aiResponse.imageUrls, (url) => sendImageMessage(phoneNumber.phoneNumberId, replyJid, url, ''));
   const sendLine = (text: string) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text);
@@ -882,7 +893,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
         .catch((err) => console.warn('[messageRouter] Failed to send catalog:', err instanceof Error ? err.message : err));
     }
   }
-  await insertMessage({ conversationId: conv.id, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved', metadata: { source: 'vision_recommend' } as Record<string, unknown> });
+  if (reply) await insertMessage({ conversationId: conv.id, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved', metadata: { source: 'vision_recommend' } as Record<string, unknown> });
   await recordAfterReply(conv.id, photos, [examplesSent, poSent]);
 }
 

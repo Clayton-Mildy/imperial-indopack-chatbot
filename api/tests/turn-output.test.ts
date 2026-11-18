@@ -120,6 +120,19 @@ describe('only the catalog\'s own reference photos are sent', () => {
     expect(withCatalogPhotosOnly({ message: 'x', confidence: 'high', imageUrls: ['/uploads/x.jpg'] }, block).imageUrls).toBeUndefined();
   });
 
+  // Final review M8: the reply promised photos ("contohnya saya kirim ya") and none of them could go - the
+  // promise is the team's to keep now.
+  it('hands the examples to the team when every photo url was dropped', () => {
+    const r = withCatalogPhotosOnly({ message: 'Contohnya saya kirim ya kak', confidence: 'high', imageUrls: ['/uploads/ref/made-up.jpg'] }, block);
+    expect(r.imageUrls).toBeUndefined();
+    expect(r.examplesForTeam).toBe(true);
+  });
+
+  it('does not when some photo goes, or when none was asked for', () => {
+    expect(withCatalogPhotosOnly({ message: 'x', confidence: 'high', imageUrls: ['/uploads/ref/1.jpg', '/uploads/x.jpg'] }, block).examplesForTeam).toBeUndefined();
+    expect(withCatalogPhotosOnly({ message: 'x', confidence: 'high' }, block).examplesForTeam).toBeUndefined();
+  });
+
   it('a url that only appears elsewhere in the block does not count', () =>
     expect(catalogPhotoUrls('Produk: Box /uploads/ref/9.jpg\n[FOTO REFERENSI TERSEDIA] /uploads/ref/1.jpg').has('/uploads/ref/9.jpg')).toBe(false));
 });
