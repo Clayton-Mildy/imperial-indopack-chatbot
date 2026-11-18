@@ -4,6 +4,7 @@ import { products, productVariants, brands, categories, uomTable } from '../db/s
 import { hybridSearchProducts, listProducts, mapUom, mapVariant } from '../repositories/products.js';
 import { MAX_CATALOG_RAG_RESULTS, LEGACY_BRANDS } from '../domain/constants.js';
 import type { Product } from '../domain/types.js';
+import { toPcs, type PriceTier } from '../domain/pricing.js';
 
 // ─── OpenAI embedding helper ─────────────────────────────────────────────────
 
@@ -299,116 +300,58 @@ export async function getFullCatalogBlock(): Promise<string> {
   return build;
 }
 
-function formatPrice(price: number | null | undefined): string {
-  if (price == null) return 'hubungi kami';
-  return `Rp ${price.toLocaleString('id-ID')}`;
+export const REFERENCE_PHOTOS_MARKER = '[FOTO REFERENSI TERSEDIA]';
+
+const idNumber = (n: number): string => n.toLocaleString('id-ID');
+
+/** One price tier, in the exact shape the reply price check parses ("Rp 2.000/pcs"). */
+export function formatTierLine(t: PriceTier): string {
+  const delivery = t.includesDelivery ? 'sudah termasuk ongkir' : 'belum termasuk ongkir';
+  const note = t.note ? ` (${t.note})` : '';
+  return `  • mulai ${idNumber(t.minQty)} ${t.qtyUnit} (${idNumber(toPcs(t.minQty, t.qtyUnit))} pcs): Rp ${idNumber(t.priceIdr)}/${t.priceUnit}, ${delivery}${note}`;
 }
 
-// Exported for tests/catalog-claims.test.ts — pure, so the rendered block can be asserted
-// without a database.
+// Exported for tests - pure, so the rendered block can be asserted without a database.
+// Each record starts with "Merek: " (productBlocks in aiLayer splits on that boundary).
 export function formatProducts(items: Product[]): string {
-  // One line, once. The policy for WHICH price applies to whom lives in the "Kebijakan Harga"
-  // prompt section — restating it here would give it two homes that drift apart.
   const lines: string[] = [
     'KATALOG PRODUK RELEVAN:',
-    'Tiap varian mencantumkan harga PRICELIST (reseller & pembelian proyek, berlaku per kelipatan penuh satuan yang tertera) lalu MP (pengguna akhir, dan untuk sisa satuan yang tidak genap). Pilih sesuai Kebijakan Harga; jangan pernah menghitung sendiri.',
+    'Harga per tingkat jumlah. Untuk harga sesuai jumlah pelanggan WAJIB panggil hitung_harga. 1 rim = 500 pcs/lembar.',
     '',
   ];
 
   for (const product of items) {
-    const brand = product.brand;
-    const brandName = brand?.name ?? '';
-    const brandTypeLabel = brand?.brandType === 'distributed' ? ' [Merek Distribusi]' : '';
-    const brandHint = brand?.description
-      ? ' — ' + brand.description.split(/[.—]/)[0].trim()
-      : '';
-    lines.push(`Merek: ${brandName}${brandTypeLabel}${brandHint}`);
-
-    // Name only, never categories.description. That description is the one value in this block
-    // that traces to no Excel cell (hand-written in seed-categories.ts, editable from the
-    // dashboard), and the model believes it over the product's own Fungsi when they disagree —
-    // a stale "Door Pull ... termasuk pintu kaca" row is how a wood-only DOORPULL got
-    // recommended for a frameless glass door. Labelling it a hint was not enough; it is not
-    // shown at all. It still earns its keep as an ILIKE signal in searchActiveProducts, which
-    // is its real job: finding candidates, not proving they fit.
-    if (product.category) {
-      lines.push(`Kategori (petunjuk pencarian): ${product.category.name}`);
-    }
-
+    lines.push(`Merek: ${product.brand?.name ?? ''}`);
+    if (product.category) lines.push(`Kategori: ${product.category.name}`);
     lines.push(`Produk: ${product.name}${product.description ? ` — ${product.description}` : ''}`);
-
-    // Product-level knowledge fields, every value traceable to an Excel cell. Tagged explicitly
-    // because they sit beside hand-written prose (the category hint above, the playbook in the
-    // system prompt) that can contradict them — the prompt rule makes these win.
-    const facts: string[] = [];
-    if (product.fungsi) facts.push(`Fungsi: ${product.fungsi}`);
-    if (product.bahan) facts.push(`Bahan: ${product.bahan}`);
-    if (product.ketebalan) facts.push(`Ketebalan: ${product.ketebalan}`);
-    if (product.kelengkapan) facts.push(`Kelengkapan: ${product.kelengkapan}`);
-    if (facts.length > 0) {
-      lines.push('[DATA KATALOG RESMI - otoritatif untuk kecocokan]');
-      lines.push(...facts);
-    }
+    if (product.fungsi) lines.push(`Kegunaan: ${product.fungsi}`);
+    if (product.bahan) lines.push(`Bahan: ${product.bahan}`);
+    if (product.ketebalan) lines.push(`Ketebalan: ${product.ketebalan}`);
+    if (product.kelengkapan) lines.push(`Kelengkapan: ${product.kelengkapan}`);
     if (product.usp) lines.push(`Keunggulan: ${product.usp}`);
+    if ((product.referenceImageUrls ?? []).length > 0) lines.push(REFERENCE_PHOTOS_MARKER);
 
     const variants = (product.variants ?? []).filter((v) => v.isActive);
-
     if (variants.length === 0) {
       lines.push('  (Produk tidak aktif)');
     } else {
-      lines.push('Varian:');
       for (const v of variants) {
-        const uomPrice = v.uomPrice?.name ?? '';
-        const uomCtn = v.uomCtn?.name ?? '';
-        // Spelled out, not "CTN: 30 Lsn": the Run 2 replay of C-04 read that as the total for "3 karton"
-        // (3 karton = 30 Lsn x Rp 68.500) twice - a wrong total no price check can catch, being an
-        // honest multiple of a catalog price.
-        const ctn = v.isiCtn != null ? ` | 1 karton = ${v.isiCtn}${uomCtn ? ' ' + uomCtn : ''}` : '';
-        const uomBox = v.uomBox?.name ?? '';
-        const minOrder = v.minOrderQty != null
-          ? ` [MIN ORDER: ${v.minOrderQty} ${v.uomMinOrder?.name ?? uomPrice}]`
-          : v.isiBox != null
-          ? ` [MIN ORDER: ${v.isiBox}${uomBox ? ' ' + uomBox : ''}]`
-          : '';
-        const stockNote = v.stockStatus === 'price_rise' ? ' [HARGA NAIK ⬆]'
-          : v.stockStatus === 'price_drop' ? ' [HARGA TURUN ⬇]'
-          : '';
-        // MP is the stored marketplace price, not a markup this code applies: the vendor rounds
-        // it up to the nearest 500 and divides by 12 on lusin-priced rows, so it carries its own
-        // UOM ("Rp 46.000/Lsn | MP: Rp 5.500/Pcs" is one variant).
-        //
-        // A variant with no MP renders "tanya tim" and no digits, which is what makes the
-        // hand-off to the team deterministic: a figure the model invents for it is absent from
-        // this block, so verifyReplyPrices rejects it. That used to be a brand allow-list; it is
-        // now simply the absence of data, which is the same guarantee without the list.
-        const uomSuffix = uomPrice ? '/' + uomPrice : '';
-        const mpUomSuffix = v.mpUom?.name ? '/' + v.mpUom.name : uomSuffix;
-        const mpPart = v.mpPriceIdr != null
-          ? ` | MP: ${formatPrice(v.mpPriceIdr)}${mpUomSuffix}`
-          : ' | MP: tanya tim';
-        // An out-of-stock variant is listed - customers ask for it by name, and "yang 30mm lagi
-        // kosong" is the honest answer - but with no price at all. With both prices on its line the
-        // model kept OFFERING it: the Run 2 replays of "gembok kuningan 30mm ready?" and "grendel
-        // aluminium vintage" quoted out-of-stock sizes in every draft, repairs included, until the
-        // turn was handed to the team (BC9000 has 9 of 11 variants out of stock). What is not in the
-        // block cannot be quoted, and a figure made up for it fails verifyReplyPrices.
+        // An out-of-stock variant is listed (customers ask for it) but carries no price lines.
         if (v.stockStatus === 'no_stock') {
-          lines.push(`  - ${v.name} [STOK HABIS SEMENTARA]`);
-        } else {
-          lines.push(`  - ${v.name}${stockNote}: ${formatPrice(v.priceIdr)}${uomSuffix}${mpPart}${ctn}${minOrder}`);
+          lines.push(`  - Ukuran: ${v.name} [STOK HABIS SEMENTARA]`);
+          continue;
         }
+        lines.push(`  - Ukuran: ${v.name}`);
+        const tiers = v.priceTiers ?? [];
+        if (tiers.length === 0) lines.push('  • harga: dihitung tim');
+        else for (const t of tiers) lines.push(formatTierLine(t));
         if (v.description) {
-          const truncated = v.description.length > 600
-            ? v.description.slice(0, 600) + '...'
-            : v.description;
-          for (const line of truncated.split('\n')) {
+          for (const line of v.description.slice(0, 600).split('\n')) {
             if (line.trim()) lines.push(`    ${line}`);
           }
         }
-        if (v.imageUrl) lines.push(`    [FOTO TERSEDIA: ${v.imageUrl}]`);
       }
     }
-
     lines.push('');
   }
 

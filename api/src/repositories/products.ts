@@ -1,4 +1,6 @@
 import { eq, and, sql, inArray } from 'drizzle-orm';
+import { listTiersByVariant } from './priceTiers.js';
+import { listReferenceImageUrls } from './referenceImages.js';
 import { getDb } from '../db/client.js';
 import { brands, categories, products, productVariants, uomTable } from '../db/schema.js';
 import type { Brand, Category, Product, ProductTier, ProductVariant, StockStatus, Uom } from '../domain/types.js';
@@ -318,22 +320,25 @@ export async function listProducts(filters?: {
     db.select().from(productVariants).where(inArray(productVariants.productId, productIds)).orderBy(productVariants.name),
     fetchUomMap(db),
   ]);
+  const [tierMap, photoMap] = await Promise.all([
+    listTiersByVariant(variantRows.map((v) => v.id)),
+    listReferenceImageUrls(productIds),
+  ]);
 
   const brandMap = new Map(brandRows.map((b) => [b.id, mapBrand(b)]));
   const categoryMap = new Map(categoryRows.map((c) => [c.id, mapCategory(c)]));
   const variantMap = new Map<string, ProductVariant[]>();
   for (const v of variantRows) {
     const arr = variantMap.get(v.productId) ?? [];
-    arr.push(
-mapVariant(v, uomMap)
-    );
+    arr.push({ ...mapVariant(v, uomMap), priceTiers: tierMap.get(v.id) ?? [] });
     variantMap.set(v.productId, arr);
   }
 
   return {
-    products: productRows.map((p) =>
-      mapProduct(p, brandMap.get(p.brandId), variantMap.get(p.id) ?? [], p.categoryId ? categoryMap.get(p.categoryId) ?? null : null)
-    ),
+    products: productRows.map((p) => ({
+      ...mapProduct(p, brandMap.get(p.brandId), variantMap.get(p.id) ?? [], p.categoryId ? categoryMap.get(p.categoryId) ?? null : null),
+      referenceImageUrls: photoMap.get(p.id) ?? [],
+    })),
     total,
   };
 }

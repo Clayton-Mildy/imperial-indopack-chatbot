@@ -26,3 +26,6 @@ export function getDb() {
 }
 
 export type Db = ReturnType<typeof getDb>;
+
+/** What `getDb()` and a Drizzle transaction callback argument share. */
+export type DbOrTx = Db | Parameters<Parameters<Db['transaction']>[0]>[0];

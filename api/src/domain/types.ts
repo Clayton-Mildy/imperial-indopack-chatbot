@@ -6,6 +6,8 @@ export type StaffRole = 'admin' | 'agent' | 'marketing';
 export type AIConfidence = 'high' | 'low';
 export type StockStatus = 'normal' | 'no_stock' | 'price_rise' | 'price_drop';
 
+import type { PriceTier } from './pricing.js';
+
 export type Brand = {
   id: string;
   name: string;
@@ -51,6 +53,7 @@ export type ProductVariant = {
   uomCtn?: Uom;
   uomBox?: Uom;
   uomMinOrder?: Uom;
+  priceTiers?: PriceTier[];
   imageUrl: string | null;
   stockStatus: StockStatus;
   isActive: boolean;
@@ -85,6 +88,7 @@ export type Product = {
   brand?: Brand;
   category?: Category | null;
   variants?: ProductVariant[];
+  referenceImageUrls?: string[];
 };
 
 export type PromptSection = { name: string; content: string };
