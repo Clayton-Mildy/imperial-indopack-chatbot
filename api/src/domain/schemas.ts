@@ -231,11 +231,15 @@ export const ActivityLogQuerySchema = z.object({
 
 // ─── Leads ─────────────────────────────────────────────────────────────────
 
+// Text the way orderProfile's sanitiser stores it: trimmed, and a blank is no value. A gsm typed as a
+// number (64) is the string "64", as the lead pass stores it; product and size are an item's identity
+// (itemKey), so " Box Nasi " and "Box Nasi" must not become two different items.
+const itemText = (max: number) => z.string().max(max).transform((v) => v.trim() || undefined);
 const OrderItemSchema = z.object({
-  product: z.string().max(200).optional(),
-  size: z.string().max(100).optional(),
-  gsm: z.string().max(50).optional(),
-  print: z.string().max(100).optional(),
+  product: itemText(200).optional(),
+  size: itemText(100).optional(),
+  gsm: z.union([z.string().max(50), z.number().finite().positive()]).transform((v) => String(v).trim() || undefined).optional(),
+  print: itemText(100).optional(),
   qty: z.number().positive().optional(),
   qty_unit: z.enum(['rim', 'pcs']).optional(),
   has_design: z.boolean().optional(),
@@ -316,7 +320,7 @@ export const PatchLeadBodySchema = LeadCampaignFieldsSchema.extend({
   kind: z.enum(LEAD_KINDS).optional(),
   lostReason: z.enum(LOST_REASONS).nullable().optional(),
   // Staff's own brands and item lines: they replace what the AI collected.
-  brands: z.array(z.enum(BRAND_SLUGS)).max(2).optional(),
+  brands: z.array(z.enum(BRAND_SLUGS)).max(10).transform((a) => [...new Set(a)]).optional(),
   items: z.array(OrderItemSchema).max(50).optional(),
   // Who made the edit, so lead_events records the person.
   staffId: z.string().uuid().optional(),

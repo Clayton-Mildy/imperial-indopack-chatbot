@@ -58,7 +58,7 @@ describe('reading the model answer', () => {
   });
 
   it('parses brands and items, dropping an unknown brand', async () => {
-    modelSays('{"lead_kind":"lead","brands":["kertas_supreme","legacy"],"items":[{"product":"Kertas Supreme 64 gsm","size":"30x30","qty":10,"qty_unit":"rim"}]}');
+    modelSays('{"lead_kind":"lead","brands":["kertas_supreme","brand_lain"],"items":[{"product":"Kertas Supreme 64 gsm","size":"30x30","qty":10,"qty_unit":"rim"}]}');
     const r = (await extractLeadInsights('x'))!;
     expect(r.brands).toEqual(['kertas_supreme']);
     expect(r.items[0]!.qty).toBe(10);
@@ -73,7 +73,7 @@ describe('reading the model answer', () => {
   it('maps order numbers back to the customer messages, ignoring numbers that are not one', async () => {
     const { extractOrderMessageIds } = await import('../src/services/leadInsights.js');
     const row = (id: string, role: string, body: string) => ({ id, role, body, senderName: null }) as never;
-    const rows = [row('a', 'user', 'halo'), row('b', 'assistant', 'ada yang bisa dibantu?'), row('c', 'user', 'Pesan Grendel 2 dos'), row('d', 'user', 'ambil 20 set')];
+    const rows = [row('a', 'user', 'halo'), row('b', 'assistant', 'ada yang bisa dibantu?'), row('c', 'user', 'Pesan box nasi 2000 pcs'), row('d', 'user', 'ambil 20 rim')];
     modelSays('```json\n{"orders": [2, "3", 2, 7]}\n```');
     expect(await extractOrderMessageIds(rows)).toEqual(['c', 'd']);
     modelSays('Maaf, tidak bisa.');
@@ -123,7 +123,7 @@ describe('writing what was read', () => {
     expect(mockFill).toHaveBeenCalledWith('c1', { facts: { name: 'Budi', business_name: 'Toko Delima' } });
   });
 
-  // Live 2026-10-09 (Ika): the model said cold AND "not a sale" for a product we don't carry.
+  // The model can say cold AND "not a sale" for a product we don't carry.
   it('still lets a cold verdict replace a Hot, even on a chat it calls "not a sale"', async () => {
     await applyLeadInsights('c1', { is_sales_conversation: false, lead_kind: 'lainnya', stage: null, evidence: null, lost_reason: null, lead_temperature: 'cold', name: null, brands: [], items: [], business_name: 'Toko Delima' });
     expect(mockLeadUpdate).toHaveBeenCalledWith('c1', { temperature: 'cold' });
@@ -143,16 +143,47 @@ it('asks about Imperial Indopack and Kertas Supreme, not Legacy hardware', async
   const system = mockCreate.mock.calls[0]![0].system as string;
   expect(system).toMatch(/Imperial Indopack \/ Kertas Supreme \(box karton dan kertas bungkus makanan cetak\)/);
   expect(system).not.toMatch(/Legacy|customer_type|product_sought/);
+  expect(system).toContain('"oke saya ambil 10 rim"');
+  expect(system).not.toMatch(/lusin/);
 });
 
-// Live 2026-10-08: Ika wanted PTA roofing screws, staff answered "kami tidak menyediakan", and the
-// lead still read Hot. The rule lives in the prompt; this pins that it says so.
+// Task 13 carry: the order prompt's examples were hardware (Meteran, Kuas cat, lusin).
+it('gives the order call box and paper examples', async () => {
+  const { extractOrderMessageIds } = await import('../src/services/leadInsights.js');
+  modelSays('{"orders": []}');
+  await extractOrderMessageIds([{ id: 'a', role: 'user', body: 'halo', senderName: null }] as never);
+  const system = mockCreate.mock.calls.at(-1)![0].system as string;
+  expect(system).toMatch(/box nasi 20x20 2000 pcs/);
+  expect(system).toMatch(/10 rim yg 64 gsm/);
+  expect(system).not.toMatch(/Meteran|Kuas|lusin|silver/i);
+});
+
+// Task 13 carry: a name the model did not find, written as a word, is no name.
+describe('a name the model did not find', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each(['unknown', 'Unknown', 'tidak diketahui', '-', ' - ', 'null', 'none'])('reads %j as no name and no business', async (v) => {
+    modelSays(JSON.stringify({ lead_kind: 'lead', name: v, business_name: v }));
+    expect(await extractLeadInsights('x')).toMatchObject({ name: null, business_name: null });
+  });
+
+  it('keeps a real name, and writes no "unknown" to the profile', async () => {
+    modelSays('{"lead_kind": "lead", "name": "Budi", "business_name": "unknown"}');
+    const r = (await extractLeadInsights('x'))!;
+    expect(r).toMatchObject({ name: 'Budi', business_name: null });
+    await applyLeadInsights('c1', r);
+    expect(mockFill).toHaveBeenCalledWith('c1', { facts: { name: 'Budi' } });
+  });
+});
+
+// A customer asking for an item we do not sell, told so by staff, must not read Hot. The rule lives in
+// the prompt; this pins that it says so.
 it('tells the model a lead for a product we do not sell is cold, not hot', async () => {
   modelSays('{"lead_kind": "lead"}');
   await extractLeadInsights('x');
   const system = mockCreate.mock.calls[0]![0].system as string;
   expect(system).toMatch(/tidak kami jual/);
   expect(system).toMatch(/"cold"[^\n]*tidak tersedia/);
-  // ...and that such a customer is still a buyer, or the cold is never written (Ika, 2026-10-09).
+  // ...and that such a customer is still a buyer, or the cold is never written.
   expect(system).toMatch(/barang yang tidak kami jual tetap lead/);
 });

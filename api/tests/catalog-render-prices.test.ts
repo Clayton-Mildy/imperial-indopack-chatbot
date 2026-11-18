@@ -2,8 +2,8 @@
  * catalog-render-prices.test.ts
  * Which prices reach the AI's catalog block, for variants without tiers and out-of-stock ones.
  *
- * Prices are RENDERED from variant_price_tiers, never computed by the model: verifyReplyPrices()
- * only accepts Rp figures that are literally in the block (or an exact multiple of one). The
+ * Prices are RENDERED from variant_price_tiers, never computed by the model: without hitung_harga,
+ * verifyReplyTieredPrices() only accepts Rp figures that are literally in the block. The
  * no-tier case is the load-bearing one: "dihitung tim" and no digits is what makes the hand-off
  * to the team deterministic, because a figure invented for it is absent from the block.
  *
@@ -12,7 +12,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { formatProducts } from '../src/services/ragQuery.js';
-import { verifyReplyPrices } from '../src/services/replyChecks.js';
+import { verifyReplyTieredPrices } from '../src/services/replyChecks.js';
 import type { Product } from '../src/domain/types.js';
 import type { PriceTier } from '../src/domain/pricing.js';
 
@@ -42,9 +42,9 @@ describe('formatProducts - a variant without tiers carries no figure', () => {
 });
 
 // With a price on an out-of-stock line the model kept OFFERING it. What is not in the block cannot
-// be quoted, and a figure made up for it fails verifyReplyPrices.
+// be quoted, and a figure made up for it fails verifyReplyTieredPrices.
 describe('formatProducts - an out-of-stock variant carries no price', () => {
-  function padlock(): Product {
+  function withOutOfStockSize(): Product {
     const p = productWith([TIER]);
     const [ready] = p.variants!;
     p.variants = [
@@ -55,14 +55,15 @@ describe('formatProducts - an out-of-stock variant carries no price', () => {
   }
 
   it('lists it by name with the tag and no figure', () => {
-    const block = formatProducts([padlock()]);
+    const block = formatProducts([withOutOfStockSize()]);
     expect(block).toContain('  - Ukuran: 30 x 30 cm [STOK HABIS SEMENTARA]\n');
     expect(block).not.toContain('1.234');
     expect(block).toContain('Rp 2.000/pcs');
   });
 
   it('so an offer of its price fails the price check as not in the catalog', () => {
-    const block = formatProducts([padlock()]);
-    expect(verifyReplyPrices('• 25 x 25 cm: Rp 1.234/pcs', block, block, 'end_user').ok).toBe(false);
+    const block = formatProducts([withOutOfStockSize()]);
+    expect(verifyReplyTieredPrices('• 25 x 25 cm: Rp 1.234/pcs', block, undefined).ok).toBe(false);
+    expect(verifyReplyTieredPrices('• 25 x 25 cm: Rp 2.000/pcs', block, undefined).ok).toBe(true);
   });
 });

@@ -22,15 +22,15 @@ const { CANNED_COMPLAINT_REPLY, CANNED_ESCALATION_REPLY, ESCALATION_ASK_BUSINESS
 
 const CONVERSATION = { id: 'conv-1', contactId: 'contact-1', phoneNumberId: 'pn-1' } as Parameters<typeof escalateConversation>[0];
 
-function profileWith(customerType: 'reseller' | 'end_user' | 'project' | null, facts: Record<string, unknown> = {}) {
-  return { id: 'prof-1', contactId: 'contact-1', customerType, profile: facts, followUpStatus: 'none', followUpNotes: null, updatedAt: new Date() };
+function profileWith(facts: Record<string, unknown> = {}) {
+  return { id: 'prof-1', contactId: 'contact-1', customerType: null, profile: facts, followUpStatus: 'none', followUpNotes: null, updatedAt: new Date() };
 }
 
 describe('detectHumanRequest', () => {
-  it('does NOT escalate a reseller/distributor inquiry ("jadi agen")', () => {
-    // The incident: a "become a reseller" question false-triggered the bare 'agen ' keyword.
+  it('does NOT escalate an agent/distributor inquiry ("jadi agen")', () => {
+    // A "become an agent" question must not trip a bare 'agen' keyword.
     expect(
-      detectHumanRequest('Halo legacy, syarat jadi agen gmn ya, apa masih bisa masuk harganya jika dijual online')
+      detectHumanRequest('Halo admin, syarat jadi agen kertas supreme gmn ya, apa masih bisa masuk harganya jika dijual online')
     ).toBe(false);
     expect(detectHumanRequest('cara daftar jadi agen resmi')).toBe(false);
   });
@@ -44,7 +44,7 @@ describe('detectHumanRequest', () => {
     expect(detectHumanRequest('ada admin?')).toBe(true);
   });
 
-  it('reads the connector through a typo (UAT Run 3 E-01)', () => {
+  it('reads the connector through a typo', () => {
     expect(detectHumanRequest('bisa bicara dengn admin?')).toBe(true);
     expect(detectHumanRequest('mau ngobrol ama orang aja')).toBe(true);
     expect(detectHumanRequest('bicara dg cs dong')).toBe(true);
@@ -54,21 +54,28 @@ describe('detectHumanRequest', () => {
 describe('size questions (client 2026-11-11)', () => {
   it('reads a question about our sizes, not a product name or the customer\'s own size', async () => {
     const { detectSizeQuestion } = await import('../src/services/escalationHandler.js');
-    for (const q of ['pilihan panjangnya ada berapa bu ?', 'ukurannya berapa cm?', 'berapa panjang handlenya', 'panjang berapa kak', 'Ada ukuran apa aja?']) {
+    for (const q of ['pilihan ukurannya ada berapa bu ?', 'ukurannya berapa cm?', 'berapa lebar kertasnya', 'panjang berapa kak', 'Ada ukuran apa aja?']) {
       expect(detectSizeQuestion(q), q).toBe(true);
     }
-    for (const q of ['gembok panjang ada?', 'ukurannya 90 cm', 'ukuran pintu saya 90cm, cocok?', 'mohon bantu infokan harganya']) {
+    for (const q of ['box panjang ada?', 'ukurannya 30x30', 'ukuran nasi box saya 20cm, cocok?', 'mohon bantu infokan harganya']) {
       expect(detectSizeQuestion(q), q).toBe(false);
     }
   });
 
   it('counts a size as answered only when the reply has a measurement', async () => {
     const { unansweredSizeQuestion } = await import('../src/services/escalationHandler.js');
-    expect(unansweredSizeQuestion('pilihan panjangnya ada berapa bu ?', 'Harga Rp 294.000/Set, warna BNSN')).toBe(true);
-    expect(unansweredSizeQuestion('panjangnya berapa?', 'Besar 25 cm, tanggung 20 cm')).toBe(false);
-    expect(unansweredSizeQuestion('ukurannya berapa?', 'Plat tebal 1,5mm')).toBe(false);
-    expect(unansweredSizeQuestion('ukuran apa aja?', 'GERGAJI UK 16" Rp 90.000')).toBe(false);
-    expect(unansweredSizeQuestion('harganya berapa?', 'Rp 294.000/Set')).toBe(false);
+    expect(unansweredSizeQuestion('pilihan ukurannya ada berapa bu ?', 'Harga Rp 185.000/rim, minimal 5 rim')).toBe(true);
+    expect(unansweredSizeQuestion('panjangnya berapa?', 'Besar 25 cm, kecil 20 cm')).toBe(false);
+    expect(unansweredSizeQuestion('ukurannya berapa?', 'Tebal kertasnya 64 gsm, lebar 30 cm')).toBe(false);
+    expect(unansweredSizeQuestion('harganya berapa?', 'Rp 185.000/rim')).toBe(false);
+  });
+
+  // Task 13: the catalog writes sizes as p x l (x t), often with no unit - a reply listing them answered.
+  it('counts the catalog\'s p x l sizes as a measurement, with or without a unit', async () => {
+    const { unansweredSizeQuestion } = await import('../src/services/escalationHandler.js');
+    expect(unansweredSizeQuestion('ukuran apa aja?', 'Yang ada 30 x 30 dan 35 x 35 kak')).toBe(false);
+    expect(unansweredSizeQuestion('ukuran box nya berapa?', 'Box ivory ukuran 20x20x7,5 kak')).toBe(false);
+    expect(unansweredSizeQuestion('ukuran apa aja?', 'Ada 2 pilihan warna cetak kak')).toBe(true);
   });
 });
 
@@ -93,12 +100,12 @@ describe('detectPpnQuestion', () => {
   it('does not fire on words that merely contain the keywords', () => {
     // A plain substring 'tax' matches "taxi"; that is why the gate is word-bounded.
     expect(detectPpnQuestion('bisa kirim pakai taxi online?')).toBe(false);
-    expect(detectPpnQuestion('mau tanya harga handle besar')).toBe(false);
-    expect(detectPpnQuestion('ada gembok ukuran 50mm?')).toBe(false);
+    expect(detectPpnQuestion('mau tanya harga box nasi')).toBe(false);
+    expect(detectPpnQuestion('ada kertas ukuran 30x30?')).toBe(false);
   });
 });
 
-const P = (facts: Record<string, unknown> = {}) => profileWith(null, facts);
+const P = (facts: Record<string, unknown> = {}) => profileWith(facts);
 const ALL_GAP_QUESTIONS = [ESCALATION_ASK_PRODUCT, ESCALATION_ASK_SIZE, ESCALATION_ASK_QUANTITY, ESCALATION_ASK_DESIGN, ESCALATION_ASK_BUSINESS_NAME, ESCALATION_ASK_NAME];
 
 describe('pickProfileGapQuestion', () => {
@@ -152,7 +159,7 @@ describe('pickProfileGapQuestion', () => {
 
   it('stays quiet after a non-sales handoff', () => {
     expect(pickProfileGapQuestion(null, [customer('masih ada lowongan driver?')])).toBeNull();
-    expect(pickProfileGapQuestion(null, [customer('box nasi saya berkarat dan rusak')])).toBeNull();
+    expect(pickProfileGapQuestion(null, [customer('box nasi yang saya terima rusak semua')])).toBeNull();
   });
 
   it('never asks the buyer type', () => {
@@ -171,13 +178,13 @@ describe('escalateConversation', () => {
   });
 
   // The reply used to be whatever the failing turn wrote. Asked to explain why it could not
-  // help, the model narrated the catalog it had just read ("katalog kami khusus
-  // didokumentasikan untuk pintu kayu") - five of six live replays leaked internal vocabulary.
-  // The customer now always gets fixed template text; the technical reason goes to the team.
+  // help, the model narrated the catalog it had just read ("katalog kami khusus untuk box
+  // makanan kering") - internal vocabulary sent to a customer. The customer now always gets fixed
+  // template text; the technical reason goes to the team.
   it('sends only fixed template text, never the model prose that caused the escalation', async () => {
     await escalateConversation(
       CONVERSATION,
-      'Fungsi produk menyebut pintu kayu, foto menunjukkan pintu kaca - perlu dicek tim.',
+      'Kegunaan produk menyebut makanan kering, foto menunjukkan kue basah - perlu dicek tim.',
       '628123'
     );
 
@@ -185,12 +192,12 @@ describe('escalateConversation', () => {
     const sent = mockSendText.mock.calls[0][2] as unknown as string;
     expect(sent).toBe(`${CANNED_ESCALATION_REPLY} ${ESCALATION_ASK_PRODUCT}`);
     expect(sent.toLowerCase()).not.toContain('katalog');
-    expect(sent.toLowerCase()).not.toContain('kayu');
+    expect(sent.toLowerCase()).not.toContain('kering');
     // Tone rule: maksimal satu emoji per balasan — templates must not stack a second one.
     expect((sent.match(/\p{Extended_Pictographic}/gu) ?? []).length).toBeLessThanOrEqual(1);
   });
 
-  // UAT Run 2 E-08: "Kita coba cek ... kira-kira kebutuhannya berapa banyak?" right after "10 buah".
+  // "Kita coba cek ... kira-kira mau pesan berapa banyak?" must not follow "10 buah".
   it('does not ask for a quantity the customer typed in the message that escalated', async () => {
     mockGetContactProfile.mockResolvedValue(P({ items: [{ product: 'box', size: '10x10' }] }));
     mockGetLastNMessages.mockResolvedValueOnce([
@@ -307,7 +314,7 @@ describe('escalateConversation staff notification', () => {
 const bot = (body: string) => ({ role: 'assistant', body });
 const customer = (body: string) => ({ role: 'user', body });
 
-describe('pickProfileGapQuestion — each question at most once (UAT F-06)', () => {
+describe('pickProfileGapQuestion — each question at most once', () => {
   it('moves on to the next rung once a question was asked, answered or not', () => {
     const asked = [bot(`Kita coba cek dengan tim dulu ya kak 🙏 ${ESCALATION_ASK_PRODUCT}`)];
     expect(pickProfileGapQuestion(null, asked)).toBe(ESCALATION_ASK_SIZE);
@@ -347,30 +354,31 @@ describe('pickProfileGapQuestion — each question at most once (UAT F-06)', () 
   });
 });
 
-// UAT Run 2 F-06: the profile never stored what the customer had typed, so the hand-off asked for
-// the store name four minutes after "Toko Bangunan Maju Jaya", and "berapa banyak?" right after
-// "20 set newton", "3 karton" and "mau gembok master key 10 buah".
+// When the profile never stored what the customer typed, the hand-off must still not ask for the
+// business name right after "RM Padang Sederhana", or "berapa banyak?" right after "10 rim",
+// "3 karton" or "box nasi 2500 pcs".
 describe('pickProfileGapQuestion — facts the customer already typed', () => {
   it.each([
-    'saya mau ambil 20 set newton buat rumah kos, harganya?',
-    'saya mau ambil 3 karton engsel aomori 2,5 inch',
-    'mau gembok master key 10 buah satu kunci',
-    'ada beberapa sih, 2 pintu depan dan belakang, dan 2 pintu kamar',
+    'saya mau ambil 10 rim kertas supreme 30x30, harganya?',
+    'saya mau ambil 3 karton box nasi 20x20',
+    'mau box nasi 2500 pcs cetak logo',
+    'kertas bungkusnya 500 lembar dulu',
+    'pesan 2 pack paper bag',
     '20',
     '1 aja, jadi harganya brp ya?',
     '100 kak',
   ])('reads a quantity in: %s', (m) => expect(mentionsQuantity(m)).toBe(true));
 
   it.each([
-    'gembok kuningan blossom 30mm ready?',
-    'engsel tipis aomori 2,5 inch berapa?',
-    '60mm, bukaan dari 2 sisi, punya 3 anak kunci',
-    'kunci bulat blossom 587 itu bahannya apa?',
+    'kertas supreme 64 gsm 30x30 ready?',
+    'box ivory 20x20x7,5 berapa?',
+    'tebalnya 270 gsm, cetak 2 warna',
+    'box kue kode 587 itu bahannya apa?',
     'budget 150rb aja',
     '081234567890',
   ])('does not read a size, a price, a model number or a phone as a quantity: %s', (m) => expect(mentionsQuantity(m)).toBe(false));
 
-  // Live 2026-10-07: a number with no unit, read from its context.
+  // A number with no unit, read from its context.
   it.each([
     'kebutuhan kurang lebih 300 an per ukuran',
     'butuh 300an',
@@ -379,40 +387,40 @@ describe('pickProfileGapQuestion — facts the customer already typed', () => {
     'total 120 kak',
   ])('reads a quantity with no unit in: %s', (m) => expect(mentionsQuantity(m)).toBe(true));
 
-  // Live 2026-10-08 (Kak Rei): every hand-off asked "berapa banyak?" after "10 koli".
+  // "koli"/"colly" counts cartons: a hand-off must not ask "berapa banyak?" after "10 koli".
   it.each([
-    'untuk awal biasa campur 10 koli leher panjang dan leher pendek',
+    'untuk awal biasa campur 10 koli box kue dan box nasi',
     'ambil 3 colly dulu kak',
     '5 coli aja',
   ])('reads koli/colly as a quantity: %s', (m) => expect(mentionsQuantity(m)).toBe(true));
 
-  it('does not ask the quantity after "campur 10 koli" (Kak Rei, 2026-10-08)', () => {
+  it('does not ask the quantity after "campur 10 koli"', () => {
     const recent = [
-      customer('untuk awal biasa campur 10 koli leher panjang dan leher pendek'),
+      customer('untuk awal biasa campur 10 koli box kue dan box nasi'),
       bot('Kita coba cek dengan tim dulu ya kak 🙏'),
     ];
     expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '1x1' }] }), recent)).toBe(ESCALATION_ASK_DESIGN);
   });
 
   it.each([
-    'saya Ryan kak, mau tanya perihal harga handle pintu\nberikut untuk list nya :\nHandle pintu panel uk 25\nHandle pintu moulded uk 20',
-    'dikirim aja kak untuk list harga sesuai ukuran handle yang saya butuhkan',
-    'butuh sekitar 30mm',
+    'saya Andi kak, mau tanya harga box\nberikut list nya :\nBox kue uk 20\nKertas nasi uk 30',
+    'dikirim aja kak untuk list harga sesuai ukuran box yang saya butuhkan',
+    'butuh sekitar 30cm',
     'butuh 3" aja',
     'budget sekitar 150rb',
     'butuh 2,5 inch',
   ])('still does not read a size, a price or a sentence with no number as a quantity: %s', (m) => expect(mentionsQuantity(m)).toBe(false));
 
-  // The exact 2026-10-07 thread: project buyer, quantity typed but never saved by the live turn.
-  it('does not ask the quantity after "kebutuhan kurang lebih 300 an per ukuran" (live 2026-10-07)', () => {
+  // A quantity typed with no unit and never saved by the turn that read it.
+  it('does not ask the quantity after "kebutuhan kurang lebih 300 an per ukuran"', () => {
     const recent = [
       customer('selamat sore'),
-      bot('Selamat sore kak! 😊 Saya Rina dari Legacy. Sebelumnya, dengan siapa saya terhubung ya?'),
-      customer('saya Ryan kak, mau tanya perihal harga handle pintu\nberikut untuk list nya :\nHandle pintu panel uk 25\nHandle pintu moulded uk 20'),
-      bot('Salam kenal, Kak Ryan! 😊 Sebelum saya kasih harganya, boleh tahu dulu rencananya untuk dipakai sendiri, untuk proyek, atau dijual kembali ya?'),
-      customer('untuk proyek'),
+      bot('Selamat sore kak! 😊 Saya Admin dari Imperial Indopack & Kertas Supreme. Ada yang bisa saya bantu?'),
+      customer('saya Andi kak, mau tanya harga box\nberikut list nya :\nBox kue uk 20\nKertas nasi uk 30'),
+      bot('Salam kenal, Kak Andi! 😊 Boxnya untuk kue apa saja ya kak?'),
+      customer('kue kering'),
       customer('kebutuhan kurang lebih 300 an per ukuran'),
-      customer('dikirim aja kak untuk list harga sesuai ukuran handle yang saya butuhkan'),
+      customer('dikirim aja kak untuk list harga sesuai ukuran box yang saya butuhkan'),
     ];
     expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '1x1' }] }), recent)).toBe(ESCALATION_ASK_DESIGN);
   });
@@ -421,29 +429,29 @@ describe('pickProfileGapQuestion — facts the customer already typed', () => {
     expect(pickProfileGapQuestion(P({ items: [{ product: 'box', size: '1x1' }] }), [customer('mau box 10 buah')])).toBe(ESCALATION_ASK_DESIGN);
   });
 
-  it('counts a store name the customer gave in answer to the question for it (C-05)', () => {
+  it('counts a business name the customer gave in answer to the question for it', () => {
     const recent = [
-      bot('Halo Pak Rudi! Sebelum saya kasih harga, boleh saya tahu dulu: - Nama toko atau usaha Pak Rudi? - Lokasi usahanya di mana?'),
-      customer('Toko Bangunan Maju Jaya, Sidoarjo, Jl. Raya Waru 12'),
-      bot('Baik Pak Rudi, ini harganya ...'),
-      customer('saya mau ambil 3 karton engsel aomori 2,5 inch'),
+      bot('Halo Pak Budi! Sebelum saya kasih harga, boleh saya tahu dulu: - Nama toko atau usaha Pak Budi? - Lokasi usahanya di mana?'),
+      customer('RM Padang Sederhana, Sidoarjo'),
+      bot('Baik Pak Budi, ini harganya ...'),
+      customer('saya mau ambil 10 rim kertas supreme 30x30'),
       customer('bisa diskon 25% ga kalau ambil banyak?'),
     ];
     const full = { items: [{ product: 'box', size: '1x1', qty: 1, has_design: true }] };
     expect(pickProfileGapQuestion(P(full), recent)).toBe(ESCALATION_ASK_NAME);
   });
 
-  it('asks nothing on a later hand-off in a complaint thread (UAT Run 3 E-06)', () => {
+  it('asks nothing on a later hand-off in a complaint thread', () => {
     const recent = [
-      customer('engsel yang saya beli bulan lalu sudah berkarat, gimana ini?'),
+      customer('box yang saya pesan bulan lalu banyak yang rusak, gimana ini?'),
       bot('Waduh, mohon maaf ya kak atas kendalanya 🙏 Kita cek dengan tim dulu ya.'),
-      customer('engsel 3inch newton'),
+      customer('box nasi 20x20'),
     ];
     expect(pickProfileGapQuestion(null, recent)).toBeNull();
   });
 
-  it('does not take "punya toko bangunan di Surabaya" for a store name', () => {
-    const recent = [customer('halo saya Dewi, punya toko bangunan di Surabaya, mau jadi reseller')];
+  it('does not take "punya toko kue di Surabaya" for a business name', () => {
+    const recent = [customer('halo saya Dewi, punya toko kue di Surabaya, mau pesan box')];
     const full = { items: [{ product: 'box', size: '1x1', qty: 1, has_design: true }] };
     expect(pickProfileGapQuestion(P(full), recent)).toBe(ESCALATION_ASK_BUSINESS_NAME);
   });
@@ -451,15 +459,15 @@ describe('pickProfileGapQuestion — facts the customer already typed', () => {
 
 describe('isNonSalesHandoff', () => {
   it.each([
-    'permisi apa masih ada lowongan driver pengiriman?', // UAT Run 2 G-07
+    'permisi apa masih ada lowongan driver pengiriman?',
     'saya mau kirim lamaran kerja',
-    'engsel yang saya beli bulan lalu sudah berkarat, gimana ini?',
+    'box yang saya pesan bulan lalu banyak yang rusak, gimana ini?',
   ])('no sales question after: %s', (m) => expect(isNonSalesHandoff(m)).toBe(true));
 
   it.each([
     'harganya sudah termasuk ppn belum?', // a hand-off mid-sale keeps its question
-    'mau cari gembok buat loker kantor', // loker = locker
-    'saya cari supplier engsel buat toko saya', // a reseller lead
+    'mau cari box buat loker kantor', // loker = locker
+    'saya cari supplier kertas nasi buat warung saya', // a buyer
     'bisa diskon 25% ga kalau ambil banyak?',
   ])('still a sale: %s', (m) => expect(isNonSalesHandoff(m)).toBe(false));
 });
@@ -477,11 +485,11 @@ describe('detectCourierMessage', () => {
   ])('courier: %s', (m) => expect(detectCourierMessage(m)).toBe(true));
   it.each([
     'saya ambil 10 ya kak',
-    'mau order handle besar',
+    'mau order box nasi',
     'bisa kirim pakai jne?',
     'ongkir pakai jnt berapa',
-    'grabber tool ada?',
-    'impact driver ada?',
+    'grab bisa kirim ke Bekasi kak?',
+    'grabfood bisa pakai paper bag ini?',
     'saya mau ambil barangnya besok di toko bisa?',
   ])('a buyer: %s', (m) => expect(detectCourierMessage(m)).toBe(false));
 });
@@ -494,66 +502,73 @@ describe('detectNonSalesTopic', () => {
     ['saya cari kerja kak, ada posisi kosong?', 'Lowongan kerja'], ['info lowker dong kak', 'Lowongan kerja'],
     ['kak saya sudah transfer, tolong dicek ya', 'Pembayaran / status pesanan'], ['pesanan saya belum sampai kak', 'Pembayaran / status pesanan'],
     ['saya beli di shopee kemarin, kapan dikirim?', 'Pembayaran / status pesanan'], ['minta nomor resi kak', 'Pembayaran / status pesanan'],
-    ['kami dari PT ABC supplier engsel, mau tawarkan kerja sama', 'Penawaran kerja sama / supplier'],
+    ['kami dari PT ABC supplier plastik, mau tawarkan kerja sama', 'Penawaran kerja sama / supplier'],
     ['grab\nmau ambil pesanan', 'Kurir / pengambilan pesanan'],
   ])('%s -> %s', (m, topic) => expect(detectNonSalesTopic(m)).toBe(topic));
   it.each([
-    'gembok buat loker ada?', 'gembok untuk loker gudang ada?', 'saya dari CV Maju Jaya mau order engsel', 'cari supplier engsel untuk toko saya',
-    'mau jadi reseller, bisa kerja sama?', 'bisa beli di shopee ga kak?', 'kalau order hari ini kapan dikirim?',
-    'bisa transfer ke rekening mana kak?', 'saya kerja di proyek, butuh engsel', 'karyawan saya mau ambil barang besok di toko',
+    'box buat loker ada?', 'box untuk loker gudang ada?', 'saya dari CV Maju Jaya mau order box', 'cari supplier kertas nasi untuk warung saya',
+    'mau jadi agen, bisa kerja sama?', 'bisa beli di shopee ga kak?', 'kalau order hari ini kapan dikirim?',
+    'bisa transfer ke rekening mana kak?', 'saya kerja di katering, butuh box nasi', 'karyawan saya mau ambil barang besok di toko',
     // code review 2026-10-13
-    'saya lihat dari shopee kak, handle ini ada?', 'shopee nya apa kak?', 'grab bar stainless ada kak?', 'jne bisa kak kirimnya?',
-    'saya cari kerja sama untuk jadi reseller', 'di shopee kemarin harganya lebih murah kak',
+    'saya lihat dari shopee kak, box ini ada?', 'shopee nya apa kak?', 'grab bisa kirim ke Bekasi kak?', 'jne bisa kak kirimnya?',
+    'saya cari kerja sama untuk jadi agen', 'di shopee kemarin harganya lebih murah kak',
   ])('a buyer: %s', (m) => expect(detectNonSalesTopic(m)).toBeNull());
 });
 
-// Live 2026-10-31: a plastics factory offering us packaging, over four messages, matched nothing. The
-// model handed it off itself, and the hand-off still asked "kira-kira kebutuhannya berapa banyak?".
+// A plastics factory offering us packaging over several messages: each alone says little, and the
+// hand-off must not ask "kira-kira mau pesan berapa banyak?".
 describe('detectNonSalesTopic - a supplier across messages', () => {
   const SUPPLIER = 'Penawaran kerja sama / supplier';
-  const intro = 'Pagi kak\nSalam kenal saya Windy\nDari PT. Pelita Mekar Semesta';
-  const factory = 'Siap Salam kenal Kak Rina\nKami dari pabrik plastik kantongan, shrink, stretch film';
+  const intro = 'Pagi kak\nSalam kenal saya Sari\nDari PT. Contoh Plastik Sejahtera';
+  const factory = 'Siap Salam kenal Kak Admin\nKami dari pabrik plastik kantongan, shrink, stretch film';
 
-  it('reads the live chat as a supplier once it says what it wants', () => {
+  it('reads the chat as a supplier once it says what it wants', () => {
     expect(detectNonSalesTopic(intro)).toBeNull(); // a greeting - the bot asks what she needs
     expect(detectNonSalesTopic(factory, intro)).toBeNull(); // what it makes, no offer yet
-    expect(detectNonSalesTopic('Kami ingin coba menjajaki kebutuhan palstik untuk outer produk di  Legacy Inti Pratama', `${intro}\n${factory}`)).toBe(SUPPLIER);
+    expect(detectNonSalesTopic('Kami ingin coba menjajaki kebutuhan plastik untuk produk di Imperial Indopack', `${intro}\n${factory}`)).toBe(SUPPLIER);
+    expect(detectNonSalesTopic('Kami ingin tahu kebutuhan plastik untuk outer box di PT Imperial Indopack', `${intro}\n${factory}`)).toBe(SUPPLIER);
     expect(detectNonSalesTopic('Terkait dengan kebutuhan plastik kami bisa menghubungi kemana ya kak? 😊🙏', `${intro}\n${factory}`)).toBe(SUPPLIER);
   });
 
+  // Task 13 carry: the supplier patterns name Imperial Indopack and Kertas Supreme.
   it.each([
     'kami ingin menjajaki kebutuhan kemasan di perusahaan bapak',
     'mau menawarkan produk kami kak, kardus box custom',
     'boleh minta kontak bagian purchasing?',
     'bisa hubungi tim pengadaan kemana ya?',
-    'kami ingin jadi supplier legacy',
+    'kami ingin jadi supplier imperial indopack',
+    'kami supplier untuk PT Imperial Indopack sejak 2020',
+    'kami bisa jadi pemasok bagi Kertas Supreme',
+    'pabrik kami vendor ke kertas supreme sejak lama',
   ])('an offer on its own: %s', (m) => expect(detectNonSalesTopic(m)).toBe(SUPPLIER));
 
   it.each([
-    ['kami dari pabrik furniture, butuh engsel untuk produk kami', ''],
-    ['kami dari pabrik garmen, minta penawaran harga engsel 200 pcs', ''],
-    ['bisa menawarkan harga grosir kak?', 'kami pabrik lemari'],
-    ['ada handle pintu yang ready?', 'kami dari pabrik plastik kantongan'], // a factory buying from us
-    ['kebutuhan engsel kami bisa menghubungi kemana?', ''], // no supplier introduction anywhere
-    ['saya cari supplier engsel, bisa menawarkan harga reseller?', ''],
+    ['kami dari pabrik roti, butuh box kue untuk produk kami', ''],
+    ['kami dari pabrik keripik, minta penawaran harga box 2000 pcs', ''],
+    ['bisa menawarkan harga grosir kak?', 'kami pabrik kue'],
+    ['ada box nasi yang ready?', 'kami dari pabrik plastik kantongan'], // a factory buying from us
+    ['kebutuhan box kami bisa menghubungi kemana?', ''], // no supplier introduction anywhere
+    ['saya cari supplier kertas nasi, bisa menawarkan harga agen?', ''],
+    ['ini supplier kertas supreme ya kak?', ''], // a buyer naming the brand
+    ['kebutuhan kertas untuk kertas supreme 30x30 berapa rim minimal?', ''], // no supplier introduction
     ['saya mau tawarkan ke pelanggan saya dulu ya kak', 'halo saya Budi'],
   ])('a buyer: %s', (m, earlier) => expect(detectNonSalesTopic(m, earlier)).toBeNull());
 
   it('reads only the supplier introduction from earlier messages, never the other topics', () => {
-    expect(detectNonSalesTopic('ada engsel 4 inch?', 'kak saya sudah transfer, tolong dicek ya')).toBeNull();
+    expect(detectNonSalesTopic('ada box 20x20?', 'kak saya sudah transfer, tolong dicek ya')).toBeNull();
   });
 });
 
 describe('isNonSalesReason - the model\'s own hand-off reason', () => {
   it.each([
-    'Penawaran menjadi supplier/kerja sama produk plastik - keluar dari scope hardware.', // live 2026-10-31
+    'Penawaran menjadi supplier/kerja sama produk plastik - bukan pembelian kemasan.',
     'BUKAN PEMBELI: pabrik plastik menawarkan kemasan',
     'Penawaran kerja sama / supplier - bukan pertanyaan produk',
-    'Pabrik menawarkan produk kemasan ke Legacy',
+    'Pabrik menawarkan produk kemasan ke Imperial Indopack',
     'Customer menanyakan lowongan kerja driver',
   ])('not a buyer: %s', (r) => expect(isNonSalesReason(r)).toBe(true));
   it.each([
-    'Customer mencari supplier engsel untuk tokonya (reseller)',
+    'Customer mencari supplier kertas nasi untuk warungnya',
     'Minta harga proyek 200 unit',
     'Customer menanyakan PPN',
     null,
@@ -562,16 +577,16 @@ describe('isNonSalesReason - the model\'s own hand-off reason', () => {
 
 describe('detectComplaint', () => {
   it.each([
-    'engsel yang saya beli bulan lalu sudah berkarat, gimana ini?',
-    'baru seminggu handlenya patah',
-    'kuncinya macet kak, nggak berfungsi',
-    'saya mau klaim garansi',
+    'box yang saya pesan bulan lalu banyak yang rusak, gimana ini?',
+    'baru dipakai sudah patah tutup boxnya',
+    'cetakannya cacat kak, logonya geser',
+    'saya kecewa, mau retur',
   ])('reads after-sales trouble: %s', (m) => expect(detectComplaint(m)).toBe(true));
 
   it.each([
-    'yang anti karat ada kak?',          // a sales question about a product property
+    'yang tahan minyak ada kak?',        // a sales question about a product property
     'garansinya berapa lama?',           // pre-sale question
-    'ada engsel 3 inch?',
+    'ada box 20x20?',
   ])('leaves a sales question alone: %s', (m) => expect(detectComplaint(m)).toBe(false));
 });
 
@@ -583,7 +598,7 @@ describe('escalateConversation — complaint wording', () => {
   });
 
   it('sends the apology lead alone when told not to ask', async () => {
-    await escalateConversation(CONVERSATION, 'Komplain engsel berkarat', '628123', false, null, CANNED_COMPLAINT_REPLY);
+    await escalateConversation(CONVERSATION, 'Komplain box rusak', '628123', false, null, CANNED_COMPLAINT_REPLY);
     expect(mockSendText.mock.calls[0][2]).toBe(CANNED_COMPLAINT_REPLY);
     expect((CANNED_COMPLAINT_REPLY.match(/\p{Extended_Pictographic}/gu) ?? []).length).toBe(1);
   });

@@ -12,7 +12,7 @@ import type { ProductBox } from './visionKeywords.js';
  * Compares a customer's photo with the catalog's own product photos.
  *
  * Until this existed the model only ever saw the customer's photo next to catalog TEXT, so it could
- * tell a padlock from a hinge but not one padlock model from another - the catalog never says what a
+ * tell a box from a paper wrap but not one box model from another - the catalog never says what a
  * product looks like. With product photos uploaded (services/catalogImages.ts) the photo is compared
  * against the pictures of the likeliest products, and the verdict goes into the turn as a note the
  * reply model and the fit judge both read.
@@ -22,9 +22,9 @@ import type { ProductBox } from './visionKeywords.js';
  * not compared - the old text-only path still covers them, so an empty catalog changes nothing.
  */
 
-// 20, not 10: with most photographed products named "HANDLE ...", keyword ranking is a weak
-// filter, and production's SATURNUS photo was compared against ten handles that did not include
-// SATURNUS (five of them black). Sonnet holds 20 photos apart; see PHOTO_MATCH_MODEL.
+// 20, not 10: with many photographed products sharing one word ("BOX ..."), keyword ranking is a weak
+// filter, and ten candidates can all be the wrong look-alikes while the right product sits 11th.
+// Sonnet holds 20 photos apart; see PHOTO_MATCH_MODEL.
 const MAX_CANDIDATES = 20;
 // Tokens per image scale with pixels; 512px keeps a twenty-photo comparison small and is plenty to
 // see shape, finish and markings.
@@ -37,7 +37,7 @@ export type PhotoCertainty = 'same' | 'similar' | 'none';
 /** What the vision step read off the customer's photo, for the comparison. */
 export interface PhotoSeen {
   box: ProductBox | null;
-  /** Its primary_category, e.g. "panolet / rambuncis jendela". */
+  /** Its primary_category, e.g. "box kue". */
   category: string;
 }
 
@@ -73,9 +73,9 @@ async function catalogHasPhotos(): Promise<boolean> {
 }
 
 /**
- * The product, filling the frame. Catalog photos are mostly white space around a small product
- * (production's are 260-490 px), which left the detail that tells two look-alike handles apart -
- * a rounded lever on a round collar vs a straight square bar - a few dozen pixels wide.
+ * The product, filling the frame. Catalog photos are often mostly white space around a small product,
+ * which leaves the detail that tells two look-alike boxes apart - a window in the lid, a fold, a
+ * printed pattern - a few dozen pixels wide.
  */
 export async function framed(raw: Buffer): Promise<Buffer> {
   const base = sharp(raw).rotate().flatten({ background: '#ffffff' });
@@ -89,16 +89,14 @@ export async function framed(raw: Buffer): Promise<Buffer> {
 }
 
 // Margin around the box, as a fraction of its size: the vision step's box is approximate, and a
-// handle cut off at the lever end loses the detail that tells it apart.
+// package cut off at its lid or handle loses the detail that tells it apart.
 const BOX_MARGIN = 0.1;
 
 /**
- * The customer's photo cut down to the product the vision step boxed. Live 2026-10-25 the photos were
- * whole phone screenshots (720x1600) of marketplace and TikTok listings; framed() shrank them to
- * 240x512, leaving the handle a ~200px patch among prices, buttons and a video overlay. Two black plate
- * handles came back "silver" and similar to our silver AUSTENIC and KOBE. Replayed cropped, they no
- * longer did; a black window rambuncis (we sell none) still came back similar to our DOOR STOP.
- * framed()'s border trim cannot do this: a screenshot has no uniform border.
+ * The customer's photo cut down to the product the vision step boxed. Photos are often whole phone
+ * screenshots (720x1600) of marketplace and TikTok listings; framed() shrinks them to 240x512, leaving
+ * the product a ~200px patch among prices, buttons and a video overlay, where colour and shape are
+ * misread. framed()'s border trim cannot do this: a screenshot has no uniform border.
  * The whole photo when there is no usable box - none, a speck, or the photo itself.
  */
 export async function cropToProduct(
@@ -155,22 +153,13 @@ const CAPTION_STOPWORDS = new Set([
   'untuk', 'buat', 'dan', 'atau', 'saya', 'aku', 'tolong', 'gan', 'sis', 'harga', 'berapa',
 ]);
 
-/** Likeliest products with a photo, by the photo's vision keywords and the caption. */
-// The photo words describe what is seen; the catalog names the style. Live 2026-10-15 our own SATURNUS
-// photo was described "rosette persegi", never "pisah", so the PISAH handles scored no better than every
-// other handle, SATURNUS fell outside the 20 compared, and the verdict was "none" - "belum ada di
-// katalog kami" for a product we sell. The next try's words happened to rank it 2nd.
-// Not when a plate is mentioned: ALEXANDER's long plate came back "roset persegi panjang" + "plat
-// panjang" 6/6, and told to write "pisah" itself the vision model wrote it for that plate too (6/6).
-const ROSETTE_RE = /\bro[sz]+et+e?\b/i;
-const PLATE_RE = /\bplat\b/i;
-
+/** The words the shortlist is searched with: the photo's vision keywords and the caption's own words. */
 export function shortlistTerms(keywords: string[], body: string): string[] {
   const words = captionOf(body).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CAPTION_STOPWORDS.has(w));
-  const terms = [...new Set([...keywords, ...words])];
-  const rosette = terms.some((t) => ROSETTE_RE.test(t)) && !terms.some((t) => PLATE_RE.test(t));
-  return rosette ? [...new Set([...terms, 'pisah'])] : terms;
+  return [...new Set([...keywords, ...words])];
 }
+
+/** Likeliest products with a photo, by the photo's vision keywords and the caption. */
 
 export async function pickCandidates(keywords: string[], caption: string): Promise<Product[]> {
   const terms = shortlistTerms(keywords, caption);
@@ -179,16 +168,16 @@ export async function pickCandidates(keywords: string[], caption: string): Promi
   return found.filter((p) => referenceImageUrl(p));
 }
 
-const COMPARE_PROMPT = `Kamu membandingkan FOTO PELANGGAN dengan beberapa FOTO KATALOG produk hardware (gembok, engsel, handle, kunci, rel, dll).
+const COMPARE_PROMPT = `Kamu membandingkan FOTO PELANGGAN dengan beberapa FOTO KATALOG produk kemasan (box karton, lunch box, box kue, kertas bungkus, paper bag, dll).
 
-Tentukan apakah barang di foto pelanggan adalah produk yang SAMA dengan salah satu foto katalog. Bandingkan bentuk, bagian-bagiannya, cara pemasangan, warna/finishing, dan tulisan/merek yang terlihat. Abaikan sudut foto, cahaya, latar belakang, dan kemasan.
+Tentukan apakah barang di foto pelanggan adalah produk yang SAMA dengan salah satu foto katalog. Bandingkan bentuk, bagian-bagiannya (tutup, sekat, jendela, lipatan, tali/pegangan), bahan dan warna kartonnya atau kertasnya, dan jenis cetakannya. Abaikan sudut foto, cahaya, latar belakang, dan logo atau desain pelanggan yang dicetak di atasnya - logo setiap pelanggan berbeda.
 
 - "same": jelas produk yang sama (model yang sama, bukan hanya jenis yang sama).
 - "similar": jenis dan bentuknya mirip salah satu foto katalog, tapi belum bisa dipastikan model yang sama.
 - "none": tidak ada foto katalog yang cocok, atau foto pelanggan tidak jelas.
 
-Jenis barang yang sama BELUM berarti produk yang sama: dua gembok berbeda model tetap "similar" atau "none", bukan "same".
-Jenis barang yang BERBEDA tidak pernah "similar": kalau barang di foto pelanggan engsel dan foto katalog yang paling mirip grendel (atau handle lawan tarikan laci, dst.), jawab "none" - semirip apa pun bentuknya.
+Jenis barang yang sama BELUM berarti produk yang sama: dua box berbeda model tetap "similar" atau "none", bukan "same".
+Jenis barang yang BERBEDA tidak pernah "similar": kalau barang di foto pelanggan kertas bungkus dan foto katalog yang paling mirip paper bag (atau box kue lawan lunch box, dst.), jawab "none" - semirip apa pun bentuknya.
 
 Nilai dari GAMBARNYA saja - foto katalog sengaja tidak diberi nama produk.
 
@@ -197,11 +186,10 @@ Balas HANYA JSON: {"match": "<huruf FOTO KATALOG yang cocok, atau null>", "certa
 interface Verdict { match: number | null; certainty: PhotoCertainty; reason: string }
 
 /**
- * Catalog photos are lettered, not numbered, and carry no product name. Production 2026-10-12:
- * with "FOTO KATALOG 2: <name>" labels the SATURNUS photo came back as VENUS and ALEXANDER as
- * ALICANTE, both the product listed next to the right one. Replayed, the pick followed the LABEL -
- * ALICANTE's name reads "matte silver ... wide", its photo is gun-metal black - so the comparison
- * now sees pictures only, and a letter cannot be miscounted against the customer's own photo.
+ * Catalog photos are lettered, not numbered, and carry no product name. With "FOTO KATALOG 2: <name>"
+ * labels a pick came back as the product listed next to the right one, and followed the LABEL when a
+ * name and a photo disagreed - so the comparison now sees pictures only, and a letter cannot be
+ * miscounted against the customer's own photo.
 
  */
 export function parseVerdict(raw: string, candidates: number): Verdict | null {
@@ -244,10 +232,9 @@ export async function compare(
   let raw: string;
   if (isDevMode()) {
     // Sonnet on the Claude Code route - the subscription reaches it there, though not over the
-    // API. Replayed on production's photos (2026-10-12): with no SATURNUS among the candidates,
-    // Haiku called our SATURNUS photo "same ALEXANDER" 2/2 and Sonnet said "none" 2/2; with 20
-    // candidates Haiku picked SATURNUS 1/2, Sonnet 2/2. Same speed (6-9 s). Haiku is the fallback,
-    // so a spent Sonnet limit costs the comparison its accuracy, not its answer.
+    // API. Replayed, Haiku called a product "same" as a look-alike missing from the candidates where
+    // Sonnet said "none", and picked the right one among 20 less often; same speed (6-9 s). Haiku is
+    // the fallback, so a spent Sonnet limit costs the comparison its accuracy, not its answer.
     const preferred = model ?? process.env.PHOTO_MATCH_MODEL ?? 'sonnet';
     const ask = (m?: string) => agentQuery({ systemPrompt: COMPARE_PROMPT, userContent: content, maxTurns: 1, noThinking: true, ...(m && { model: m }) });
     raw = await ask(preferred).catch((err) => {
@@ -264,18 +251,16 @@ export async function compare(
   return verdict;
 }
 
-// Words in the vision step's item type that say nothing about which type: "handle pintu", "engsel
-// pintu", "penahan pintu" - and DOOR STOP's own kata kunci say "pintu" too.
-const GENERIC_ITEM_WORDS = new Set(['pintu', 'set', 'aksesoris', 'produk', 'barang', 'hardware', 'furnitur', 'dan', 'atau', 'untuk']);
+// Words in the vision step's item type that say nothing about which type: "kemasan makanan", "box
+// cetak", "kertas bungkus makanan" - every product's kata kunci can say "makanan" or "cetak" too.
+const GENERIC_ITEM_WORDS = new Set(['set', 'produk', 'barang', 'kemasan', 'packaging', 'makanan', 'cetak', 'custom', 'dan', 'atau', 'untuk']);
 
 /**
  * Whether the pick is the type of item the vision step saw: one word of its item type in the product's
- * name, category or kata kunci (the catalog's own synonym list - not fungsi, where GRENDEL's "pintu,
- * jendela, pagar" would pass a window rambuncis). Live 2026-10-25 a black window rambuncis, which we do
- * not sell, was "similar OVERVAL PLAT"; replayed with the photo cropped it was "similar" or even "same"
- * DOOR STOP 4 times in 5 - our door stop is a lever on a round base too. The comparison prompt, a
- * same-type question and category labels on the photos all failed to stop it; the vision step called
- * the item "panolet / rambuncis" 5 times in 6. No item type, no check.
+ * name, category or kata kunci (the catalog's own synonym list - not fungsi, whose long use lists would
+ * pass almost anything). A photo of an item we do not sell can still come back "similar" or even
+ * "same" to a product of roughly the same shape; the comparison prompt alone has not stopped that,
+ * while the vision step names the item's type reliably. No item type, no check.
  * ponytail: word overlap, not meaning - a synonym missing from kata kunci drops a right pick. The log
  * line says so; add the word to that product's kata kunci.
  */
@@ -343,10 +328,9 @@ export async function matchCustomerPhoto(
  * actually compared: products without a photo were never looked at, so it must not read as
  * "this is not something we sell".
  */
-// Which photo the verdict is for. Live 2026-10-14 a chat held two: SATURNUS earlier, replayed in the
-// history as "[Pelanggan mengirim foto: produk kami ... SATURNUS (foto sama)]", then an ALEXANDER
-// photo whose correct "same ALEXANDER" verdict sat here unscoped - and the reply called it "Handle
-// Pisah ... sama seperti Saturnus", then asked the customer whether it was Alexander or Newton.
+// Which photo the verdict is for. A chat can hold two: product A earlier, replayed in the history as
+// "[Pelanggan mengirim foto: produk kami ... A (foto sama)]", then a photo of B whose correct verdict
+// sat here unscoped - and the reply called B "sama seperti A", then asked which one it was.
 const LATEST_PHOTO = ' Hasil ini untuk foto yang terlampir di pesan TERAKHIR pelanggan; foto lain di riwayat chat punya hasilnya sendiri - jangan dicampur.';
 
 export function photoMatchNote(m: PhotoMatch | null, scope = LATEST_PHOTO): string | null {
@@ -391,8 +375,8 @@ export function photoHistoryNote(m: PhotoMatch | null, keywords: string[]): stri
   const seen = keywords.slice(0, 6).join(', ');
   // A "mirip" is a question to ask, never an answer either way. Unnamed it read as "not carried" and the
   // bot told customers "belum ada di kami" for a product the comparison had found (review 2026-10-13);
-  // stated plainly, "mirip produk kami GRENDEL ..." on an engsel bubut photo was SOLD as grendel. The type
-  // rule in COMPARE_PROMPT now stops that verdict upstream, and the history rule ranks the customer's words higher.
+  // stated plainly, "mirip produk kami X" on a photo of another item type was SOLD as X. The type rule in
+  // COMPARE_PROMPT now stops that verdict upstream, and the history rule ranks the customer's words higher.
   // Since 2026-11-11 a photo that is not a confirmed match goes to the team (messageRouter.photoUnsureReason),
   // so a later turn must not answer it either: no product offered or denied on the strength of this photo.
   // The customer's own words still count - a product they name is answered as usual.

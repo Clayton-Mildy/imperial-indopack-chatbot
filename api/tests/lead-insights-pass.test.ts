@@ -6,7 +6,7 @@
  * due-query, the watermark and the fill-only profile merge are what can quietly go wrong.
  *
  * Needs DATABASE_URL. Every pass and due-query is scoped to the test's own conversation
- * (`conversationIds`): the DB is a production restore shared with other test files running in
+ * (`conversationIds`): the DB is shared with other test files running in
  * parallel, so "the newest due chat" could be anyone's.
  */
 
@@ -104,7 +104,7 @@ describe('lead-insights pass', () => {
   const isDue = async () => (await listConversationsDueForInsights(minutesAgo(5), 1, only()))[0]?.id === convId;
 
   it('waits until the customer has gone quiet, reads once, and again only after a new message', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada floorhinge dorma?', createdAt: minutesAgo(1) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada box kue 20x20?', createdAt: minutesAgo(1) });
     expect(await isDue()).toBe(false); // the live bot's chat for now
 
     await getDb().execute(sql`UPDATE messages SET created_at = ${minutesAgo(6).toISOString()}::timestamptz WHERE conversation_id = ${convId}`);
@@ -120,7 +120,7 @@ describe('lead-insights pass', () => {
       WHERE c.id = ${convId} GROUP BY c.id`);
     expect(rows[0]?.stamped).toBe(true);
 
-    await insertMessage({ conversationId: convId, role: 'user', body: 'untuk proyek', createdAt: minutesAgo(5.5) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'untuk katering', createdAt: minutesAgo(5.5) });
     expect(await isDue()).toBe(true);
   });
 
@@ -139,9 +139,9 @@ describe('lead-insights pass', () => {
 
   // Client 2026-11-10: staff take most orders off the phone, so the live bot never counted them.
   it('counts each order message the customer wrote, once, and only real customer messages', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'Pesan Grendel vintage 2" kng 2 dos 3" kng 1 dos', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'Pesan box nasi 20x20 2000 pcs, box kue 1000 pcs', createdAt: minutesAgo(30) });
     await insertMessage({ conversationId: convId, role: 'assistant', senderName: 'Tim CS', body: 'Baik pak, saya cekkan dulu orderannya', createdAt: minutesAgo(29) });
-    await insertMessage({ conversationId: convId, role: 'user', body: 'Pesan Meteran F92 5mtr=1# Kuas cat 1=1#', createdAt: minutesAgo(20) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'Pesan kertas supreme 30x30 5 rim', createdAt: minutesAgo(20) });
     // Customer messages [1] and [2]; [2] twice, and [9] does not exist.
     answer({ lead_kind: 'lead' }, [1, 2, 2, 9]);
     expect(await runLeadInsightsPass(1, only())).toBe(1);
@@ -156,7 +156,7 @@ describe('lead-insights pass', () => {
 
   it('never recounts an order total staff typed, and still keeps the order on record', async () => {
     await getDb().execute(sql`UPDATE leads SET total_orders = 7, total_orders_set_at = now() WHERE id = ${leadId}`);
-    await insertMessage({ conversationId: convId, role: 'user', body: 'oke saya ambil 20 set yang silver', createdAt: minutesAgo(10) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'oke saya ambil 20 rim yang 64 gsm', createdAt: minutesAgo(10) });
     answer({ lead_kind: 'lead' }, [1]);
     expect(await runLeadInsightsPass(1, only())).toBe(1);
     expect((await getDb().select().from(leads).where(eq(leads.id, leadId)))[0]!.totalOrders).toBe(7);
@@ -164,9 +164,9 @@ describe('lead-insights pass', () => {
     expect(rows[0]!.n).toBe(1);
   });
 
-  // Production 2026-11-10: a repeat reseller's chat, all orders and invoices, labelled status_pesanan.
+  // A repeat buyer's chat, all orders and invoices, can be labelled status_pesanan.
   it('keeps a customer who places orders a lead, even when the chat reads as an order follow-up', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'Pesan trowel koraltex papak=5#', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'Pesan box nasi 20x20 = 2500 pcs', createdAt: minutesAgo(30) });
     await insertMessage({ conversationId: convId, role: 'user', body: 'invoice bulan ini sudah ada?', createdAt: minutesAgo(20) });
     answer({ lead_kind: 'status_pesanan' }, [1]);
     expect(await runLeadInsightsPass(1, only())).toBe(1);
@@ -209,7 +209,7 @@ describe('lead-insights pass', () => {
     await insertMessage({ conversationId: convId, role: 'user', body: 'kertas supreme 30x30 10 rim, sama box 20x20 500 pcs', createdAt: minutesAgo(10) });
     answer({
       lead_kind: 'lead',
-      brands: ['kertas_supreme', 'imperial_indopack', 'legacy'],
+      brands: ['kertas_supreme', 'imperial_indopack', 'brand_lain'],
       items: [
         { product: 'Kertas Supreme 64 gsm', size: '30x30', qty: 10, qty_unit: 'rim' },
         { product: 'Box makanan', size: '20x20', qty: '500', qty_unit: 'pcs' },
@@ -264,7 +264,7 @@ describe('lead-insights pass', () => {
   });
 
   it('leaves the chat due when the model call itself fails', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'harga engsel?', createdAt: minutesAgo(10) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'harga kertas supreme?', createdAt: minutesAgo(10) });
     mockCreate.mockRejectedValue(new Error('429 rate limited'));
 
     expect(await runLeadInsightsPass(1, only())).toBe(0);
@@ -275,9 +275,9 @@ describe('lead-insights pass', () => {
   const theLead = async () => (await getDb().select().from(leads).where(eq(leads.id, leadId)))[0]!;
 
   it('marks won with the matching customer message as proof', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'harga engsel 3 inch?', createdAt: minutesAgo(30) });
-    const said = await insertMessage({ conversationId: convId, role: 'user', body: 'Oke saya ambil 2 lusin, kirim nomor rekeningnya', createdAt: minutesAgo(20) });
-    answer({ lead_kind: 'lead', stage: 'won', evidence: 'oke saya ambil 2 lusin, kirim nomor rekeningnya' });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'harga kertas supreme 30x30?', createdAt: minutesAgo(30) });
+    const said = await insertMessage({ conversationId: convId, role: 'user', body: 'Oke saya ambil 10 rim, kirim nomor rekeningnya', createdAt: minutesAgo(20) });
+    answer({ lead_kind: 'lead', stage: 'won', evidence: 'oke saya ambil 10 rim, kirim nomor rekeningnya' });
 
     await runLeadInsightsPass(1, only());
 
@@ -287,9 +287,9 @@ describe('lead-insights pass', () => {
   });
 
   it("drops won when the evidence is the bot's own words", async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'mau tanya engsel', createdAt: minutesAgo(30) });
-    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Baik, pesanan 2 lusin kami proses ya kak', createdAt: minutesAgo(20) });
-    answer({ lead_kind: 'lead', stage: 'won', evidence: 'Baik, pesanan 2 lusin kami proses ya kak' });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'mau tanya kertas supreme', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Baik, pesanan 10 rim kami proses ya kak', createdAt: minutesAgo(20) });
+    answer({ lead_kind: 'lead', stage: 'won', evidence: 'Baik, pesanan 10 rim kami proses ya kak' });
 
     await runLeadInsightsPass(1, only());
 
@@ -297,7 +297,7 @@ describe('lead-insights pass', () => {
   });
 
   it('drops won when the evidence is not in the chat', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'mau tanya engsel', createdAt: minutesAgo(20) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'mau tanya kertas supreme', createdAt: minutesAgo(20) });
     answer({ lead_kind: 'lead', stage: 'won', evidence: 'deal, saya beli semuanya' });
 
     await runLeadInsightsPass(1, only());
@@ -306,8 +306,8 @@ describe('lead-insights pass', () => {
   });
 
   it('sets quoted from an outbound Rp figure without the model saying so', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'harga handle newton?', createdAt: minutesAgo(30) });
-    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Handle Newton Rp 46.000/Lsn', createdAt: minutesAgo(20) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'harga box nasi 20x20?', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Box nasi 20x20 Rp 1.800/pcs', createdAt: minutesAgo(20) });
     answer({ lead_kind: 'lead' });
 
     await runLeadInsightsPass(1, only());
@@ -332,7 +332,7 @@ describe('lead-insights pass', () => {
   }
 
   it('does not reopen a lost lead on "ok makasih"', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada palu 5 kg?', createdAt: minutesAgo(60) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada gelas plastik?', createdAt: minutesAgo(60) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'belum ada di kami kak', createdAt: minutesAgo(55) });
     await loseLead(50);
     await insertMessage({ conversationId: convId, role: 'user', body: 'ok makasih', createdAt: minutesAgo(10) });
@@ -344,17 +344,17 @@ describe('lead-insights pass', () => {
   });
 
   it('reopens a lost lead when the customer wants something again, from the post-close messages only', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada palu 5 kg?', createdAt: minutesAgo(60) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada gelas plastik?', createdAt: minutesAgo(60) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'belum ada di kami kak', createdAt: minutesAgo(55) });
     await loseLead(50);
-    await insertMessage({ conversationId: convId, role: 'user', body: 'kalau engsel pintu ada?', createdAt: minutesAgo(10) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'kalau box nasi ada?', createdAt: minutesAgo(10) });
     answer({ lead_kind: 'lead', stage: 'contacted' });
 
     await runLeadInsightsPass(1, only());
 
     // The transcript sent to the model lacks the pre-close refusal.
     const sent = mockCreate.mock.calls[0]![0].messages[0].content as string;
-    expect(sent).toContain('kalau engsel pintu ada?');
+    expect(sent).toContain('kalau box nasi ada?');
     expect(sent).not.toContain('belum ada di kami');
     const lead = await theLead();
     expect(lead.status).toBe('contacted');
@@ -365,10 +365,10 @@ describe('lead-insights pass', () => {
   // writes after it is a new lead, inside the reopen window too, and a bare greeting is enough.
   it.each([
     ['a greeting the model leaves at stage null', 'halo kak', null],
-    ['a new need', 'kalau engsel pintu ada?', 'contacted'],
+    ['a new need', 'kalau box nasi ada?', 'contacted'],
   ])('renews a lead closed for no response on %s', async (_name, body, stage) => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada handle pintu?', createdAt: minutesAgo(60) });
-    await insertMessage({ conversationId: convId, role: 'assistant', body: 'ada kak, untuk dipakai sendiri?', createdAt: minutesAgo(55) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada box kue?', createdAt: minutesAgo(60) });
+    await insertMessage({ conversationId: convId, role: 'assistant', body: 'ada kak, untuk kue apa?', createdAt: minutesAgo(55) });
     await getDb().execute(sql`UPDATE leads SET status = 'lost', lost_reason = 'tidak_ada_respon', closed_at = ${minutesAgo(50).toISOString()}::timestamptz WHERE id = ${leadId}`);
     await insertMessage({ conversationId: convId, role: 'user', body, createdAt: minutesAgo(10) });
     answer({ lead_kind: 'lead', stage });
@@ -383,7 +383,7 @@ describe('lead-insights pass', () => {
   });
 
   it('keeps a lead closed for no response Lost when the customer writes back to say no', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada handle pintu?', createdAt: minutesAgo(60) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada box kue?', createdAt: minutesAgo(60) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'ada kak', createdAt: minutesAgo(55) });
     await getDb().execute(sql`UPDATE leads SET status = 'lost', lost_reason = 'tidak_ada_respon', closed_at = ${minutesAgo(50).toISOString()}::timestamptz WHERE id = ${leadId}`);
     await insertMessage({ conversationId: convId, role: 'user', body: 'ga jadi kak, sudah beli', createdAt: minutesAgo(10) });
@@ -395,11 +395,11 @@ describe('lead-insights pass', () => {
     expect(renewal).toBeUndefined();
   });
 
-  // Dry run 2026-11-13: 6 of 7 Lost calls quoted a customer message that did not close the chat.
+  // A Lost call can quote a customer message that did not close the chat.
   it('does not take the customer\'s own opening question as proof of Lost', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'apa ada jual handle pintu passbox ya?', createdAt: minutesAgo(30) });
-    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Handle passbox belum ada di kami ya', createdAt: minutesAgo(29) });
-    answer({ lead_kind: 'lead', stage: 'lost', evidence: 'apa ada jual handle pintu passbox ya?', lost_reason: 'barang_tidak_ada' });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'apa ada jual gelas plastik ya?', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Gelas plastik belum ada di kami ya', createdAt: minutesAgo(29) });
+    answer({ lead_kind: 'lead', stage: 'lost', evidence: 'apa ada jual gelas plastik ya?', lost_reason: 'barang_tidak_ada' });
 
     await runLeadInsightsPass(1, only());
 
@@ -407,11 +407,11 @@ describe('lead-insights pass', () => {
   });
 
   it('does not take a "Baik kk" the customer kept talking after as proof of Lost', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'Rel pintu 6 daun 4 meter berapa', createdAt: minutesAgo(30) });
-    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Mohon maaf, rel itu belum ada di kami ya', createdAt: minutesAgo(29) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'Styrofoam 20x20 berapa', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Mohon maaf, styrofoam belum ada di kami ya', createdAt: minutesAgo(29) });
     await insertMessage({ conversationId: convId, role: 'user', body: 'Baik kk', createdAt: minutesAgo(28) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'Boleh tahu nama kakak?', createdAt: minutesAgo(27) });
-    await insertMessage({ conversationId: convId, role: 'user', body: 'Saya Bang Al dari probolinggo, buat proyek', createdAt: minutesAgo(26) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'Saya Bang Al dari probolinggo, buat katering', createdAt: minutesAgo(26) });
     answer({ lead_kind: 'lead', stage: 'lost', evidence: 'Baik kk', lost_reason: 'barang_tidak_ada' });
 
     await runLeadInsightsPass(1, only());
@@ -420,7 +420,7 @@ describe('lead-insights pass', () => {
   });
 
   it('still takes a sign-off after our "belum ada" as Lost, with a thank-you after it', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada palu 5 kg?', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada gelas plastik?', createdAt: minutesAgo(30) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'belum ada di kami kak', createdAt: minutesAgo(29) });
     await insertMessage({ conversationId: convId, role: 'user', body: 'oh gitu ya, ga jadi deh kak', createdAt: minutesAgo(28) });
     await insertMessage({ conversationId: convId, role: 'user', body: 'makasih kak', createdAt: minutesAgo(27) });
@@ -433,11 +433,29 @@ describe('lead-insights pass', () => {
     expect(lead.outcomeEvidence).toBe('oh gitu ya, ga jadi deh kak');
   });
 
-  // Dry run 2026-11-13: resellers with 1-24 verified orders came out with no stage at all.
+  // Task 13 carry: the order-fields step read the lead from before this pass wrote Lost, and merged.
+  it('adds no brands or items to a lead this very pass closed as Lost', async () => {
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada box ukuran 60x60x40?', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'assistant', body: 'belum ada di kami kak', createdAt: minutesAgo(29) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'oh gitu ya, ga jadi deh kak', createdAt: minutesAgo(28) });
+    answer({
+      lead_kind: 'lead', stage: 'lost', evidence: 'ga jadi deh kak', lost_reason: 'barang_tidak_ada',
+      brands: ['imperial_indopack'], items: [{ product: 'Box', size: '60x60x40' }],
+    });
+
+    await runLeadInsightsPass(1, only());
+
+    const lead = await theLead();
+    expect(lead.status).toBe('lost');
+    expect(lead.brands).toEqual([]);
+    expect(lead.items).toEqual([]);
+  });
+
+  // Repeat buyers with verified orders must not come out with no stage at all.
   it('takes a repeat buyer filed as status_pesanan as Won, proven by the latest order', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'Pesan Meteran F92 5mtr = 1 dos', createdAt: minutesAgo(40) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'Pesan kertas supreme 30x30 = 5 rim', createdAt: minutesAgo(40) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'siap kak dicatat', createdAt: minutesAgo(39) });
-    const last = await insertMessage({ conversationId: convId, role: 'user', body: 'Pesan gembok blossom 40 = 1 box', createdAt: minutesAgo(20) });
+    const last = await insertMessage({ conversationId: convId, role: 'user', body: 'Pesan box kue 20x20 = 1000 pcs', createdAt: minutesAgo(20) });
     await insertMessage({ conversationId: convId, role: 'user', body: 'sudah transfer ya kak', createdAt: minutesAgo(10) });
     answer({ lead_kind: 'status_pesanan', stage: null }, [1, 2]);
 
@@ -451,10 +469,10 @@ describe('lead-insights pass', () => {
 
   it('writes nothing for kind/stage when LEAD_STAGE_AI=0', async () => {
     process.env['LEAD_STAGE_AI'] = '0';
-    await insertMessage({ conversationId: convId, role: 'user', body: 'oke saya ambil 2 lusin', createdAt: minutesAgo(20) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'oke saya ambil 10 rim', createdAt: minutesAgo(20) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'Rp 46.000/Lsn', createdAt: minutesAgo(19) });
     // A sale (kind 'lead'), so the fills still go on; the non-lead kind case is the next test.
-    answer({ lead_kind: 'lead', stage: 'won', evidence: 'oke saya ambil 2 lusin', lead_temperature: 'hot' });
+    answer({ lead_kind: 'lead', stage: 'won', evidence: 'oke saya ambil 10 rim', lead_temperature: 'hot' });
 
     await runLeadInsightsPass(1, only());
 
@@ -502,7 +520,7 @@ describe('lead-insights pass', () => {
 
   it.each(['quoted', 'won'])('keeps the fills of a %s buyer the model labels status_pesanan', async (status) => {
     await getDb().execute(sql`UPDATE leads SET status = ${status} WHERE id = ${leadId}`);
-    await insertMessage({ conversationId: convId, role: 'user', body: 'sudah transfer ya kak, engsel tanam 3D 2 lusin kapan dikirim?', createdAt: minutesAgo(10) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'sudah transfer ya kak, box nasi 2500 pcs kapan dikirim?', createdAt: minutesAgo(10) });
     kindAnswer({ lead_kind: 'status_pesanan', lead_temperature: 'hot', name: 'Budi', business_name: 'Toko Delima' });
 
     await runLeadInsightsPass(1, only());
@@ -514,7 +532,7 @@ describe('lead-insights pass', () => {
 
   it('keeps the fills when staff set the kind to lead and the model labels it status_pesanan', async () => {
     await getDb().execute(sql`UPDATE leads SET kind_set_by = 'staff' WHERE id = ${leadId}`);
-    await insertMessage({ conversationId: convId, role: 'user', body: 'pesanan engsel tanam kemarin sudah dikirim?', createdAt: minutesAgo(10) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'pesanan box nasi kemarin sudah dikirim?', createdAt: minutesAgo(10) });
     kindAnswer({ lead_kind: 'status_pesanan', lead_temperature: 'hot', name: 'Budi' });
 
     await runLeadInsightsPass(1, only());
@@ -534,22 +552,22 @@ describe('lead-insights pass', () => {
   });
 
   it('cuts a Lost lead with no closed_at at updated_at', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada palu 5 kg?', createdAt: minutesAgo(130) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada gelas plastik?', createdAt: minutesAgo(130) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'belum ada di kami kak', createdAt: minutesAgo(125) });
     await getDb().execute(sql`UPDATE leads SET status = 'lost', closed_at = NULL, updated_at = ${minutesAgo(60).toISOString()}::timestamptz WHERE id = ${leadId}`);
-    await insertMessage({ conversationId: convId, role: 'user', body: 'kalau engsel pintu ada?', createdAt: minutesAgo(10) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'kalau box nasi ada?', createdAt: minutesAgo(10) });
     answer({ lead_kind: 'lead', stage: 'contacted' });
 
     await runLeadInsightsPass(1, only());
 
     const sent = mockCreate.mock.calls[0]![0].messages[0].content as string;
-    expect(sent).toContain('kalau engsel pintu ada?');
+    expect(sent).toContain('kalau box nasi ada?');
     expect(sent).not.toContain('belum ada di kami');
   });
   it('dry run reports the would-be won and writes nothing', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'harga engsel 3 inch?', createdAt: minutesAgo(30) });
-    await insertMessage({ conversationId: convId, role: 'user', body: 'Oke saya ambil 2 lusin, kirim nomor rekeningnya', createdAt: minutesAgo(20) });
-    answer({ lead_kind: 'lead', stage: 'won', evidence: 'oke saya ambil 2 lusin, kirim nomor rekeningnya', lead_temperature: 'hot' });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'harga kertas supreme 30x30?', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'Oke saya ambil 10 rim, kirim nomor rekeningnya', createdAt: minutesAgo(20) });
+    answer({ lead_kind: 'lead', stage: 'won', evidence: 'oke saya ambil 10 rim, kirim nomor rekeningnya', lead_temperature: 'hot' });
     const eventCount = async () => (await getDb().execute<{ n: string }>(sql`SELECT count(*) AS n FROM lead_events WHERE lead_id = ${leadId}`)).rows[0]!.n;
     const before = await eventCount();
     const results: { conversationId: string; wouldChange: string[] }[] = [];
@@ -568,7 +586,7 @@ describe('lead-insights pass', () => {
   });
 
   it('skips a staff-locked lead without calling the model when skipStaff is set', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'harga engsel 3 inch?', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'harga kertas supreme 30x30?', createdAt: minutesAgo(30) });
     await getDb().execute(sql`UPDATE leads SET kind_set_by = 'staff' WHERE id = ${leadId}`);
     answer({ lead_kind: 'lead', stage: 'contacted' });
     const skipped: string[] = [];
@@ -579,7 +597,7 @@ describe('lead-insights pass', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
   it('never stamps the watermark later than now, even with a future since', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'harga engsel 3 inch?', createdAt: minutesAgo(30) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'harga kertas supreme 30x30?', createdAt: minutesAgo(30) });
     answer({ lead_kind: 'lead', stage: 'contacted' });
     const future = new Date(Date.now() + 365 * 86_400_000);
 
@@ -606,14 +624,14 @@ describe('lead-insights pass', () => {
 
   it('dates Penawaran and Menang by their own messages, in that order, in one pass', async () => {
     await getDb().execute(sql`DELETE FROM lead_events WHERE lead_id = ${leadId}`);
-    await insertMessage({ conversationId: convId, role: 'user', body: 'harga handle newton?', createdAt: minutesAgo(40) });
-    const firstQuote = await insertMessage({ conversationId: convId, role: 'assistant', body: 'Handle Newton Rp 46.000/Lsn', createdAt: minutesAgo(35) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'harga box nasi 20x20?', createdAt: minutesAgo(40) });
+    const firstQuote = await insertMessage({ conversationId: convId, role: 'assistant', body: 'Box nasi 20x20 Rp 1.800/pcs', createdAt: minutesAgo(35) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'Yang Victor Rp 52.000/Lsn', createdAt: minutesAgo(30) });
-    const said = await insertMessage({ conversationId: convId, role: 'user', body: 'oke saya ambil 2 lusin newton', createdAt: minutesAgo(20) });
+    const said = await insertMessage({ conversationId: convId, role: 'user', body: 'oke saya ambil 2500 pcs box nasinya', createdAt: minutesAgo(20) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'Total 2 x Rp 46.000 = Rp 92.000', createdAt: minutesAgo(15) });
     await addMicros(firstQuote.id);
     await addMicros(said.id);
-    answer({ lead_kind: 'lead', stage: 'won', evidence: 'oke saya ambil 2 lusin newton' });
+    answer({ lead_kind: 'lead', stage: 'won', evidence: 'oke saya ambil 2500 pcs box nasinya' });
 
     await runLeadInsightsPass(1, only());
 
@@ -631,9 +649,9 @@ describe('lead-insights pass', () => {
 
   it('writes no Penawaran when the only quote came after the outcome', async () => {
     await getDb().execute(sql`DELETE FROM lead_events WHERE lead_id = ${leadId}`);
-    const said = await insertMessage({ conversationId: convId, role: 'user', body: 'saya ambil handle newton 2 lusin', createdAt: minutesAgo(20) });
+    const said = await insertMessage({ conversationId: convId, role: 'user', body: 'saya ambil box nasi 2500 pcs', createdAt: minutesAgo(20) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'Total Rp 92.000 ya kak', createdAt: minutesAgo(15) });
-    answer({ lead_kind: 'lead', stage: 'won', evidence: 'saya ambil handle newton 2 lusin' });
+    answer({ lead_kind: 'lead', stage: 'won', evidence: 'saya ambil box nasi 2500 pcs' });
 
     await runLeadInsightsPass(1, only());
 
@@ -644,14 +662,14 @@ describe('lead-insights pass', () => {
 
   it('a returning customer reads reopen -> Penawaran -> Menang, each at its message', async () => {
     await getDb().execute(sql`DELETE FROM lead_events WHERE lead_id = ${leadId}`);
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada palu 5 kg?', createdAt: minutesAgo(60) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada gelas plastik?', createdAt: minutesAgo(60) });
     await loseLead(50);
     // A quote the bot sent after the close but before the customer came back belongs to no step.
-    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Kalau palu 16 OZ Rp 85.000 kak', createdAt: minutesAgo(45) });
-    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'kalau engsel pintu ada?', createdAt: minutesAgo(30) });
-    const quote = await insertMessage({ conversationId: convId, role: 'assistant', body: 'Engsel 4 inch Rp 46.000/Lsn', createdAt: minutesAgo(25) });
-    const said = await insertMessage({ conversationId: convId, role: 'user', body: 'oke saya ambil 1 lusin engselnya', createdAt: minutesAgo(20) });
-    answer({ lead_kind: 'lead', stage: 'won', evidence: 'oke saya ambil 1 lusin engselnya' });
+    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Kalau paper bag kraft Rp 85.000/pack kak', createdAt: minutesAgo(45) });
+    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'kalau box nasi ada?', createdAt: minutesAgo(30) });
+    const quote = await insertMessage({ conversationId: convId, role: 'assistant', body: 'Box nasi 20x20 Rp 1.800/pcs', createdAt: minutesAgo(25) });
+    const said = await insertMessage({ conversationId: convId, role: 'user', body: 'oke saya ambil 2500 pcs box nasinya', createdAt: minutesAgo(20) });
+    answer({ lead_kind: 'lead', stage: 'won', evidence: 'oke saya ambil 2500 pcs box nasinya' });
 
     await runLeadInsightsPass(1, only());
 
@@ -662,29 +680,29 @@ describe('lead-insights pass', () => {
   });
 
   it("keeps a Lost lead's own refusal out of the post-close transcript to the microsecond", async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada palu 5 kg?', createdAt: minutesAgo(60) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada gelas plastik?', createdAt: minutesAgo(60) });
     const refusal = await insertMessage({ conversationId: convId, role: 'user', body: 'ga jadi deh kak, kemahalan', createdAt: minutesAgo(50) });
     await addMicros(refusal.id);
     // Closed exactly at the refusal, as applyLeadStage dates it.
     await getDb().execute(sql`UPDATE leads SET status = 'lost', lost_reason = 'harga',
       closed_at = (SELECT created_at FROM messages WHERE id = ${refusal.id}) WHERE id = ${leadId}`);
-    await insertMessage({ conversationId: convId, role: 'user', body: 'kalau engsel pintu ada?', createdAt: minutesAgo(10) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'kalau box nasi ada?', createdAt: minutesAgo(10) });
     answer({ lead_kind: 'lead', stage: 'contacted' });
 
     await runLeadInsightsPass(1, only());
 
     const sent = mockCreate.mock.calls[0]![0].messages[0].content as string;
-    expect(sent).toContain('kalau engsel pintu ada?');
+    expect(sent).toContain('kalau box nasi ada?');
     expect(sent).not.toContain('kemahalan');
   });
 
   it('a reopened lead on its next pass takes no Penawaran from the lifecycle that ended Lost', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'harga palu 16 OZ?', createdAt: minutesAgo(60) });
-    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Palu 16 OZ Rp 85.000 kak', createdAt: minutesAgo(55) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'harga paper bag kraft?', createdAt: minutesAgo(60) });
+    await insertMessage({ conversationId: convId, role: 'assistant', body: 'Paper bag kraft Rp 85.000/pack kak', createdAt: minutesAgo(55) });
     const refusal = await insertMessage({ conversationId: convId, role: 'user', body: 'ga jadi kak, kemahalan', createdAt: minutesAgo(50) });
     await getDb().execute(sql`UPDATE leads SET status = 'lost', lost_reason = 'harga',
       closed_at = (SELECT created_at FROM messages WHERE id = ${refusal.id}) WHERE id = ${leadId}`);
-    await insertMessage({ conversationId: convId, role: 'user', body: 'kalau engsel pintu ada?', createdAt: minutesAgo(20) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'kalau box nasi ada?', createdAt: minutesAgo(20) });
     answer({ lead_kind: 'lead', stage: 'contacted' });
     await runLeadInsightsPass(1, only());
     expect((await theLead()).status).toBe('contacted');
@@ -699,10 +717,10 @@ describe('lead-insights pass', () => {
   });
 
   it('reopens at the message that brought them back, so a quote before "nanti saya kabari" counts', async () => {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada palu 5 kg?', createdAt: minutesAgo(60) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada gelas plastik?', createdAt: minutesAgo(60) });
     await loseLead(50);
-    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'engsel ada?', createdAt: minutesAgo(30) });
-    const quoted = await insertMessage({ conversationId: convId, role: 'assistant', body: 'Engsel 4 inch Rp 46.000/Lsn', createdAt: minutesAgo(25) });
+    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'box nasi ada?', createdAt: minutesAgo(30) });
+    const quoted = await insertMessage({ conversationId: convId, role: 'assistant', body: 'Box nasi 20x20 Rp 1.800/pcs', createdAt: minutesAgo(25) });
     await insertMessage({ conversationId: convId, role: 'user', body: 'oke nanti saya kabari', createdAt: minutesAgo(20) });
     answer({ lead_kind: 'lead', stage: 'contacted' });
 
@@ -719,7 +737,7 @@ describe('lead-insights pass', () => {
   const at = (ms: number) => new Date(ms);
   /** Lost on a refusal, then the "makasih" right after it - read by a pass that leaves the lead Lost. */
   async function closeThenSignOff(baseMs: number, opts: { staff?: boolean } = {}) {
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada palu 5 kg?', createdAt: at(baseMs - 120_000) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada gelas plastik?', createdAt: at(baseMs - 120_000) });
     await insertMessage({ conversationId: convId, role: 'assistant', body: 'belum ada di kami kak', createdAt: at(baseMs - 60_000) });
     const refusal = await insertMessage({ conversationId: convId, role: 'user', body: 'oh ya udah kak ga jadi', createdAt: at(baseMs) });
     await getDb().execute(sql`UPDATE leads SET status = 'lost', lost_reason = 'barang_tidak_ada',
@@ -741,7 +759,7 @@ describe('lead-insights pass', () => {
     const gap = (windowDays + 30) * DAY;
     const baseMs = Date.now() - gap - DAY;
     await closeThenSignOff(baseMs);
-    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'ada engsel 4 inch?', createdAt: at(baseMs + gap) });
+    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'ada box nasi 20x20?', createdAt: at(baseMs + gap) });
     answer({ lead_kind: 'lead', stage: 'contacted' });
 
     await runLeadInsightsPass(1, only());
@@ -761,7 +779,7 @@ describe('lead-insights pass', () => {
     const gap = (windowDays + 30) * DAY;
     const baseMs = Date.now() - gap - DAY;
     await closeThenSignOff(baseMs, { staff: true });
-    await insertMessage({ conversationId: convId, role: 'user', body: 'ada engsel 4 inch?', createdAt: at(baseMs + gap) });
+    await insertMessage({ conversationId: convId, role: 'user', body: 'ada box nasi 20x20?', createdAt: at(baseMs + gap) });
     answer({ lead_kind: 'lead', stage: 'contacted' });
 
     await runLeadInsightsPass(1, only());
@@ -775,7 +793,7 @@ describe('lead-insights pass', () => {
   it('still reopens a return inside the window, dated at the return message', async () => {
     const baseMs = Date.now() - 10 * DAY;
     await closeThenSignOff(baseMs);
-    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'kalau engsel 4 inch ada?', createdAt: at(baseMs + 3 * DAY) });
+    const back = await insertMessage({ conversationId: convId, role: 'user', body: 'kalau box nasi 20x20 ada?', createdAt: at(baseMs + 3 * DAY) });
     answer({ lead_kind: 'lead', stage: 'contacted' });
 
     await runLeadInsightsPass(1, only());

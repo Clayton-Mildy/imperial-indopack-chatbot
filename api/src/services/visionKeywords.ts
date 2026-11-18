@@ -3,7 +3,7 @@ import { getClient, isDevMode, agentQuery, CLAUDE_MODEL } from './claude.js';
 
 // IMPORTANT: Haiku's output is fed into RAG plumbing ONLY (extraKeywords →
 // buildCatalogContext). It MUST NEVER be injected into Sonnet's system prompt,
-// otherwise the closed-catalog rule from task-legacy-007 weakens.
+// otherwise the closed-catalog rule (ATURAN KATALOG TERTUTUP) weakens.
 
 /** Where the product sits in the photo: [left, top, right, bottom], percent of width and height. */
 export type ProductBox = [number, number, number, number];
@@ -32,21 +32,21 @@ const VisionExtractSchema = z.object({
 
 export type VisionExtract = z.infer<typeof VisionExtractSchema>;
 
-const VISION_KEYWORDS_PROMPT = `Kamu adalah pengekstrak kata kunci visual untuk katalog hardware (handle, engsel, kunci, rel laci, aksesoris pintu/jendela/furnitur).
+const VISION_KEYWORDS_PROMPT = `Kamu adalah pengekstrak kata kunci visual untuk katalog kemasan cetak: box karton (box katering, lunch box / nasi box, box kue dan cookies) dan kemasan kertas (kertas bungkus makanan cetak logo, kertas greaseproof, paper bag, paper sleeve, amplop kertas).
 
 Lihat foto yang dikirim pelanggan. Identifikasi:
-- primary_category: kategori produk utama (mis. "handle pintu", "engsel", "kunci", "rel laci"). Gunakan istilah katalog Indonesia.
-- secondary_categories: kategori alternatif yang juga mungkin cocok.
-- visual_features: ciri visual yang penting untuk pencocokan (panjang, bentuk, gaya — mis. "minimalis", "tipis", "lengkung", "kotak"). Untuk handle pintu, sebutkan juga cara pemasangannya: "roset" bila gagang terpasang di atas roset bulat/kotak tanpa plat panjang, atau "plat" bila gagang menyatu dengan plat panjang.
-- colors: warna yang terlihat (mis. "hitam", "silver", "emas").
-- materials: tebakan material berbasis tampilan (mis. "stainless", "aluminium", "kuningan").
-- brand_names: nama merek/logo yang TERCETAK di produk atau kemasannya, persis seperti tertulis (mis. "SOLID"). Hanya nama mereknya - bukan jenis barang ("PADLOCK"), nama tipe/model barang ("Santa Cruz", "Newton"), nama toko/penjual/akun di screenshot marketplace atau media sosial ("Power Shop", "... Store"), slogan, ukuran, atau tulisan lain. [] bila tidak ada merek yang terbaca.
-- product_box: kotak tempat barang utama terlihat di foto, [kiri, atas, kanan, bawah] dalam persen (0-100) dari lebar dan tinggi foto. Di screenshot marketplace/TikTok, kotak itu hanya gambar barangnya - tanpa teks harga, tombol, atau video kecil di atasnya. null bila tidak ada barang.
+- primary_category: jenis kemasan utama (mis. "box nasi", "box kue", "lunch box", "kertas bungkus", "paper bag"). Gunakan istilah Indonesia yang umum.
+- secondary_categories: jenis kemasan lain yang juga mungkin cocok.
+- visual_features: ciri visual yang penting untuk pencocokan (bentuk, tutup, sekat, jendela, lipatan, tali/pegangan, cetakan - mis. "tutup lipat", "berjendela", "logo dicetak berulang", "polos"). Kalau foto berisi logo atau desain (bukan kemasan jadi), tulis "logo" atau "desain" dan sebutkan bentuk/warnanya.
+- colors: warna yang terlihat (mis. "putih", "cokelat kraft", "merah").
+- materials: tebakan material berbasis tampilan (mis. "karton ivory", "kraft", "kertas tipis", "greaseproof").
+- brand_names: nama merek/logo yang TERCETAK di kemasan atau di desainnya, persis seperti tertulis (mis. "Ayam Geprek Bu Sri"). Hanya nama mereknya - bukan jenis barang ("BOX", "PAPER BAG"), nama toko/penjual/akun di screenshot marketplace atau media sosial ("... Store"), slogan, ukuran, atau tulisan lain. [] bila tidak ada merek yang terbaca.
+- product_box: kotak tempat kemasan atau desain utama terlihat di foto, [kiri, atas, kanan, bawah] dalam persen (0-100) dari lebar dan tinggi foto. Di screenshot marketplace/TikTok, kotak itu hanya gambar barangnya - tanpa teks harga, tombol, atau video kecil di atasnya. null bila tidak ada barang.
 - chat_text: bila foto adalah screenshot percakapan chat (WhatsApp, chat marketplace, DM), salin isi pesan-pesannya yang terbaca, satu pesan per item, apa adanya. [] bila bukan screenshot chat.
 - confidence:
-  - "high" — jelas merupakan produk dalam kategori Legacy.
-  - "low" — kemungkinan produk Legacy tapi sudut/cahaya/kualitas membuat tidak yakin.
-  - "none" — bukan produk Legacy sama sekali (orang, kendaraan, screenshot, produk yang jelas bukan hardware furnitur/pintu).
+  - "high" — jelas kemasan box atau kertas, atau logo/desain untuk dicetak di kemasan.
+  - "low" — kemungkinan kemasan tapi sudut/cahaya/kualitas membuat tidak yakin.
+  - "none" — bukan kemasan sama sekali (orang, kendaraan, screenshot chat tanpa gambar kemasan, barang yang jelas bukan kemasan kertas atau box).
 - non_product_reason: WAJIB diisi jika confidence="none", jelaskan singkat dalam Bahasa Indonesia.
 
 Balas HANYA dengan JSON valid sesuai skema. Tanpa teks lain.`;

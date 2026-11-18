@@ -30,7 +30,7 @@ vi.mock('../src/db/client.js', () => ({ getDb: () => ({ execute: async () => ({ 
 
 const DIR = '/uploads/__photomatch_test__';
 const product = (name: string, imageUrl: string | null, variantImages: (string | null)[] = []) => ({
-  id: name, name, imageUrl, brand: { name: 'Blossom' },
+  id: name, name, imageUrl, brand: { name: 'Imperial Indopack' },
   variants: variantImages.map((u, i) => ({ id: `${name}-${i}`, name: `V${i}`, imageUrl: u })),
 }) as never;
 
@@ -66,54 +66,39 @@ describe('comparing', () => {
   it('compares only products that have a photo, product photo first, and returns the verdict', async () => {
     const { matchCustomerPhoto } = await load();
     mockSearch.mockResolvedValue([
-      product('GEMBOK KOTAK CHROME PANJANG', `${DIR}/a.png`),
-      product('GEMBOK TANPA FOTO', null),
-      product('GEMBOK BULAT PUTIH', null, [`${DIR}/b.png`]),
+      product('BOX KUE KRAFT JENDELA', `${DIR}/a.png`),
+      product('BOX KUE TANPA FOTO', null),
+      product('BOX KUE IVORY 20X20', null, [`${DIR}/b.png`]),
     ]);
-    verdict({ match: 'B', certainty: 'similar', reason: 'bulat, warna putih' });
+    verdict({ match: 'B', certainty: 'similar', reason: 'kotak, karton putih' });
 
-    const m = await matchCustomerPhoto(customer, ['gembok', 'putih'], 'ada ini kak?');
+    const m = await matchCustomerPhoto(customer, ['box', 'putih'], 'ada ini kak?');
 
     const content = mockCreate.mock.calls[0]![0].messages[0].content as { type: string; text?: string }[];
     const labels = content.filter((c) => c.text?.startsWith('FOTO KATALOG')).map((c) => c.text);
-    // Pictures only, lettered: a product name next to the photo steered the pick (2026-10-12).
+    // Pictures only, lettered: a product name next to the photo steered the pick.
     expect(labels).toEqual(['FOTO KATALOG A:', 'FOTO KATALOG B:']);
-    expect(JSON.stringify(content)).not.toContain('GEMBOK');
+    expect(JSON.stringify(content)).not.toContain('BOX KUE');
     expect(content.filter((c) => c.type === 'image')).toHaveLength(3); // customer + two references
-    expect(m).toMatchObject({ certainty: 'similar', product: { name: 'GEMBOK BULAT PUTIH', imageUrl: `${DIR}/b.png` } });
-    expect(m!.compared).toEqual(['GEMBOK KOTAK CHROME PANJANG', 'GEMBOK BULAT PUTIH']);
+    expect(m).toMatchObject({ certainty: 'similar', product: { name: 'BOX KUE IVORY 20X20', imageUrl: `${DIR}/b.png` } });
+    expect(m!.compared).toEqual(['BOX KUE KRAFT JENDELA', 'BOX KUE IVORY 20X20']);
   });
 
   it('ranks among photographed products only, without the caption\'s chat filler', async () => {
-    // Prod 2026-10-09: a top-25 search filtered to photographed products afterwards left one
-    // candidate - every handle name matched "handle", and the photographed one ranked below 25.
+    // A top-25 search filtered to photographed products afterwards can leave one candidate - every
+    // box name matches "box", and the photographed one ranks below 25.
     const { pickCandidates } = await load();
     mockSearch.mockResolvedValue([]);
-    await pickCandidates(['handle', 'pintu'], 'yang kaya gini ada ga? guangzhou');
-    expect(mockSearch).toHaveBeenCalledWith({ keywords: ['handle', 'pintu', 'guangzhou'], limit: 20, withPhoto: true });
-  });
-
-  // Live 2026-10-15: our own SATURNUS photo, described "rosette persegi", was not among the 20 compared.
-  it('adds the catalog\'s style word for what the photo words describe', async () => {
-    const { shortlistTerms, pickCandidates } = await load();
-    for (const seen of ['rosette persegi', 'rosset persegi', 'roset bulat'])
-      expect(shortlistTerms(['handle', seen, 'silver'], 'mau beli ini dong, ada ga?')).toContain('pisah');
-    expect(shortlistTerms(['handle', 'plat panjang', 'silver'], 'ada ga?')).not.toContain('pisah');
-    // ALEXANDER's long plate, as the vision step described it 6/6
-    expect(shortlistTerms(['handle', 'roset', 'plat panjang', 'roset persegi panjang'], 'kalau ini?')).not.toContain('pisah');
-    expect(shortlistTerms(['handle', 'pisah', 'roset kotak'], '').filter((t) => t === 'pisah')).toHaveLength(1);
-
-    mockSearch.mockResolvedValue([]);
-    await pickCandidates(['handle', 'rosette persegi'], 'lagi cari ini');
-    expect(mockSearch.mock.calls[0]![0].keywords).toContain('pisah');
+    await pickCandidates(['box', 'kue'], 'yang kaya gini ada ga? jendela');
+    expect(mockSearch).toHaveBeenCalledWith({ keywords: ['box', 'kue', 'jendela'], limit: 20, withPhoto: true });
   });
 
   it('reports the words it searched with, for the log', async () => {
     const { matchCustomerPhoto } = await load();
-    mockSearch.mockResolvedValue([product('HANDLE PISAH SATURNUS', `${DIR}/a.png`)]);
+    mockSearch.mockResolvedValue([product('LUNCH BOX KRAFT', `${DIR}/a.png`)]);
     verdict({ match: 'A', certainty: 'same', reason: 'x' });
-    const m = await matchCustomerPhoto(customer, ['handle', 'rosette persegi'], 'ada ga?');
-    expect(m!.searched).toEqual(['handle', 'rosette persegi', 'pisah']);
+    const m = await matchCustomerPhoto(customer, ['lunch', 'kraft'], 'ada ga?');
+    expect(m!.searched).toEqual(['lunch', 'kraft']);
   });
 
   it('skips the whole step while no product has a photo - no search, no model call', async () => {
@@ -126,8 +111,8 @@ describe('comparing', () => {
 
   it('has nothing to say when none of the likely products has a photo', async () => {
     const { matchCustomerPhoto } = await load();
-    mockSearch.mockResolvedValue([product('GEMBOK TANPA FOTO', null)]);
-    expect(await matchCustomerPhoto(customer, ['gembok'], '')).toBeNull();
+    mockSearch.mockResolvedValue([product('BOX KUE TANPA FOTO', null)]);
+    expect(await matchCustomerPhoto(customer, ['box'], '')).toBeNull();
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
@@ -135,16 +120,13 @@ describe('comparing', () => {
     const { matchCustomerPhoto } = await load();
     mockSearch.mockResolvedValue([product('A', `${DIR}/a.png`)]);
     mockCreate.mockRejectedValue(new Error('429'));
-    expect(await matchCustomerPhoto(customer, ['gembok'], '')).toBeNull();
+    expect(await matchCustomerPhoto(customer, ['box'], '')).toBeNull();
   });
 });
 
-// Production 2026-10-12: with no SATURNUS among the candidates, Haiku called our SATURNUS photo
-// "same ALEXANDER". The Claude Code route compares on Sonnet, and on Haiku only when it must.
-// Live 2026-10-25: customers' photos were whole phone screenshots (720x1600) of marketplace and TikTok
-// listings, shrunk to 240x512 for the comparison - the handle a ~200px patch among prices and buttons.
-// Black plate handles came back "silver" and similar to our silver AUSTENIC / KOBE, a black window
-// rambuncis similar to our OVERVAL PLAT and GRENDEL ALUMINIUM.
+// Customers' photos are often whole phone screenshots (720x1600) of marketplace and TikTok listings,
+// shrunk to 240x512 for the comparison - the product a ~200px patch among prices and buttons, where
+// colour and shape are misread.
 describe('the customer photo, cropped to the product', () => {
   // 400x800 with an app bar at top and bottom (so framed()'s border trim cannot do the crop itself),
   // a red product at x 100-200, y 500-600: box [25, 62.5, 50, 75] in percent.
@@ -180,10 +162,10 @@ describe('the customer photo, cropped to the product', () => {
 
   it('compares the cropped photo, not the whole screenshot', async () => {
     const { matchCustomerPhoto } = await load();
-    mockSearch.mockResolvedValue([product('GEMBOK KOTAK CHROME PANJANG', `${DIR}/a.png`)]);
+    mockSearch.mockResolvedValue([product('BOX KUE KRAFT JENDELA', `${DIR}/a.png`)]);
     verdict({ match: null, certainty: 'none', reason: 'x' });
 
-    await matchCustomerPhoto(await screenshot(), ['gembok'], '', { box: [25, 62.5, 50, 75], category: 'gembok' });
+    await matchCustomerPhoto(await screenshot(), ['box'], '', { box: [25, 62.5, 50, 75], category: 'box kue' });
 
     const content = mockCreate.mock.calls[0]![0].messages[0].content as { type: string; source?: { data: string } }[];
     const shown = await sharp(Buffer.from(content.find((c) => c.type === 'image')!.source!.data, 'base64')).metadata();
@@ -192,48 +174,47 @@ describe('the customer photo, cropped to the product', () => {
   });
 });
 
-// Live 2026-10-25 a black window rambuncis (we sell none) was "similar OVERVAL PLAT"; replayed with the
-// photo cropped it was "similar" or even "same" DOOR STOP 4 times in 5 - our door stop is a lever on a
-// round base too. The prompt, a same-type question and category labels all failed to stop it, while the
-// vision step called the item "panolet / rambuncis" 5 times in 6. So a pick must share a word with that.
+// A photo of an item we do not sell (a plastic cup) can come back "similar" or even "same" to a product
+// of roughly the same shape; the prompt alone does not stop it, while the vision step names the item's
+// type reliably. So a pick must share a word with that.
 describe('a pick of a different type of item than the vision step saw', () => {
   const typed = (name: string, url: string, category: string, kataKunci: string) =>
     ({ ...(product(name, url) as object), category: { name: category }, kataKunci }) as never;
-  const doorStop = () => typed('DOOR STOP VINTAGE', `${DIR}/a.png`, 'Door Stop', 'Penahan pintu\nStopper pintu\nDoor holder\nMagnetic door stop');
-  const plateHandle = () => typed('HANDLE BESAR HITAM + BODY HITAM VINTAGE ALEXANDER', `${DIR}/a.png`, 'Door Handle Besar', 'Handle pintu besar\nLong plate door handle');
+  const paperBag = () => typed('PAPER BAG KRAFT TALI', `${DIR}/a.png`, 'Paper Bag', 'Tas kertas\nShopping bag\nKemasan takeaway makanan');
+  const cakeBox = () => typed('BOX KUE IVORY 20X20 CETAK', `${DIR}/a.png`, 'Box Kue', 'Box cake\nKotak kue\nKemasan kue cetak');
 
   it('is dropped when its catalog text shares no word with what the vision step called the item', async () => {
     const { matchCustomerPhoto } = await load();
-    mockSearch.mockResolvedValue([doorStop()]);
+    mockSearch.mockResolvedValue([paperBag()]);
     for (const certainty of ['similar', 'same']) {
-      verdict({ match: 'A', certainty, reason: 'bentuk dasar bulat' });
-      const m = await matchCustomerPhoto(customer, ['panolet'], '', { box: null, category: 'panolet / rambuncis jendela' });
+      verdict({ match: 'A', certainty, reason: 'bentuk tinggi, ada pegangan' });
+      const m = await matchCustomerPhoto(customer, ['gelas'], '', { box: null, category: 'gelas plastik / cup' });
       expect(m).toMatchObject({ certainty: 'none', product: null });
-      expect(m!.reason).toContain('panolet / rambuncis jendela'); // the log says why
+      expect(m!.reason).toContain('gelas plastik / cup'); // the log says why
     }
   });
 
-  it('does not count "pintu": nearly every product says it', async () => {
+  it('does not count "kemasan" or "makanan": nearly every product says it', async () => {
     const { matchCustomerPhoto } = await load();
-    mockSearch.mockResolvedValue([doorStop()]);
+    mockSearch.mockResolvedValue([paperBag()]);
     verdict({ match: 'A', certainty: 'similar', reason: 'x' });
-    expect(await matchCustomerPhoto(customer, ['engsel'], '', { box: null, category: 'engsel pintu' })).toMatchObject({ certainty: 'none' });
+    expect(await matchCustomerPhoto(customer, ['thinwall'], '', { box: null, category: 'thinwall kemasan makanan' })).toMatchObject({ certainty: 'none' });
   });
 
   it('stands when the item word is in the product name, category or kata kunci', async () => {
     const { matchCustomerPhoto } = await load();
-    mockSearch.mockResolvedValue([plateHandle()]);
+    mockSearch.mockResolvedValue([cakeBox()]);
     verdict({ match: 'A', certainty: 'similar', reason: 'x' });
-    expect(await matchCustomerPhoto(customer, ['handle'], '', { box: null, category: 'handle pintu' }))
-      .toMatchObject({ certainty: 'similar', product: { name: 'HANDLE BESAR HITAM + BODY HITAM VINTAGE ALEXANDER' } });
-    mockSearch.mockResolvedValue([doorStop()]);
-    expect(await matchCustomerPhoto(customer, ['stopper'], '', { box: null, category: 'penahan pintu magnet' }))
-      .toMatchObject({ certainty: 'similar', product: { name: 'DOOR STOP VINTAGE' } });
+    expect(await matchCustomerPhoto(customer, ['box'], '', { box: null, category: 'box kue' }))
+      .toMatchObject({ certainty: 'similar', product: { name: 'BOX KUE IVORY 20X20 CETAK' } });
+    mockSearch.mockResolvedValue([paperBag()]);
+    expect(await matchCustomerPhoto(customer, ['tas'], '', { box: null, category: 'tas kertas belanja' }))
+      .toMatchObject({ certainty: 'similar', product: { name: 'PAPER BAG KRAFT TALI' } });
   });
 
   it('stands when the vision step named no item', async () => {
     const { matchCustomerPhoto } = await load();
-    mockSearch.mockResolvedValue([doorStop()]);
+    mockSearch.mockResolvedValue([paperBag()]);
     verdict({ match: 'A', certainty: 'similar', reason: 'x' });
     expect(await matchCustomerPhoto(customer, ['x'], '', { box: null, category: '' })).toMatchObject({ certainty: 'similar' });
     expect(await matchCustomerPhoto(customer, ['x'], '')).toMatchObject({ certainty: 'similar' });
@@ -242,30 +223,30 @@ describe('a pick of a different type of item than the vision step saw', () => {
 
 describe('the words the shortlist is searched with', () => {
   it('leaves out the placeholder an uncaptioned photo is stored with', async () => {
-    // Live 2026-10-25: "pelanggan, mengirim, foto, analisis, gambar, terlampir" were searched as words.
+    // "pelanggan, mengirim, foto, analisis, gambar, terlampir" must not be searched as product words.
     const { shortlistTerms } = await load();
-    expect(shortlistTerms(['handle', 'hitam'], '[Pelanggan mengirim foto — analisis gambar terlampir]')).toEqual(['handle', 'hitam']);
+    expect(shortlistTerms(['box', 'kraft'], '[Pelanggan mengirim foto — analisis gambar terlampir]')).toEqual(['box', 'kraft']);
   });
 });
 
 describe('the product box the vision step returns', () => {
   it('reads a box in percent, and drops a malformed one without losing the keywords', async () => {
     const { parseVisionExtract } = await import('../src/services/visionKeywords.js');
-    const base = { confidence: 'high', primary_category: 'handle pintu' };
+    const base = { confidence: 'high', primary_category: 'box kue' };
     expect(parseVisionExtract(JSON.stringify({ ...base, product_box: [10, 20, 60, 80] })).product_box).toEqual([10, 20, 60, 80]);
     for (const bad of [[60, 20, 10, 80], [10, 20, 160, 80], [10, 20, 60], 'kiri atas', null]) {
       const v = parseVisionExtract(JSON.stringify({ ...base, product_box: bad }));
       expect(v.product_box).toBeNull();
-      expect(v.primary_category).toBe('handle pintu');
+      expect(v.primary_category).toBe('box kue');
     }
   });
 
-  // Replay 2026-10-27: a reply with no product_box key at all failed the whole parse, keywords included.
+  // A reply with no product_box key at all must not fail the whole parse, keywords included.
   it('reads an extract that has no product_box key at all', async () => {
     const { parseVisionExtract } = await import('../src/services/visionKeywords.js');
-    const v = parseVisionExtract(JSON.stringify({ confidence: 'high', primary_category: 'grendel' }));
+    const v = parseVisionExtract(JSON.stringify({ confidence: 'high', primary_category: 'paper bag' }));
     expect(v.product_box).toBeNull();
-    expect(v.primary_category).toBe('grendel');
+    expect(v.primary_category).toBe('paper bag');
   });
 });
 
@@ -273,15 +254,15 @@ describe('which model compares, on the Claude Code route', () => {
   it('asks Sonnet, and falls back to the reply model when Sonnet is unavailable', async () => {
     const { matchCustomerPhoto } = await load();
     devMode = true;
-    mockSearch.mockResolvedValue([product('GEMBOK KOTAK CHROME PANJANG', `${DIR}/a.png`)]);
+    mockSearch.mockResolvedValue([product('BOX KUE KRAFT JENDELA', `${DIR}/a.png`)]);
     mockAgentQuery
       .mockRejectedValueOnce(new Error("You've hit your limit for Sonnet"))
       .mockResolvedValueOnce('{"match": "A", "certainty": "same", "reason": "x"}');
 
-    const m = await matchCustomerPhoto(customer, ['gembok'], '');
+    const m = await matchCustomerPhoto(customer, ['box'], '');
 
     expect(mockAgentQuery.mock.calls.map((c) => c[0].model)).toEqual(['sonnet', undefined]);
-    expect(m).toMatchObject({ certainty: 'same', product: { name: 'GEMBOK KOTAK CHROME PANJANG' } });
+    expect(m).toMatchObject({ certainty: 'same', product: { name: 'BOX KUE KRAFT JENDELA' } });
   });
 });
 
@@ -318,7 +299,7 @@ describe('the note the reply model reads', () => {
     expect(n).toMatch(/\[FOTO REFERENSI TERSEDIA\], salin url-nya ke image_urls/);
     expect(n).not.toContain('/a.jpg');
   });
-  // Live 2026-10-14: an earlier photo's verdict, replayed in the history, beat this one unscoped.
+  // An earlier photo's verdict, replayed in the history, must not beat this one unscoped.
   it('every verdict says it is for the latest photo, not one earlier in the chat', async () => {
     const { photoMatchNote } = await load();
     const p = { name: 'A', brand: null, imageUrl: '/a.jpg' };
@@ -354,8 +335,8 @@ describe('the note for photos sent together', () => {
 describe('what a later turn knows about the photo', () => {
   it('the verdict when there is one, else what the photo showed', async () => {
     const { photoHistoryNote } = await load();
-    const p = { name: 'HANDLE PISAH STAINLESS STEEL + BODY 1231 VINTAGE SATURNUS', brand: 'Vintage', imageUrl: '/x.jpg' };
-    expect(photoHistoryNote({ certainty: 'same', product: p, compared: [p.name], reason: '' }, ['handle'])).toBe(`produk kami ${p.name} (foto sama)`);
+    const p = { name: 'BOX KUE IVORY 20X20 CETAK FULL COLOR', brand: 'Imperial Indopack', imageUrl: '/x.jpg' };
+    expect(photoHistoryNote({ certainty: 'same', product: p, compared: [p.name], reason: '' }, ['box'])).toBe(`produk kami ${p.name} (foto sama)`);
     // Since 2026-11-11 an unconfirmed photo went to the team, so a later turn offers nothing on its strength
     // either - neither a product (the "mirip" candidate) nor a denial (review 2026-10-13: an unnamed
     // "mirip" read as "not carried"). The customer's own words still decide.
@@ -363,9 +344,9 @@ describe('what a later turn knows about the photo', () => {
     expect(similar).toMatch(/belum bisa dipastikan produk kami - tim sedang mengecek/);
     expect(similar).toMatch(/jangan menawarkan, menyebut, atau menolak produk/);
     expect(similar).toContain(`mirip ${p.name}, belum pasti`);
-    const none = photoHistoryNote({ certainty: 'none', product: null, compared: [p.name], reason: '' }, ['engsel', 'pintu']);
-    expect(none).toMatch(/^belum bisa dipastikan produk kami[^]*; isi foto: engsel, pintu$/);
-    expect(photoHistoryNote(null, ['engsel', 'pintu'])).toMatch(/^belum bisa dipastikan produk kami[^]*; isi foto: engsel, pintu$/);
+    const none = photoHistoryNote({ certainty: 'none', product: null, compared: [p.name], reason: '' }, ['box', 'kraft']);
+    expect(none).toMatch(/^belum bisa dipastikan produk kami[^]*; isi foto: box, kraft$/);
+    expect(photoHistoryNote(null, ['box', 'kraft'])).toMatch(/^belum bisa dipastikan produk kami[^]*; isi foto: box, kraft$/);
   });
 });
 

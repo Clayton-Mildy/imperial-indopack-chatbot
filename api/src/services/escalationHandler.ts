@@ -64,19 +64,19 @@ type RecentRow = { role: string; body: string };
 // ponytail: the two scans below are heuristics, not parsing. A miss costs one question, asked once
 // (the `fresh` rule above); a false hit skips one. Widen the unit list if live chats show misses.
 
-// "20 set newton", "3 karton", "10 buah", "2 pintu", or a bare number answering "berapa banyak?"
-// ("20", "1 aja", "100 kak"). Not a size ("30mm", "3 inch"), a price ("150rb") or a phone number.
-// "koli"/"colly" is how resellers count cartons; missing it, Kak Rei's "campur 10 koli" (2026-10-08) drew
-// "kebutuhannya berapa banyak?" on every hand-off.
+// "10 rim", "2500 pcs", "500 lembar", "3 karton", "10 box", or a bare number answering "berapa banyak?"
+// ("20", "1 aja", "100 kak"). Not a size ("30x30", "30mm"), a price ("150rb") or a phone number.
+// "koli"/"colly" is how some buyers count cartons ("campur 10 koli"); a missed unit means the hand-off
+// asks "berapa banyak?" again right after the customer said it.
 const QUANTITY_RE =
-  /\b\d{1,4}\s*(?:pcs|pc|biji|buah|unit|set|pasang|lusin|lsn|karton|ctn|dus|box|koli|colly|coli|roll|pintu|jendela)\b|^\s*\d{1,4}\s*(?:aja|saja|dulu|kak|ka|pak|bu|ya|deh|dong)?\s*(?:[,.!?]|$)/im;
+  /\b\d{1,4}\s*(?:rim|lembar|lbr|pcs|pc|biji|buah|unit|set|pasang|lusin|lsn|karton|ctn|dus|box|pack|koli|colly|coli|roll)\b|^\s*\d{1,4}\s*(?:aja|saja|dulu|kak|ka|pak|bu|ya|deh|dong)?\s*(?:[,.!?]|$)/im;
 
 // A number with no unit, read as a quantity only from its context: "300 an" / "300an" (about 300),
 // a need word right before it ("kebutuhan kurang lebih 300", "butuh sekitar 50"), or a per-item
-// split after it ("300 per ukuran"). Live 2026-10-07 a project buyer wrote "kebutuhan kurang lebih
-// 300 an per ukuran", the model said "sudah saya catat" without saving it, and the hand-off a minute
-// later asked "kebutuhannya berapa banyak?". A bare number still is not a quantity - "uk 25" is a
-// size and "587" a model code - and a size, price or decimal right after the number never is.
+// split after it ("300 per ukuran"). A buyer who wrote "kebutuhan kurang lebih 300 an per ukuran" has
+// answered, even when the model said "sudah saya catat" without saving it - the hand-off must not ask
+// "berapa banyak?" a minute later. A bare number still is not a quantity - "uk 25" is a size and "587"
+// a model code - and a size, price or decimal right after the number never is.
 const QUANTITY_CONTEXT_RE = new RegExp(
   [
     String.raw`\b\d{1,5}\s*-?\s*an\b`,
@@ -90,9 +90,9 @@ export function mentionsQuantity(text: string): boolean {
   return QUANTITY_RE.test(text) || QUANTITY_CONTEXT_RE.test(text);
 }
 
-// The model asks for the store in its own words ("Nama toko atau usaha Pak Rudi?"), so a pattern on
-// the customer's text alone ("toko ...") would read "toko bangunan di Surabaya" as a name, and
-// "ud"/"tb"/"cv" are chat slang. The customer's reply to that question is the answer.
+// The model asks for the business in its own words ("Nama toko atau usahanya apa kak?"), so a pattern
+// on the customer's text alone ("toko ...") would read "toko kue di Surabaya" as a name, and
+// "ud"/"cv" are chat slang. The customer's reply to that question is the answer.
 const ASKS_STORE_NAME_RE = /nama\s+(?:toko|usaha)|tokonya\s+apa/i;
 
 function answeredStoreName(recent: RecentRow[]): boolean {
@@ -100,13 +100,10 @@ function answeredStoreName(recent: RecentRow[]): boolean {
     && recent[i - 1]!.role === 'assistant' && ASKS_STORE_NAME_RE.test(recent[i - 1]!.body));
 }
 
-// The model picks the key from profile_update's field list, which files 'quantity' under End-user
-// fields and 'estimated_volume' under Reseller fields - so a RESELLER who answers the quantity
-// question with a plain number ("3 set aja masing2") gets whichever key the model thinks fits, and
-// an exact two-key check missed the other spellings entirely. Live symptom: the ack asked
-// "kira-kira kebutuhannya berapa banyak ya kak?" three minutes AFTER the customer answered it.
-// Matching is a substring of the normalized key, so quantity / estimated_volume / order_qty /
-// estimated_quantity / jumlah_unit all count as "we already know".
+// Older profiles hold the quantity as a top-level fact under whatever key the model picked, so an exact
+// key check misses spellings and the ack asks "kira-kira mau pesan berapa banyak?" minutes AFTER the
+// customer answered it. Matching is a substring of the normalized key, so quantity / estimated_volume /
+// order_qty / estimated_quantity / jumlah_unit all count as "we already know".
 const QUANTITY_KEYS = ['quantity', 'qty', 'jumlah', 'volume'];
 
 function hasNoFact(facts: Record<string, unknown>, keys: string[]): boolean {
@@ -181,29 +178,28 @@ export async function escalateConversation(
 }
 
 // After-sales trouble. Only shapes the WORDING of a hand-off the model already chose - an apology,
-// no sales question - and never escalates on its own: "handle saya rusak, mau ganti" is a sale.
-// Live (UAT E-05): "engsel yang saya beli bulan lalu sudah berkarat" got "kira-kira kebutuhannya
-// berapa banyak ya kak?" appended to the hand-off.
-// No bare "karat" or "garansi": "yang anti karat ada?" and "garansinya berapa lama?" are sales questions.
+// no sales question - and never escalates on its own: "box yang kemarin rusak, mau pesan lagi" is a
+// sale. A complaint about an earlier order must not get "kira-kira mau pesan berapa banyak?" appended
+// to the hand-off.
+// No bare "garansi": "garansinya berapa lama?" is a sales question.
 // ponytail: keyword list, not intent - an escalated replacement enquiry gets the apology too.
 const COMPLAINT_RE =
-  /\b(?:komplain|complain|keluhan|klaim\s+garansi|retur|refund|kecewa|berkarat|karatan|cacat|rusak|patah|macet|(?:tidak|nggak|ngga|gak|ga)\s+berfungsi)\b/i;
+  /\b(?:komplain|complain|keluhan|klaim\s+garansi|retur|refund|kecewa|cacat|rusak|patah|macet|(?:tidak|nggak|ngga|gak|ga)\s+berfungsi)\b/i;
 
 export function detectComplaint(message: string): boolean {
   return COMPLAINT_RE.test(message);
 }
 
-// A job seeker is not a sale (UAT Run 2 G-07: "masih ada lowongan driver?" was asked whether it was
-// for "dipakai sendiri, untuk proyek, atau dijual lagi"). Not "loker" - that is also a locker, which
-// padlocks are bought for - and not "supplier": "cari supplier engsel" is a reseller lead.
-// "loker" only in a job sense ("loker gudang", "info loker", "masih ada loker"), and CV only as in
-// "kirim CV" - "CV Maju Jaya" is a company, usually a reseller.
+// A job seeker is not a sale: "masih ada lowongan driver?" must not get a sales question. Not a bare
+// "loker" - that is also a locker ("box buat loker") - and not "supplier": "cari supplier kertas nasi"
+// is a buyer. "loker" only in a job sense ("loker gudang", "info loker", "masih ada loker"), and CV
+// only as in "kirim CV" - "CV Maju Jaya" is a company, usually a buyer.
 const JOB_ENQUIRY_RE = new RegExp([
   String.raw`\b(?:lowongan|lowker|lamaran|melamar|rekrut\w*|vacancy|hiring|magang)\b`,
-  // "gembok buat loker kantor" is a padlock for a locker - so never right after buat/untuk/gembok/kunci.
-  String.raw`(?<!(?:buat|untuk|gembok|kunci)\s)\bloker\s+(?:gudang|sales|admin|driver|kerja|staf+|karyawan|kurir|helper|operator)\b`,
+  // "box buat loker kantor" is for a locker - so never right after buat/untuk.
+  String.raw`(?<!(?:buat|untuk)\s)\bloker\s+(?:gudang|sales|admin|driver|kerja|staf+|karyawan|kurir|helper|operator)\b`,
   String.raw`\b(?:info|buka|masih\s+(?:ada|buka))\s+loker\b`,
-  // not "cari kerja sama" - a partnership or a reseller (review 2026-10-13)
+  // not "cari kerja sama" - a partnership or a buyer who resells (review 2026-10-13)
   String.raw`\b(?:cari|mencari|nyari|butuh)\s+(?:kerja(?!\s*sama)|kerjaan|pekerjaan)\b`,
   String.raw`\b(?:butuh|cari|terima|menerima|buka)\s+karyawan\b`,
   String.raw`\bkirim\s+(?:cv|lamaran)\b`, String.raw`\bposisi\s+kosong\b`, String.raw`\bdaftar\s+(?:jadi\s+)?karyawan\b`,
@@ -227,33 +223,37 @@ const ORDER_FOLLOWUP_RE = new RegExp([
   String.raw`\b(?:${MARKETPLACES})\b[^\n]{0,40}\b(?:kapan\s+dikirim|belum\s+(?:dikirim|sampai|datang)|resi)\b`,
 ].join('|'), 'i');
 
-// Someone selling TO us. Not a bare "supplier": "cari supplier engsel" is a reseller lead.
+// Our own names as a supplier writes them: the company or either brand ("PT Imperial Indopack",
+// "Kertas Supreme"). Only after supplier/kebutuhan wording - a buyer names the brands all the time.
+const OUR_NAME = String.raw`(?:pt\.?\s*)?(?:imperial(?:\s*indopack)?|kertas\s+supreme)`;
+
+// Someone selling TO us. Not a bare "supplier": "cari supplier kertas nasi" is a buyer.
 const PARTNERSHIP_OFFER_RE = new RegExp([
   String.raw`\b(?:menawarkan|tawarkan|tawarin|penawaran)\s+kerja\s*sama\b`,
   String.raw`\b(?:kontak|hubungi|menghubungi)\s+(?:bagian|tim|divisi)?\s*(?:purchasing|pembelian|procurement|pengadaan)\b`,
   String.raw`\b(?:bagian|tim|divisi)\s+(?:purchasing|procurement|pengadaan)\b`,
   String.raw`\bkami\s+(?:dari\s+)?(?:pt|cv)\b[^.?!\n]{0,40}\b(?:supplier|pabrik|produsen|vendor)\b`,
-  // Live 2026-10-31, a plastics factory: "Kami ingin coba menjajaki kebutuhan palstik untuk outer
-  // produk di Legacy". Exploring OUR needs is seller's language; a buyer has needs of their own.
+  // A plastics factory: "Kami ingin coba menjajaki kebutuhan plastik untuk produk di perusahaan
+  // bapak". Exploring OUR needs is seller's language; a buyer has needs of their own.
   String.raw`\bmenjajaki\s+kebutuhan\b`,
   String.raw`\b(?:menawarkan|tawarkan|tawarin)\s+(?:produk|jasa|barang|layanan)\s+(?:kami|kita)\b`,
   String.raw`\b(?:jadi|menjadi)\s+(?:supplier|pemasok|vendor)\b`,
-  String.raw`\b(?:supplier|pemasok|vendor)\s+(?:untuk|bagi|ke)\s+(?:pt\.?\s*)?legacy\b`,
+  String.raw`\b(?:supplier|pemasok|vendor)\s+(?:untuk|bagi|ke)\s+${OUR_NAME}\b`,
 ].join('|'), 'i');
 
 // A factory or supplier introducing itself ("Kami dari pabrik plastik kantongan, shrink, stretch film").
-// Not enough alone - a garment factory buying hinges for its warehouse says the same - so it counts
-// only with an offer, and the two may come in different messages: the factory says what it makes in
+// Not enough alone - a bakery buying boxes for its cakes says the same ("kami pabrik roti") - so it
+// counts only with an offer, and the two may come in different messages: the factory says what it makes in
 // one and asks "Terkait kebutuhan plastik kami bisa menghubungi kemana ya kak?" three minutes later.
 // "minta penawaran" is a buyer asking for a quote, so the offer is OUR side being offered something.
 const SUPPLIER_SELF_ID_RE =
   /\b(?:kami|saya)\s+(?:dari\s+|adalah\s+)?(?:(?:pt|cv)\.?\s+[^,.?!\n]{1,40}?\s+(?:yang\s+)?)?(?:pabrik|produsen|manufaktur|supplier|pemasok|vendor)\b/i;
 const SUPPLIER_OFFER_RE = new RegExp([
-  // Not "produk kami": a furniture factory buys "engsel untuk produk kami". Not "menawarkan harga":
-  // that is a buyer asking us for one.
+  // Not "produk kami": a food factory buys "box untuk produk kami". Not "menawarkan harga": that is
+  // a buyer asking us for one.
   String.raw`\b(?:menawarkan|tawarkan|tawarin)\b(?!\s+harga)`,
   String.raw`\bkebutuhan\s+\w+(?:\s+\w+)?\s+(?:kami\s+)?(?:bisa|boleh)\s+(?:menghubungi|hubungi|kontak)\b`,
-  String.raw`\bkebutuhan\b[^,.?!\n]{0,40}\b(?:di|untuk|bagi)\s+(?:pt\.?\s*)?legacy\b`,
+  String.raw`\bkebutuhan\b[^,.?!\n]{0,40}\b(?:di|untuk|bagi)\s+${OUR_NAME}\b`,
 ].join('|'), 'i');
 
 /**
@@ -263,14 +263,13 @@ const SUPPLIER_OFFER_RE = new RegExp([
  * but a later hand-off in the same chat is still a sale in progress.
  */
 // A courier or marketplace pickup, not a buyer: this number is also the sender number on the team's
-// marketplace listings, so drivers write to it ("grab / mau ambil pesanan", live 2026-10-12, answered
-// with "dipakai sendiri, untuk proyek, atau dijual lagi?"). Owner's call 2026-10-13: straight to the
-// team, no sales question. Narrow on purpose - a buyer says "saya ambil 10" or "mau order", and
+// marketplace listings, so drivers write to it ("grab / mau ambil pesanan"), and must not get a sales
+// question. Owner's call 2026-10-13: straight to the team, no sales question. Narrow on purpose - a buyer says "saya ambil 10" or "mau order", and
 // "bisa kirim pakai jne?" is a shipping question mid-sale, so a courier name only counts when it
 // opens a line ("grab", "jne ada paket") or follows dari/driver/kurir/abang.
 // Not a bare "shopee": "saya lihat dari shopee", "shopee nya apa?" are buyers (review 2026-10-13). And a
 // courier name at the start of a line counts only ALONE ("grab") or with courier words ("jne ada paket") -
-// "jne bisa kirimnya?" is a shipping question and "grab bar" is a product.
+// "jne bisa kirimnya?" and "grab bisa kirim ke Bekasi?" are shipping questions.
 const COURIERS = String.raw`grab(?:\s*express)?|gojek|go-?send|maxim|lalamove|deliveree|borzo|paxel|shopee\s*express|spx|j\s*&\s*t|jnt|jne|si\s*cepat|anteraja|ninja\s*x?press|lion\s*parcel|id\s*express`;
 const COURIER_SELF_ID_RE = new RegExp([
   String.raw`(?:^|\n)\s*(?:saya\s+)?(?:${COURIERS})\s*[.!]*\s*(?:$|\n)`,
@@ -314,7 +313,7 @@ export function isNonSalesHandoff(message: string): boolean {
  * ("Penawaran menjadi supplier/kerja sama produk plastik") while none of its words matched
  * detectNonSalesTopic, so the hand-off still asked "kira-kira kebutuhannya berapa banyak ya kak?".
  * The tool asks for a "BUKAN PEMBELI:" prefix; the rest catches the model's prose and our own labels.
- * Not a bare "supplier": "customer mencari supplier engsel" is a reseller lead.
+ * Not a bare "supplier": "customer mencari supplier kertas nasi" is a buyer.
  */
 const NON_SALES_REASON_RE = new RegExp([
   String.raw`^\s*bukan\s+pembeli\b`,
@@ -344,9 +343,9 @@ export function isNonSalesReason(reason: string | null | undefined): boolean {
  */
 // ─── size questions ─────────────────────────────────────────────────────────
 
-// "pilihan panjangnya ada berapa?", "ukurannya berapa cm?", "berapa panjang handlenya?". Narrow on
-// purpose: "gembok panjang ada?" names a product (Blossom's Panjang 30) and "ukurannya 90 cm" states the
-// customer's own size - neither asks ours.
+// "pilihan ukurannya ada berapa?", "ukurannya berapa cm?", "berapa lebar kertasnya?". Narrow on
+// purpose: "box panjang ada?" may name a product and "ukurannya 30x30" states the customer's own size -
+// neither asks ours.
 const SIZE_WORD = '(?:panjang|ukuran|lebar|tinggi|diameter|dimensi)';
 const ASKS_RE = /\?|\b(?:berapa|brp|brpa|brapa|apa\s*(?:saja|aja)|ada\s*(?:apa|berapa))\b/i;
 const SIZE_QUESTION_RES = [
@@ -355,8 +354,9 @@ const SIZE_QUESTION_RES = [
   new RegExp(`\\b(?:berapa|brp|brpa|brapa)\\s*(?:${SIZE_WORD}|cm|mm|senti|inch|inci)\\b`, 'i'),
   new RegExp(`\\b${SIZE_WORD}\\s*(?:berapa|brp|brpa|brapa|apa)\\b`, 'i'),
 ];
-// A size in the reply: "25 cm", "1,5mm", "16\"", "3/4 inch".
-const MEASUREMENT_RE = /\d+(?:[.,/]\d+)?\s*(?:mm|cm|meter|m\b|inch|inci|in\b|"|”|'')/i;
+// A size in the reply: "25 cm", "1,5mm", "16\"", or the catalog's p x l (x t) as written - "30 x 30",
+// "20x20x7,5" - which often carries no unit at all.
+const MEASUREMENT_RE = /\d+(?:[.,/]\d+)?\s*(?:mm|cm|meter|m\b|inch|inci|in\b|"|”|'')|\b\d+(?:[.,]\d+)?\s*[x×]\s*\d+(?:[.,]\d+)?\b/i;
 // The model's own "tim kami cek ukurannya" - one promise is enough.
 const TEAM_CHECKS_SIZE_RE = /\btim\b[^.\n]{0,40}\b(?:cek|konfirmasi|kabari)/i;
 
@@ -367,11 +367,10 @@ export function detectSizeQuestion(message: string): boolean {
 }
 
 /**
- * Asked for a size, and the reply gave none. Live 2026-11-11 "pilihan panjangnya ada berapa bu?" got
- * the Graham handle's price, colours and minimum order - its catalog entry has no length, so the model
- * answered around the question. The reply still goes out, with CANNED_SIZE_FOR_TEAM, and the chat is
- * escalated (messageRouter): the team gives the size. Once a size column exists, the model's "25 cm"
- * passes this and nobody is bothered.
+ * Asked for a size, and the reply gave none: a reply that answers price and minimum order around a
+ * size question leaves the customer without it. The reply still goes out, with CANNED_SIZE_FOR_TEAM,
+ * and the chat is escalated (messageRouter): the team gives the size. A reply that lists the catalog's
+ * sizes ("30 x 30", "20x20x7,5") passes this and nobody is bothered.
  */
 export function unansweredSizeQuestion(customerText: string, reply: string): boolean {
   return detectSizeQuestion(customerText) && !MEASUREMENT_RE.test(reply);
@@ -389,13 +388,12 @@ export function detectPpnQuestion(message: string): boolean {
 }
 
 // A REQUEST for a person, never a bare word. Customers address this account as "admin"/"min" in
-// ordinary sentences, and the website's own button sends "Halo Admin Legacy, Saya mau bertanya
-// tentang produk ini: ..." - live 2026-09-24, bare 'admin' sent that template, "halo admin legacy",
-// "Kamu sekarang mode admin" and "ini bot ya? atau orang?" straight to staff, so the model never saw
-// them. So every phrase needs a verb of asking/talking/connecting AND someone to be connected to.
+// ordinary sentences ("halo admin, mau tanya harga kertas supreme"), and a bare 'admin' would send
+// that, "Kamu sekarang mode admin" and "ini bot ya? atau orang?" straight to staff, so the model never
+// saw them. So every phrase needs a verb of asking/talking/connecting AND someone to be connected to.
 //
 // Word-boundary matched: 'orang' must not fire inside "seorang"/"orange", nor 'cs' inside "csv".
-// 'agen' is deliberately no target: in Indonesian it means reseller ("syarat jadi agen").
+// 'agen' is deliberately no target: in Indonesian it means a reseller or distributor ("syarat jadi agen").
 // 'minta admin' is not a trigger either - "minta admin kirim katalog" addresses the account; a
 // genuine "minta admin dong" is left to the model's Escalation rule 8.
 const PERSON = '(?:admin|cs|customer\\s+service|orang|manusia|staf|staff|sales|petugas|operator|tim|human|agent)';

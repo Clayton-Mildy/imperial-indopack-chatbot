@@ -122,6 +122,28 @@ describe('leads API for Imperial Indopack', () => {
     expect((await inject('PATCH', `/api/v1/leads/${leadA}`, { brands: ['nope'] })).statusCode).toBe(400);
   });
 
+  // Task 13 carry: staff items are stored the way the lead pass stores them.
+  it('staff PATCH takes a gsm typed as a number, trims product and size, and lists a brand once', async () => {
+    const res = await inject('PATCH', `/api/v1/leads/${leadA}`, {
+      brands: ['kertas_supreme', 'kertas_supreme', 'imperial_indopack'],
+      items: [{ product: '  Kertas Supreme  ', size: ' 30x30 ', gsm: 64, qty: 5, qty_unit: 'rim' }],
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.brands).toEqual(['kertas_supreme', 'imperial_indopack']);
+    expect(res.json().data.items).toEqual([{ product: 'Kertas Supreme', size: '30x30', gsm: '64', qty: 5, qty_unit: 'rim' }]);
+  });
+
+  it('the PATCH item schema: gsm as text or number, blanks dropped, no other gsm types', async () => {
+    const { PatchLeadBodySchema } = await import('../src/domain/schemas.js');
+    const items = (body: unknown) => PatchLeadBodySchema.parse({ items: [body] }).items;
+    expect(items({ product: 'Box', gsm: ' 270 ' })).toEqual([{ product: 'Box', gsm: '270' }]);
+    expect(items({ product: 'Box', gsm: 64.5 })).toEqual([{ product: 'Box', gsm: '64.5' }]);
+    expect(items({ product: '   ', size: '20x20' })).toEqual([{ product: undefined, size: '20x20' }]);
+    for (const gsm of [true, -64, Number.NaN, {}]) {
+      expect(PatchLeadBodySchema.safeParse({ items: [{ product: 'Box', gsm }] }).success, String(gsm)).toBe(false);
+    }
+  });
+
   it('/new clears the lock, so the lead pass can merge again', async () => {
     await resetLeadsForContact(contactA);
     expect((await getLeadById(leadA))!.orderFieldsSetAt).toBeNull();

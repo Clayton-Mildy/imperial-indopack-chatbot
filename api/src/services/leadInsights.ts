@@ -53,6 +53,9 @@ const textField = z.unknown().optional().transform((v): string | null => {
   if (Array.isArray(v)) return v.filter((x) => typeof x === 'string' || typeof x === 'number').join(', ') || null;
   return typeof v === 'string' ? v : null;
 });
+// A name the model did not find, written as a word: "unknown", "tidak diketahui", "-" would otherwise
+// fill the profile's name (and the hand-off would stop asking for it).
+const nameField = textField.transform((v) => (v !== null && NO_VALUE.has(v.trim().toLowerCase()) ? null : v));
 
 type AiStage = 'contacted' | 'won' | 'lost';
 const parseStage = (raw: unknown): AiStage | undefined => {
@@ -71,8 +74,8 @@ const InsightsObject = z.object({
   evidence: textField,
   lost_reason: enumField<LostReason>(parseLostReason),
   lead_temperature: enumField(parseTemperature),
-  name: textField,
-  business_name: textField,
+  name: nameField,
+  business_name: nameField,
   brands: z.array(z.unknown()).catch([]).transform((a) => a.filter((b): b is BrandSlug => b === 'imperial_indopack' || b === 'kertas_supreme')),
   items: z.array(OrderItemSchema).catch([]).transform((a) => a.filter((i): i is Record<string, unknown> => i !== null)),
 });
@@ -98,7 +101,7 @@ Isi data lead dari percakapan ini. Hanya dari apa yang benar-benar tertulis - ja
 - items: daftar barang yang diminta pelanggan, satu objek per barang: {"product": nama barang, "size": ukuran mis. "30x30", "gsm": gramatur, "print": cetakan/warna, "qty": jumlah (angka), "qty_unit": "rim" atau "pcs", "has_design": true bila pelanggan sudah punya desain, false bila belum}. Isi hanya field yang disebut. Kosongkan [] bila belum ada barang.
 
 - lead_kind: jenis percakapan ini. "lead" = calon pembeli (termasuk yang mencari barang yang tidak kami jual - barang yang tidak kami jual tetap lead). "kurir" = kurir / ojek online / pengantar paket. "status_pesanan" = menanyakan atau menagih pesanan, pembayaran, atau pengiriman yang sudah ada. "lamaran_kerja" = melamar kerja. "supplier" = pihak yang menawarkan barangnya kepada kami. "lainnya" = obrolan pribadi, salah sambung, spam. Pembeli yang menanyakan pesanan / pembayaran / pengiriman miliknya sendiri di chat yang sama tetap "lead", begitu juga pelanggan lama yang memesan lagi di chat ini. Bila bukan "lead", isi stage dengan null. Bila bukan calon pembeli sama sekali, field lain diabaikan.
-- stage (hanya bila lead_kind "lead"): "contacted" = pelanggan menyatakan kebutuhan atau menanyakan produk. "won" = pelanggan JELAS setuju membeli, mis. "oke saya ambil 2 lusin", minta nomor rekening, atau mengirim alamat pengiriman untuk pesanan; tanya harga atau "nanti saya kabari" BUKAN won. "lost" = pelanggan menolak, sudah membeli di tempat lain, atau menutup percakapan setelah kami bilang barangnya tidak ada (mis. "ok makasih" setelah "belum ada di kami"); diam / tidak membalas BUKAN lost. Bila ragu, isi null.
+- stage (hanya bila lead_kind "lead"): "contacted" = pelanggan menyatakan kebutuhan atau menanyakan produk. "won" = pelanggan JELAS setuju membeli, mis. "oke saya ambil 10 rim", minta nomor rekening, atau mengirim alamat pengiriman untuk pesanan; tanya harga atau "nanti saya kabari" BUKAN won. "lost" = pelanggan menolak, sudah membeli di tempat lain, atau menutup percakapan setelah kami bilang barangnya tidak ada (mis. "ok makasih" setelah "belum ada di kami"); diam / tidak membalas BUKAN lost. Bila ragu, isi null.
 - evidence: wajib bila stage "won" atau "lost" - salin PERSIS satu pesan Pelanggan (kata per kata, jangan diringkas, jangan memakai kata Bot atau Staf) yang menjadi buktinya. Selain itu null.
 - lost_reason (hanya bila stage "lost"): "barang_tidak_ada", "harga", "beli_di_tempat_lain", "tidak_jadi", "tidak_cocok", atau "lainnya".
 
@@ -127,7 +130,7 @@ async function askModel(system: string, content: string, label: string): Promise
 
 const ORDER_PROMPT = `Kamu membaca percakapan WhatsApp antara pelanggan dan tim penjualan Imperial Indopack / Kertas Supreme (box karton dan kertas bungkus makanan cetak). Setiap pesan Pelanggan diberi nomor, mis. [3]; pesan Staf dan Bot hanya konteks.
 
-Sebutkan nomor SETIAP pesan Pelanggan yang MEMESAN barang: pelanggan menyatakan memesan / mengambil / membeli barang tertentu dengan jumlahnya, mis. "Pesan Meteran F92 5mtr=1# Kuas cat 1=1#", "Mau pesan 20 pcs yg silver", "oke saya ambil 2 lusin". Pelanggan lama yang memesan berulang kali: sebutkan setiap pesanannya.
+Sebutkan nomor SETIAP pesan Pelanggan yang MEMESAN barang: pelanggan menyatakan memesan / mengambil / membeli barang tertentu dengan jumlahnya, mis. "Pesan box nasi 20x20 2000 pcs + kertas bungkus 30x30 5 rim", "Mau pesan 10 rim yg 64 gsm", "oke saya ambil 2500 pcs box kuenya". Pelanggan lama yang memesan berulang kali: sebutkan setiap pesanannya.
 
 Satu nomor per pesanan: pesan yang sama dikirim ulang, tambahan, atau ralat untuk pesanan yang sama BUKAN pesanan baru - sebutkan yang pertama saja. Tanya harga, tanya stok, minta penawaran, minta pengganti barang rusak, menagih pesanan lama, atau "nanti saya kabari" BUKAN pesanan.
 
@@ -275,8 +278,8 @@ function planKindAndStage(
     : (stage === 'won' || stage === 'lost') && insights.evidence ? matchEvidence(insights.evidence, userRows) : null;
   const at = (id: string) => rows.findIndex((m) => m.id === id);
   // A Lost must be the customer CLOSING the chat, not just a customer message: 6 of 7 Lost calls in
-  // the 2026-11-13 dry run quoted the customer's own opening question ("apa ada jual handle pintu
-  // passbox ya?", then silence), or a "Baik kk" they followed with a project. The evidence check
+  // a dry run quoted the customer's own opening question ("apa ada jual box ukuran ini ya?", then
+  // silence), or a "Baik kk" they followed with another order. The evidence check
   // passed them all - they are verbatim customer messages. So the evidence must answer something we
   // said, and the customer must not have gone on talking after it (a sign-off may follow).
   const closesChat = (hitAt: number): boolean =>
@@ -382,9 +385,9 @@ export function planLeadInsights(
     : insights.is_sales_conversation === false || (insights.lead_kind != null && insights.lead_kind !== 'lead');
   if (notASale) {
     // Nothing about a non-buyer belongs on the lead - except that a Hot the live bot set mid-chat
-    // must not outlive the verdict. Live 2026-10-09: Ika asked for PTA roofing screws, staff said we
-    // don't carry them, and the model answered cold AND "not a sale" four runs out of four; this
-    // early return threw the cold away and the lead stayed Hot.
+    // must not outlive the verdict. A customer asking for an item we do not carry, told so by staff,
+    // can be answered cold AND "not a sale"; this early return used to throw the cold away and the
+    // lead stayed Hot.
     if (insights.lead_temperature === 'cold') {
       plan.steps.push({ op: 'temperature', value: 'cold' });
       plan.wouldChange.push('temperature cold');
@@ -420,6 +423,8 @@ async function planFor(contactId: string, insights: LeadInsights, rows: Message[
 async function applyPlan(contactId: string, plan: InsightsPlan): Promise<void> {
   let lead = process.env['LEAD_STAGE_AI'] === '0' ? null : await findCurrentLeadForContact(contactId);
   let stageOpen = lead !== null;
+  // A stage this pass wrote leaves `lead` stale - a Lost written a step ago still reads as contacted.
+  let stageWritten = false;
   const orders: { messageId: string; evidence: string }[] = [];
   for (const step of plan.steps) {
     if (step.op === 'order') {
@@ -431,12 +436,13 @@ async function applyPlan(contactId: string, plan: InsightsPlan): Promise<void> {
       lead = await reopenOrRenewLostLead(lead, await getLeadReopenAfterDays(), step.evidence);
       if (lead.status === 'lost') stageOpen = false; // staff closed it inside the window
     } else if (step.op === 'stage') {
-      if (stageOpen && lead) await applyLeadStage(lead.id, step.change);
+      if (stageOpen && lead && await applyLeadStage(lead.id, step.change)) stageWritten = true;
     } else if (step.op === 'profile') {
       await fillContactProfileGaps(contactId, { facts: step.facts });
     } else if (step.op === 'order_fields') {
-      // Only a lead that is still open and is a buyer's: not a courier's, not one left Lost.
-      const target = lead ?? await findCurrentLeadForContact(contactId);
+      // Only a lead that is still open and is a buyer's: not a courier's, not one left Lost - read
+      // again when a step above changed it, so a Lost from this very pass counts.
+      const target = lead && !stageWritten ? lead : await findCurrentLeadForContact(contactId);
       if (target && target.kind === 'lead' && target.status !== 'lost') {
         await mergeLeadOrderFields(target.id, { brands: step.brands, items: step.items });
       }

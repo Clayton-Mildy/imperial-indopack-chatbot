@@ -36,7 +36,7 @@ vi.mock('../src/repositories/conversations.js', () => ({
   countConversationMessages: vi.fn(),
   getMessagesForSummary: vi.fn(),
 }));
-vi.mock('../src/services/replyChecks.js', () => ({ verifyReplyPrices: vi.fn() }));
+vi.mock('../src/services/replyChecks.js', () => ({ verifyReplyTieredPrices: vi.fn() }));
 
 const { warmPromptCache } = await import('../src/services/aiLayer.js');
 

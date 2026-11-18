@@ -1993,9 +1993,9 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('a complaint hand-off opens with an apology and asks no sales question', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_COMPLAINT_REPLY } = await import('../src/domain/constants.js');
-    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: 'Komplain karat' });
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: 'Komplain box rusak' });
 
-    await routeInboundBaileysMessage(makeTextPayload('wamid-CMP1', 'engsel yang saya beli bulan lalu sudah berkarat, gimana ini?'));
+    await routeInboundBaileysMessage(makeTextPayload('wamid-CMP1', 'box yang saya pesan bulan lalu banyak yang rusak, gimana ini?'));
     await vi.runAllTimersAsync();
 
     expect(mockEscalateConversation).toHaveBeenCalledTimes(1);
@@ -2098,7 +2098,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated' });
     mockGetContactProfile.mockResolvedValue({ customerType: null, profile: {} });
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, confidence: 'low' });
-    mockGetLastNMessages.mockResolvedValue([{ role: 'user', body: 'engselnya sudah berkarat kak' }]);
+    mockGetLastNMessages.mockResolvedValue([{ role: 'user', body: 'boxnya banyak yang rusak kak' }]);
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-CMP2', 'jadi gimana kak'));
     await vi.runAllTimersAsync();
