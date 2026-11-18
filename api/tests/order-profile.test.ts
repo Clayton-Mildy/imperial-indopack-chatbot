@@ -40,6 +40,26 @@ describe('mergeOrderFacts', () => {
   });
 });
 
+describe('mergeOrderFacts item validation', () => {
+  const items = (patch: Record<string, unknown>[]) => mergeOrderFacts({}, { items: patch }).items as OrderItem[];
+  it('coerces numeric product/size/gsm to strings', () =>
+    expect(items([{ product: 5, size: 30, gsm: 64 }])).toEqual([{ product: '5', size: '30', gsm: '64' }]));
+  it('drops object values', () =>
+    expect(items([{ product: 'Box', size: { a: 1 }, gsm: [1], print: {} }])).toEqual([{ product: 'Box' }]));
+  it('parses qty strings and drops bad qty / qty_unit', () => {
+    expect(items([{ product: 'A', qty: '10' }])[0]!.qty).toBe(10);
+    expect(items([{ product: 'A', qty: '2.500' }])[0]!.qty).toBe(2500);
+    expect(items([{ product: 'A', qty: {} }])[0]).toEqual({ product: 'A' });
+    expect(items([{ product: 'A', qty: 5, qty_unit: 'box' }])[0]).toEqual({ product: 'A', qty: 5 });
+    expect(items([{ product: 'A', qty_unit: 'Lembar', has_design: 'ya' }])[0]).toEqual({ product: 'A', qty_unit: 'pcs' });
+  });
+  it('drops an item with no product and no size', () =>
+    expect(items([{ qty: 3 }, { product: 'A' }])).toEqual([{ product: 'A' }]));
+  it('sanitises already-stored items when merging', () =>
+    expect(mergeOrderFacts({ items: [{ product: 5, qty: {} }] }, { items: [{ product: '5', qty: 2 }] }).items)
+      .toEqual([{ product: '5', qty: 2 }]));
+});
+
 describe('orderDetailsSummary', () => {
   it('summarises the details for staff', () =>
     expect(orderDetailsSummary({ name: 'Budi', business_name: 'RM Siang', items: [SUPREME_30] })).toBe(
@@ -50,6 +70,8 @@ describe('orderDetailsSummary', () => {
     expect(orderDetailsSummary({ items: [{ product: 'Box Nasi', qty: 3 }] })).toBe('Barang: Box Nasi, 3');
     expect(orderDetailsSummary({})).toBe('');
   });
+  it('does not throw on legacy stored items', () =>
+    expect(orderDetailsSummary({ items: [{ gsm: 64, qty: {} }, { product: 7, size: 30 }] })).toBe('Barang: 64 gsm\nBarang: 7, 30'));
   it('lists several items on their own lines', () =>
     expect(orderDetailsSummary({ items: [SUPREME_30, BOX_20] }).split('\n')).toHaveLength(2));
 });

@@ -25,7 +25,47 @@ const BRAND_SLUGS: readonly string[] = ['imperial_indopack', 'kertas_supreme'];
 
 /** Identity of an item across turns: the same product in the same size, however it is spelled. */
 export function itemKey(i: OrderItem): string {
-  return `${(i.product ?? '').trim().toLowerCase()}|${normalizeSize(i.size ?? '')}`;
+  return `${str(i.product).toLowerCase()}|${normalizeSize(str(i.size))}`;
+}
+
+/** A trimmed non-empty string; finite numbers become strings; anything else is ''. */
+function str(v: unknown): string {
+  if (typeof v === 'string') return v.trim();
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return '';
+}
+
+function parseQty(v: unknown): number | undefined {
+  if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? v : undefined;
+  if (typeof v !== 'string') return undefined;
+  const t = v.trim();
+  if (!t) return undefined;
+  // "2.500" is two thousand five hundred (dots are thousands separators), "2,5" is 2.5
+  const n = /^\d{1,3}(\.\d{3})+$/.test(t) ? Number(t.replace(/\./g, '')) : Number(t.replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function parseUnit(v: unknown): 'rim' | 'pcs' | undefined {
+  if (typeof v !== 'string') return undefined;
+  const u = v.trim().toLowerCase();
+  if (u === 'rim') return 'rim';
+  if (u === 'pcs' || u === 'lembar') return 'pcs';
+  return undefined;
+}
+
+/** Keep only well-typed fields of a model-sent (or stored) item. */
+function sanitizeItem(raw: Record<string, unknown>): OrderItem {
+  const out: OrderItem = {};
+  for (const k of ['product', 'size', 'gsm', 'print'] as const) {
+    const v = str(raw[k]);
+    if (v) out[k] = v;
+  }
+  const qty = parseQty(raw.qty);
+  if (qty !== undefined) out.qty = qty;
+  const unit = parseUnit(raw.qty_unit);
+  if (unit) out.qty_unit = unit;
+  if (typeof raw.has_design === 'boolean') out.has_design = raw.has_design;
+  return out;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -64,9 +104,10 @@ export function mergeOrderFacts(existing: Record<string, unknown>, patch: Record
   }
 
   if ('items' in patch) {
-    const items: OrderItem[] = (Array.isArray(existing.items) ? existing.items : []).filter(isRecord) as OrderItem[];
-    const sent = (Array.isArray(patch.items) ? patch.items : []).filter(isRecord) as OrderItem[];
-    const merged = items.map((i) => ({ ...i }));
+    const items = (Array.isArray(existing.items) ? existing.items : []).filter(isRecord).map(sanitizeItem);
+    const sent = (Array.isArray(patch.items) ? patch.items : [])
+      .filter(isRecord).map(sanitizeItem).filter((i) => itemKey(i) !== '|');
+    const merged = items;
     for (const item of sent) {
       const idx = merged.findIndex((m) => itemKey(m) === itemKey(item));
       if (idx >= 0) merged[idx] = mergeItem(merged[idx]!, item);
@@ -79,6 +120,7 @@ export function mergeOrderFacts(existing: Record<string, unknown>, patch: Record
 
 function itemLine(i: OrderItem): string {
   const parts: string[] = [];
+  i = sanitizeItem(i as Record<string, unknown>); // stored data may predate validation
   const name = [i.product, i.gsm && !(i.product ?? '').toLowerCase().includes(i.gsm.toLowerCase()) ? `${i.gsm} gsm` : '']
     .filter(Boolean).join(' ');
   if (name || i.print) parts.push([name, i.print ? `cetak ${i.print}` : ''].filter(Boolean).join(' '));
