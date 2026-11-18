@@ -1,0 +1,27 @@
+node_modules
+dist
+dist-scripts
+.next
+.env
+.env.local
+.env.bak*
+*.log
+logs/
+*.tsbuildinfo
+*.db
+.DS_Store
+
+# Uploaded files stay local; keep the folder structure
+api/uploads/*
+!api/uploads/images/
+!api/uploads/catalogs/
+api/uploads/images/*
+!api/uploads/images/.gitkeep
+api/uploads/catalogs/*
+!api/uploads/catalogs/.gitkeep
+
+api/scripts/_tmp_*
+api/scripts/data/*
+
+# Agent scratch
+.superpowers/

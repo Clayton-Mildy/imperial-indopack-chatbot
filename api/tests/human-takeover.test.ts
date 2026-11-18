@@ -1,0 +1,88 @@
+/**
+ * human-takeover.test.ts
+ * When CS answers a customer themselves - from ChakraHQ's inbox, the WhatsApp Business app
+ * behind it, or the dashboard - the bot has to stop. A second voice replying over a person
+ * mid-conversation is worse than silence, and it is exactly what an escalated conversation
+ * invites, because escalation notifies a human without ever pausing the AI.
+ *
+ * Reuses `needs_human` rather than adding a status: messageRouter's gate already returns on it,
+ * and since status is one column it also clears `escalated` - a conversation someone has picked
+ * up is no longer waiting to be picked up.
+ *
+ * Mocked - no DATABASE_URL.
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const mockFindConversationById = vi.fn();
+const mockUpdateConversationStatus = vi.fn(async () => null);
+const mockInsertMessage = vi.fn(async () => ({ id: 'note-1' }));
+
+vi.mock('../src/repositories/conversations.js', () => ({
+  findConversationById: mockFindConversationById,
+  updateConversationStatus: mockUpdateConversationStatus,
+  insertMessage: mockInsertMessage,
+}));
+
+const { markHumanTakeover } = await import('../src/services/humanTakeover.js');
+
+const CONV = { id: 'conv-1', contactId: 'contact-1', phoneNumberId: 'pn-1', status: 'active' };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockInsertMessage.mockResolvedValue({ id: 'note-1' });
+});
+
+describe('markHumanTakeover', () => {
+  it('pauses the AI and records who took over', async () => {
+    mockFindConversationById.mockResolvedValue({ ...CONV });
+
+    expect(await markHumanTakeover('conv-1', 'Tim CS')).toBe(true);
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-1', 'needs_human', expect.stringContaining('Tim CS'));
+    // A note in the thread, not just a badge - the takeover has to be visible where the
+    // conversation is read, and the next AI turn can see a human stepped in.
+    expect(mockInsertMessage.mock.calls[0]![0]).toMatchObject({ conversationId: 'conv-1', role: 'system_note' });
+  });
+
+  // The live case this exists for: escalated, waiting, and CS answers from their phone.
+  it('clears an escalated conversation, because someone has now picked it up', async () => {
+    mockFindConversationById.mockResolvedValue({ ...CONV, status: 'escalated' });
+
+    expect(await markHumanTakeover('conv-1', 'Tim CS')).toBe(true);
+    expect(mockUpdateConversationStatus.mock.calls[0]![1]).toBe('needs_human');
+  });
+
+  // chakraSync replays history, so an agent who sent five messages must not produce five
+  // system notes, and a re-sync must not re-pause a conversation already handed back.
+  it('is idempotent once the conversation is already taken over', async () => {
+    mockFindConversationById.mockResolvedValue({ ...CONV, status: 'needs_human' });
+
+    expect(await markHumanTakeover('conv-1', 'Tim CS')).toBe(false);
+    expect(mockUpdateConversationStatus).not.toHaveBeenCalled();
+    expect(mockInsertMessage).not.toHaveBeenCalled();
+  });
+
+  // `resolved` is a deliberate end state; a late-syncing agent message must not reopen it.
+  it('leaves a resolved conversation alone', async () => {
+    mockFindConversationById.mockResolvedValue({ ...CONV, status: 'resolved' });
+
+    expect(await markHumanTakeover('conv-1', 'Tim CS')).toBe(false);
+    expect(mockUpdateConversationStatus).not.toHaveBeenCalled();
+  });
+
+  it('does nothing for a conversation that does not exist', async () => {
+    mockFindConversationById.mockResolvedValue(null);
+
+    expect(await markHumanTakeover('missing', 'Tim CS')).toBe(false);
+    expect(mockUpdateConversationStatus).not.toHaveBeenCalled();
+  });
+
+  // The status write is what actually stops the bot; a failed note must not take it down.
+  it('still counts as a takeover when the system note cannot be written', async () => {
+    mockFindConversationById.mockResolvedValue({ ...CONV });
+    mockInsertMessage.mockRejectedValueOnce(new Error('db down'));
+
+    expect(await markHumanTakeover('conv-1', 'Tim CS')).toBe(true);
+    expect(mockUpdateConversationStatus).toHaveBeenCalled();
+  });
+});

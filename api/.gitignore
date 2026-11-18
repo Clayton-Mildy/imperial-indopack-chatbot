@@ -1,0 +1,32 @@
+node_modules/
+dist/
+dist-scripts/
+.env
+.env.local
+.env.bak*
+*.tsbuildinfo
+*.db
+logs/
+.DS_Store
+scripts/_tmp_*
+
+# Keep the vendored scrape xlsx, ignore reseed output written beside it
+scripts/data/*
+!scripts/data/*.xlsx
+
+# Ignore uploaded files but keep the folder structure
+uploads/*
+!uploads/images/
+!uploads/catalogs/
+uploads/images/*
+!uploads/images/.gitkeep
+uploads/catalogs/*
+!uploads/catalogs/.gitkeep
+# The six per-brand price lists, replacing the one 50 MB combined catalog.pdf. Committed so the
+# Chakra upload in docs/deploy-runbook.md stays copy-pasteable from a checkout; they are NOT
+# served from the production PC and are not bundled into the Windows zip.
+!uploads/catalogs/*.pdf
+!scripts/data/catalog-family-map.json
+
+# ingest_pricelist.py imports ingest_catalog.py
+scripts/__pycache__/

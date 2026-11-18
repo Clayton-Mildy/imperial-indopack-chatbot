@@ -1,0 +1,3 @@
+ALTER TABLE phone_numbers
+  ADD COLUMN IF NOT EXISTS wa_jid TEXT,
+  ADD COLUMN IF NOT EXISTS baileys_connected BOOLEAN NOT NULL DEFAULT false;

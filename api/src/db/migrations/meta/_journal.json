@@ -1,0 +1,188 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1778744588172,
+      "tag": "0000_cheerful_changeling",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1747267200000,
+      "tag": "0001_add_custom_system_prompt",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1748217600000,
+      "tag": "0002_add_sender_name_to_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1748300000000,
+      "tag": "0002b_catalog_restructure",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1748390400000,
+      "tag": "0003_add_product_description",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782432000000,
+      "tag": "0004_add_conversation_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1748995200000,
+      "tag": "0005_add_conversation_summary",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780185600000,
+      "tag": "0006_add_variant_description",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782518400000,
+      "tag": "0007_add_product_embedding",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782604800000,
+      "tag": "0008_add_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782691200000,
+      "tag": "0009_add_product_knowledge_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782777600000,
+      "tag": "0010_brand_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782864000000,
+      "tag": "0011_contact_profiles_and_followup",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782950400000,
+      "tag": "0012_add_baileys_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1783036800000,
+      "tag": "0013_upsell_crosssell_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784519644578,
+      "tag": "0014_reconcile_snapshot_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786510663464,
+      "tag": "0016_ai_toggles",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787470934184,
+      "tag": "0017_leads",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787934812804,
+      "tag": "0018_push_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788944999606,
+      "tag": "0019_perfect_daimon_hellstrom",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789660319462,
+      "tag": "0020_ai_lead_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789806054381,
+      "tag": "0021_variant_mp_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791275700381,
+      "tag": "0022_lead_insights_watermark",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793800000000,
+      "tag": "0023_lead_stages",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793900000000,
+      "tag": "0024_lead_stage_fixes",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794000000000,
+      "tag": "0025_lead_field_locks",
+      "breakpoints": true
+    }
+  ]
+}
