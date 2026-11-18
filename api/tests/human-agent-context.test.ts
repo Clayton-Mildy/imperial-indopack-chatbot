@@ -45,16 +45,11 @@ vi.mock('../src/repositories/conversations.js', () => ({
   getMessagesForSummary: vi.fn(async () => []),
 }));
 vi.mock('../src/services/replyChecks.js', () => ({
-  verifyReplyPrices: vi.fn(() => ({ ok: true, reason: '' })),
-  verifyReplyPacks: vi.fn(() => ({ ok: true, reason: '' })),
-  verifyReplyDiscount: vi.fn(() => ({ ok: true, reason: '' })),
-  verifyReplyShowroomLink: vi.fn(() => ({ ok: true, reason: '' })),
+  verifyReplyTieredPrices: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyTone: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyNotCarried: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyPhotoClaim: vi.fn(() => ({ ok: true, reason: '' })),
-  verifyReplyOtherBrand: vi.fn(() => ({ ok: true, reason: '' })),
   saysNotCarried: vi.fn(() => false),
-  verifyReplyTier: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyMeta: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyCatalogClaim: vi.fn(() => ({ ok: true, reason: '' })),
   verifyReplyOpener: vi.fn(() => ({ ok: true, reason: '' })),

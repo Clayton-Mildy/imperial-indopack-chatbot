@@ -4,6 +4,9 @@
  * matching found the products a reply names. The judge reasons about fit in prose and can miss
  * a plain transposed digit ("Rp 105.300" quoted for a Rp 105.000 item); this just diffs figures.
  *
+ * verifyFit runs verifyReplyTieredPrices (exact figures only - see it). What follows here is
+ * Legacy's tolerant verifyReplyPrices, no longer called by verifyFit:
+ *
  * Honest totals ("5 set = Rp 525.000") must still pass, so a message figure is allowed to be an
  * exact integer multiple of a catalog figure, not just an exact match. Same for honest unit
  * prices derived from pack prices ("Rp 475.000/lusin ≈ Rp 39.583/pcs"): a figure within one
@@ -633,6 +636,59 @@ export function withoutInventedTotals(message: string, invented: number[]): stri
   }
   const text = kept.join('\n').replace(/\n{3,}/g, '\n\n').replace(/(?:\n\s*-{3,}\s*)+$/, '').trim();
   return text || null;
+}
+
+// Every "Rp N" in a text, small figures included. extractPrices drops anything under Rp 1.000, which
+// here would wave through the very figures this check exists for: a per-lembar tier (Rp 370/pcs) is
+// a price, and "Rp 8 juta" reads as 8 - not the tool's 8.000.000, so it is redone, not skipped.
+const rpFigures = (text: string): number[] => [...text.matchAll(PRICE_RE)].map((m) => Number(m[0].replace(/\D/g, '')));
+const rp = (n: number): string => `Rp ${n.toLocaleString('id-ID')}`;
+
+/**
+ * The price check verifyFit runs (spec 7.5). Imperial Indopack's prices are tiers by quantity, and
+ * Legacy's tolerant matcher (verifyReplyPrices: multiples, divisors, packs) would pass exactly the
+ * wrong quotes this catalog invites - a lower tier's price, or 500 x a per-pcs price posing as a
+ * per-rim one. So there is no arithmetic tolerance at all:
+ * - hitung_harga returned figures this turn (`toolFigures`, every call's): every Rp figure in the
+ *   reply is one of them. A catalog tier the tool did not return fails - it is the wrong tier.
+ * - Otherwise: every figure is a tier price printed in the catalog block, and none sits on a line
+ *   that adds up (TOTAL_LINE_RE) - a total without the tool is the model's own arithmetic.
+ *
+ * `invented` is what withoutInventedTotals cuts by, so it leaves out a catalog price the reply also
+ * quotes correctly on a line of its own: "Rp 2.000/pcs" then "8 rim x Rp 2.000 = Rp 8.000.000" cuts
+ * the sum and keeps the tier, where cutting by 2.000 would have thrown the whole answer away.
+ * `onlyInvented`: every failing figure is on a total line, so the total can go to the team.
+ */
+export function verifyReplyTieredPrices(
+  message: string,
+  catalogBlock: string,
+  toolFigures: number[] | undefined
+): { ok: boolean; reason: string; invented?: number[]; onlyInvented?: boolean } {
+  const toolRan = (toolFigures?.length ?? 0) > 0;
+  const allowed = new Set(toolRan ? toolFigures : rpFigures(catalogBlock));
+  const failing = new Set<number>();
+  const passing = new Set<number>();
+  let offTotalLine = false;
+  for (const line of message.split('\n')) {
+    const totalLine = TOTAL_LINE_RE.test(line);
+    for (const n of rpFigures(line)) {
+      if (allowed.has(n) && (toolRan || !totalLine)) { passing.add(n); continue; }
+      failing.add(n);
+      if (!totalLine) offTotalLine = true;
+    }
+  }
+  if (failing.size === 0) return { ok: true, reason: '' };
+
+  const figures = [...failing].map(rp).join(', ');
+  const reason = toolRan
+    ? `Harga ${figures} bukan angka dari hitung_harga. Sebut HANYA angka yang dikembalikan hitung_harga di giliran ini, ` +
+      'persis seperti tertulis di hasilnya (harga satuan, total, harga tingkat berikutnya) - jangan mengambil harga tingkat lain ' +
+      'dari katalog dan jangan menghitung sendiri. Untuk jumlah lain, panggil hitung_harga lagi lalu ulangi angka-angkanya persis.'
+    : `Harga ${figures} tidak boleh disebut: hitung_harga tidak dipanggil di giliran ini, jadi hanya harga tingkat yang tertulis ` +
+      'persis di KATALOG PRODUK yang boleh disebut - tanpa total, hitungan, atau tanda "=". Untuk harga sesuai jumlah pelanggan, ' +
+      'panggil hitung_harga lalu ulangi angka-angkanya persis.';
+  const invented = [...failing].filter((n) => !passing.has(n));
+  return { ok: false, reason, invented, onlyInvented: invented.length > 0 && !offTotalLine };
 }
 
 // The customer answering the name question: "Dengan Jovi ka", "Saya Bang Al dari probolinggo",

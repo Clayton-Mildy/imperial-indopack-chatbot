@@ -19,7 +19,7 @@ vi.mock('../src/services/claude.js', () => ({
   CLAUDE_MODEL: 'claude-haiku-4-5-20251001',
 }));
 
-import { verifyFit, withBuyerType } from '../src/services/aiLayer.js';
+import { verifyFit } from '../src/services/aiLayer.js';
 
 const PROMPT = `--- KATALOG PRODUK ---
 Merek: Vintage
@@ -58,14 +58,5 @@ describe('judge model', () => {
 
     await verifyFit(draft, PROMPT, 'handle pintu kayu', noRepair);
     expect(create.mock.calls.map(([p]) => p.model).slice(2)).toEqual(['claude-haiku-4-5-20251001']);
-  });
-});
-
-describe('withBuyerType', () => {
-  // UAT Run 3, 13:29: not told the type was unknown, the judge rejected a correct price-less answer
-  // to "berapa harga handle newton?" as "tidak menjawab pertanyaan harga".
-  it('tells the judge that no price is the right answer while the buyer type is unknown', () => {
-    expect(withBuyerType('berapa harga handle newton?', null)).toContain('TIDAK boleh menyebut angka harga');
-    expect(withBuyerType('x', 'end_user')).toContain('harga MP');
   });
 });

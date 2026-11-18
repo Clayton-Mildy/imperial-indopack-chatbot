@@ -7,13 +7,11 @@ import {
   SYSTEM_PROMPT_BEHAVIORAL_RULES,
   KAMUS_ISTILAH,
   MAX_CONTEXT_MESSAGES,
-  ASK_NAME_REPLY,
-  ASK_BUYER_TYPE_REPLY,
   CATALOG_SENT_MARKER,
   LEAKED_TOOL_MARKUP_RE,
 } from '../domain/constants.js';
 import { buildCatalogContext, getFullCatalogBlock } from './ragQuery.js';
-import { withoutInventedTotals, verifyReplyPrices, verifyReplyPacks, verifyReplyDiscount, verifyReplyShowroomLink, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, verifyReplyOtherBrand, saysNotCarried, verifyReplyTier, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, verifyReplyNoService, nameGivenIn, ASKS_NAME_RE } from './replyChecks.js';
+import { withoutInventedTotals, verifyReplyTieredPrices, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, saysNotCarried, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, verifyReplyNoService, nameGivenIn, ASKS_NAME_RE } from './replyChecks.js';
 import {
   getLastNMessages,
   getConversationSummary,
@@ -24,7 +22,7 @@ import {
 import { getDefaultPromptSections } from '../repositories/appSettings.js';
 import { listBrands } from '../repositories/products.js';
 import { CUSTOMER_TYPES } from '../domain/types.js';
-import type { AIResponse, CustomerType, PromptSection } from '../domain/types.js';
+import type { AIResponse, PromptSection } from '../domain/types.js';
 import { resolveLink } from './linkResolver.js';
 import { PRICE_TOOL, PRICE_TOOL_DESC, PRICE_TOOL_NAME, PriceToolInput, runPriceTool } from './priceTool.js';
 import { getClient, isDevMode, isFullCatalogEnabled, agentQuery, logUsageLine, CLAUDE_MODEL } from './claude.js';
@@ -332,8 +330,6 @@ export function productsOfNamedType(catalogBlock: string, message: string): stri
 export interface FitVerdict {
   ok: boolean;
   reason: string;
-  /** The draft quoted a figure while the buyer type is still unknown (verifyReplyTier). */
-  askBuyerType?: boolean;
   /** Worth a repair, never a hand-off: the draft is still sent once the repairs run out. */
   soft?: boolean;
   /** The only thing wrong was these figures not being in the catalog - see withoutInventedTotals. */
@@ -476,25 +472,6 @@ interface VerifyFitDeps {
   givenName?: string | null;
 }
 
-// The judge sees BOTH figures on every variant line and, told only that choosing between them is
-// not its job, still rejected correct MP quotes to an end user as "harga MP, bukan pricelist ...
-// menyesatkan" - all three drafts of the Run 2 replay of D-03, at temperature 0. It is told the
-// buyer type the deterministic checks already enforced, so the figure it sees quoted is the one it
-// expects.
-const TIER_FOR_JUDGE: Record<string, string> = {
-  end_user: 'pengguna akhir - angka yang benar untuknya adalah harga MP',
-  project: 'pembeli proyek - angka yang benar untuknya adalah harga pricelist',
-  reseller: 'reseller - angka yang benar untuknya adalah harga pricelist',
-};
-
-export function withBuyerType(situation: string, customerType: string | null): string {
-  const tier = customerType ? TIER_FOR_JUDGE[customerType] : undefined;
-  if (tier) return `${situation}\n[Tipe pembeli: ${tier}. Sudah diperiksa sistem - bukan dasar penolakan.]`;
-  // Not told, the judge rejected a correct price-less answer to "berapa harga handle newton?" as
-  // "tidak menjawab pertanyaan harga" (UAT Run 3, 13:29) - with the type unknown, no figure IS the answer.
-  return `${situation}\n[Tipe pembeli belum diketahui - balasan memang TIDAK boleh menyebut angka harga. Bukan dasar penolakan.]`;
-}
-
 // Two repairs, not one. In every double failure of the 2026-09-25 UAT the rewrite broke a DIFFERENT
 // rule than the draft - A-03 "engsel 3 inch ready" became "3 inch kosong" (both wrong: one engsel's
 // 3" is out of stock, another's is not), B-02 dropped "pricelist" and glossed BNSN as "Black
@@ -533,58 +510,33 @@ export async function verifyFit(
   const catalogBlock = extractCatalogBlock(systemPrompt);
   if (!catalogBlock) return response;
 
-  // The tier is read back OUT of the prompt rather than threaded through callClaude, so the
-  // check and the model are guaranteed to be looking at the same resolved buyer type.
-  // indexOf, not RegExp: CUSTOMER_TYPE_LINE contains parentheses, and "(sudah dipastikan)"
-  // became a capture group that shadowed the value.
-  const at = systemPrompt.indexOf(CUSTOMER_TYPE_LINE);
-  const tier = at === -1 ? '' : systemPrompt.slice(at + CUSTOMER_TYPE_LINE.length);
-  const savedType: CustomerType | null =
-    tier.startsWith('pengguna akhir') ? 'end_user'
-      : tier.startsWith('reseller') ? 'reseller'
-        : tier.startsWith('pembeli proyek') ? 'project'
-          : null;
-  // Same idiom: the catalog note the model was shown is the record of whether a file went out.
+  // The catalog note the model was shown is the record of whether a file went out.
   const catalogSent = systemPrompt.includes(CATALOG_SENT_MARKER);
 
   const check = async (r: AIResponse): Promise<FitVerdict | null> => {
     if (r.confidence === 'low' || !r.message) return null; // text never reaches the customer
     const named = namedProducts(catalogBlock, r.message);
-    // Deterministic floor: a misquoted price must never depend on the fuzzy name matcher or
-    // the LLM judge (never scoped to arithmetic). When products were identified, check their
-    // own paragraphs — against the FULL catalog, an invented figure could coincidentally be a
-    // multiple/division of some unrelated product's price. A follow-up that quotes figures
-    // without naming the product ("25MM Rp 40.000") is about the product in the question it
-    // answers, so that is the next scope; whole block only as the last fallback. Without that
-    // middle step round figures collide across the block: BC9025's PRICELIST Rp 40.000 is KUAS
-    // CAT's MP, and the end-user leak check waved it through (UAT D-03, 2026-09-22).
-    const scopeNames = named.length > 0 ? named : namedProducts(catalogBlock, situation);
-    const priceScope = scopeNames.length > 0 ? productBlocks(catalogBlock, scopeNames) : catalogBlock;
-    // Arithmetic stays inside the scope; a figure printed VERBATIM anywhere in the catalog is
-    // exempt, so a matcher miss can no longer reject a product's own real price.
-    // The saved profile wins; the model's own reading fills the turn where the customer states
-    // the type for the first time (it is only saved after this reply).
-    const customerType = savedType ?? r.customerType ?? null;
-    const prices = verifyReplyPrices(r.message, priceScope, catalogBlock, customerType);
-    const results: { ok: boolean; reason: string; askBuyerType?: boolean; soft?: boolean }[] = [
-      verifyReplyTier(r.message, customerType),
+    // Deterministic floor: a misquoted price must never depend on the fuzzy name matcher or the
+    // LLM judge. Exact figures only - the tool's this turn, else the catalog's printed tiers - so
+    // the whole block is the scope: a real tier figure is never invented, whichever product it is
+    // printed under (quoting it against the wrong product is the judge's to catch).
+    const prices = verifyReplyTieredPrices(r.message, catalogBlock, r.toolFigures);
+    // The price does not depend on who buys (spec 7.3): no check reads a buyer type, so the
+    // two that still take one are given none.
+    const results: { ok: boolean; reason: string; soft?: boolean }[] = [
       verifyReplyMeta(r.message),
       prices,
-      verifyReplyPacks(r.message, priceScope),
-      verifyReplyDiscount(r.message, priceScope, customerType),
-      verifyReplyShowroomLink(r.message),
       verifyReplyTone(r.message),
       verifyReplyNotCarried(r.message),
       verifyReplyNotCarriedCloses(r.message, named.length > 0),
       verifyReplyNoService(r.message),
       verifyReplyNameRepeat(r.message, deps.givenName ?? null),
       verifyReplyPhotoClaim(r.message, systemPrompt),
-      verifyReplyOtherBrand(r.message, systemPrompt),
-      verifyReplyCatalogClaim(r.message, catalogSent, customerType),
+      verifyReplyCatalogClaim(r.message, catalogSent, null),
       // Not after a "belum ada": greeting the name and offering help with something else is the right
       // reply there, and the opener's buyer-type repair pushed the funnel for an item we do not sell
       // (replayed 2026-10-13: "budi" after "mesin gerinda belum ada" -> "dipakai sendiri ...?" 2/2).
-      ...(deps.openingTurn && !deps.afterNotCarried ? [verifyReplyOpener(r.message, customerType)] : []),
+      ...(deps.openingTurn && !deps.afterNotCarried ? [verifyReplyOpener(r.message, null)] : []),
       ...(deps.firstReply ? [verifyReplyFirstGreeting(r.message)] : []),
     ];
     const failed = results.filter((c) => !c.ok);
@@ -594,20 +546,19 @@ export async function verifyFit(
       // checked again, all of it, before it is sent.
       const onlyPrices = failed.filter((c) => !c.soft).length === 1 && !prices.ok && prices.onlyInvented;
       return {
-        ok: false, reason: failed.map((c) => c.reason).join(' '), askBuyerType: failed.some((c) => c.askBuyerType),
+        ok: false, reason: failed.map((c) => c.reason).join(' '),
         ...(onlyPrices && { invented: prices.invented }),
       };
     }
     // Only soft objections left: the judge still has to pass this draft before it can be sent as is.
     const soft: FitVerdict | null = failed.length > 0 ? { ok: false, reason: failed.map((c) => c.reason).join(' '), soft: true } : null;
-    // The judge gets a WIDER set than the price scope, and deliberately so. namedProducts() can
+    // The judge gets a WIDER set than the products named, and deliberately so. namedProducts() can
     // miss the product a reply is really about (11 of 133 catalog names have no token rare enough
     // to survive the model shortening them) or, worse, match a DIFFERENT one: a reply quoting
     // Aomori GRENDEL BULAT's own Rp 50.000 contains Shind's shorter "GRENDEL STAINLESS STEEL"
     // verbatim, so the judge was handed Shind's Rp 24.000 paragraph as ground truth and rejected a
     // correct answer twice into an escalation. Any paragraph carrying a price the reply quotes is
-    // evidence about that reply, so add those. This must NOT feed priceScope - widening the
-    // accept-set there is exactly what the floor exists to prevent.
+    // evidence about that reply, so add those.
     let judgeNames = [...new Set([...named, ...productsQuotingPrices(catalogBlock, r.message)])];
     // A fit claim about a product TYPE names no product, so it used to skip the judge entirely:
     // "handle tarik (doorpull) ... cocok untuk pintu kaca frameless" went out unchecked (UAT Run 3
@@ -618,7 +569,7 @@ export async function verifyFit(
       if (r.message.length > 160) console.warn('[aiLayer] fit-check skipped: reply names no catalog product (matcher miss or generic reply)');
       return soft;
     }
-    const verdict = await judge(withBuyerType(situation, customerType), productBlocks(catalogBlock, judgeNames), r.message);
+    const verdict = await judge(situation, productBlocks(catalogBlock, judgeNames), r.message);
     if (verdict.ok) return soft;
     return soft ? { ...verdict, reason: `${verdict.reason} ${soft.reason}` } : verdict;
   };
@@ -643,22 +594,6 @@ export async function verifyFit(
   if (!objection) return sendable && (current.confidence === 'low' || !current.message) ? sendable : current;
   if (objection.soft) return current;
   if (sendable) return sendable;
-
-  // Every draft still quotes a price to someone whose buyer type is unknown. By Kebijakan Harga the
-  // answer to that question IS the buyer-type question, so ask it in fixed words - handing the chat
-  // to a person for it was the most common way an ordinary price question ended the sale (F-09).
-  if (objection.askBuyerType) {
-    console.warn('[aiLayer] every draft quoted a price before the buyer type → asking for it instead of escalating');
-    return {
-      ...current,
-      message: deps.firstReply ? ASK_NAME_REPLY : ASK_BUYER_TYPE_REPLY,
-      confidence: 'high',
-      escalationReason: undefined,
-      imageUrl: undefined,
-      catalogUrl: undefined,
-      fitBasis: [],
-    };
-  }
 
   // The only thing wrong is a total the catalog cannot back - the customer asked for one over many
   // items, and the model added them up. The per-item answer is right and the team calculates totals
@@ -759,7 +694,7 @@ async function resolveIdentitySection(promptSections: PromptSection[] | null | u
   return buildSystemPromptFromSections(defaultSections);
 }
 
-/** Marker the tier check reads back out of the prompt - see verifyFit. */
+/** The buyer-type line of the customer block. No reply check reads it: the price does not depend on the buyer type. */
 export const CUSTOMER_TYPE_LINE = 'Tipe pembeli (sudah dipastikan): ';
 
 // The owner wants English answered in English (2026-09-24), and the Tone rule alone did not hold:

@@ -25,7 +25,9 @@ import {
   type FitVerdict,
 } from '../src/services/aiLayer.js';
 import type { AIResponse } from '../src/domain/types.js';
-import { ASK_BUYER_TYPE_REPLY, ASK_NAME_REPLY, CATALOG_SENT_MARKER } from '../src/domain/constants.js';
+import { CATALOG_SENT_MARKER } from '../src/domain/constants.js';
+import { formatProducts } from '../src/services/ragQuery.js';
+import { IVORY_BOX } from './price-fixtures.js';
 
 const FUNGSI_DOORPULL =
   'Sebagai pegangan untuk membuka dan menutup pintu dengan cara ditarik atau didorong, khususnya pada pintu kayu.';
@@ -144,32 +146,36 @@ describe('verifyFit — a fit claim about a product TYPE (UAT Run 3 D-10)', () =
 });
 
 describe('verifyFit — soft objections repair but never hand off (R-11)', () => {
-  const RESELLER = { customerType: 'reseller' as const };
-  const bare = reply({ message: 'DOORPULL PERTH VINTAGE BLUE 60 set = Rp 6.300.000 kak.', ...RESELLER });
-  const full = reply({ message: 'DOORPULL PERTH VINTAGE BLUE 60 set = Rp 6.300.000, diskon 5% jadi Rp 5.985.000. Kalau totalnya bisa sampai sekitar 11,2jt, diskonnya naik jadi 10% kak.', ...RESELLER });
+  // A lecturing tone (verifyReplyTone) is the soft rule here; the drafts quote a real tier of the
+  // Imperial catalog with no tool call, so the strict price check passes them.
+  const IMPERIAL_PROMPT = `--- KATALOG PRODUK ---\n${formatProducts([IVORY_BOX])}--- AKHIR KATALOG ---`;
+  const SITUATION = 'harga box ivory berapa';
+  const imperial = (message: string, over: Partial<AIResponse> = {}): AIResponse => ({ message, confidence: 'high', ...over });
+  const bare = imperial('Seperti yang sudah aku sampaikan, Box Ivory 270 gsm cetak full color mulai 5 rim Rp 2.000/pcs kak.');
+  const full = imperial('Box Ivory 270 gsm cetak full color mulai 5 rim Rp 2.000/pcs kak, 10 rim Rp 1.800/pcs.');
 
-  it('repairs a confirmation that leaves out the tier and the nudge', async () => {
+  it('repairs a draft that breaks only a soft rule', async () => {
     const regenerate = vi.fn(async () => full);
-    const out = await verifyFit(bare, SYSTEM_PROMPT, 'mau ambil 60 set doorpull perth', { judge: scriptedJudge(OK).judge, regenerate });
+    const out = await verifyFit(bare, IMPERIAL_PROMPT, SITUATION, { judge: scriptedJudge(OK).judge, regenerate });
     expect(regenerate).toHaveBeenCalledTimes(1);
-    expect(regenerate.mock.calls[0][0]).toContain('11,2jt');
+    expect(regenerate.mock.calls[0][0]).toContain('menggurui');
     expect(out.message).toBe(full.message);
   });
 
-  it('sends the draft once the repairs run out - a missing nudge is not a hand-off', async () => {
-    const out = await verifyFit(bare, SYSTEM_PROMPT, 'mau ambil 60 set doorpull perth', { judge: scriptedJudge(OK).judge, regenerate: vi.fn(async () => bare) });
+  it('sends the draft once the repairs run out - a soft objection is not a hand-off', async () => {
+    const out = await verifyFit(bare, IMPERIAL_PROMPT, SITUATION, { judge: scriptedJudge(OK).judge, regenerate: vi.fn(async () => bare) });
     expect(out).toMatchObject({ confidence: 'high', message: bare.message });
   });
 
   it('keeps the sendable draft when the repair gives up and answers low', async () => {
-    const gaveUp = reply({ message: '', confidence: 'low', ...RESELLER });
-    const out = await verifyFit(bare, SYSTEM_PROMPT, 'mau ambil 60 set doorpull perth', { judge: scriptedJudge(OK).judge, regenerate: vi.fn(async () => gaveUp) });
+    const gaveUp = imperial('', { confidence: 'low' });
+    const out = await verifyFit(bare, IMPERIAL_PROMPT, SITUATION, { judge: scriptedJudge(OK).judge, regenerate: vi.fn(async () => gaveUp) });
     expect(out).toMatchObject({ confidence: 'high', message: bare.message });
   });
 
   it('keeps the sendable draft when a repair breaks a hard rule', async () => {
-    const invented = reply({ message: 'DOORPULL PERTH VINTAGE BLUE 60 set = Rp 6.310.000, diskon 5%.', ...RESELLER });
-    const out = await verifyFit(bare, SYSTEM_PROMPT, 'mau ambil 60 set doorpull perth', { judge: scriptedJudge(OK).judge, regenerate: vi.fn(async () => invented) });
+    const invented = imperial('Box Ivory 270 gsm cetak full color mulai 5 rim Rp 1.900/pcs kak.');
+    const out = await verifyFit(bare, IMPERIAL_PROMPT, SITUATION, { judge: scriptedJudge(OK).judge, regenerate: vi.fn(async () => invented) });
     expect(out).toMatchObject({ confidence: 'high', message: bare.message });
   });
 });
@@ -253,28 +259,6 @@ describe('verifyFit — the judge pipeline', () => {
     expect(out).toBe(fixed);
   });
 
-  // UAT F-09: price questions from customers who had not said "sendiri" yet were handed to the
-  // team because every draft kept quoting. By policy the answer IS the buyer-type question.
-  it('asks the buyer type in fixed words when every draft quotes a price with the type unknown', async () => {
-    const quoting = reply({ customerType: null, imageUrl: '/img/x.jpg', message: 'DOORPULL PERTH VINTAGE BLUE Rp 105.000/Set kak.' });
-    const regenerate = vi.fn(async () => quoting);
-    const out = await verifyFit(quoting, SYSTEM_PROMPT, GLASS_SITUATION, { judge: noRegenerate as never, regenerate });
-    expect(regenerate).toHaveBeenCalledTimes(2);
-    expect(out.message).toBe(ASK_BUYER_TYPE_REPLY);
-    expect(out.confidence).toBe('high');
-    expect(out.escalationReason).toBeUndefined();
-    expect(out.imageUrl).toBeUndefined(); // no product photo after a question that names no product
-  });
-
-  it('asks the name instead when it is the very first reply (Rules: name first)', async () => {
-    const quoting = reply({ customerType: null, message: 'Handle Newton Rp 294.000/Set kak.' });
-    const out = await verifyFit(quoting, SYSTEM_PROMPT, '', {
-      judge: noRegenerate as never, regenerate: vi.fn(async () => quoting), firstReply: true,
-    });
-    expect(out.message).toBe(ASK_NAME_REPLY);
-    expect(out.message).not.toMatch(/Rp\s*\d/);
-  });
-
   // The catalog note in the prompt is the record of whether a file went out this turn (F-27).
   it('repairs a claimed catalog send unless the prompt carries the sent-note', async () => {
     const claim = reply({ message: 'Katalog Vintage sudah saya kirimkan ya kak 😊' });
@@ -314,15 +298,6 @@ describe('verifyFit — the judge pipeline', () => {
     const out = await verifyFit(reply(), SYSTEM_PROMPT, GLASS_SITUATION, { judge, regenerate });
     expect(out.confidence).toBe('high');
     expect(calls).toHaveLength(1); // repair names no product — nothing left to judge
-  });
-
-  // Run 2 replay of D-03: the judge rejected a correct MP quote to an end user as "harga MP, bukan
-  // pricelist" in all three drafts. It is now told the buyer type the price floor already checked.
-  it('tells the judge the buyer type, so an MP quote to an end user is what it expects', async () => {
-    const { judge, calls } = scriptedJudge(OK);
-    await verifyFit(reply(), SYSTEM_PROMPT, GLASS_SITUATION, { judge, regenerate: noRegenerate });
-    expect(calls[0].situation.startsWith(GLASS_SITUATION)).toBe(true);
-    expect(calls[0].situation).toContain('pengguna akhir - angka yang benar untuknya adalah harga MP');
   });
 
   it('never judges a reply that names no catalog product', async () => {
