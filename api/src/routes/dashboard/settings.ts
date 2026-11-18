@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z, ZodError } from 'zod';
 import { poFormMessage } from '../../domain/constants.js';
 import { apiKeyAuth } from '../../middleware/apiKey.js';
+import { getGoLiveIssues, getWhatsAppStatus } from '../../services/goLive.js';
 import {
   getDefaultPromptSections,
   setDefaultPromptSections,
@@ -139,6 +140,16 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       if (err instanceof ZodError) return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
       throw err;
     }
+  });
+
+  // GET /api/v1/settings/whatsapp-status - is the number connected, and when did a customer last write
+  app.get('/api/v1/settings/whatsapp-status', { preHandler: [apiKeyAuth] }, async (_request, reply) => {
+    return reply.send({ data: await getWhatsAppStatus(), error: null });
+  });
+
+  // GET /api/v1/settings/go-live - what still blocks go-live
+  app.get('/api/v1/settings/go-live', { preHandler: [apiKeyAuth] }, async (_request, reply) => {
+    return reply.send({ data: { issues: await getGoLiveIssues() }, error: null });
   });
 
   // GET /api/v1/settings/lead-silence-days

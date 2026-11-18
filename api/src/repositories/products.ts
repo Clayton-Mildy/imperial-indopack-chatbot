@@ -1,3 +1,5 @@
+import { brandSlugOfName } from '../domain/brands.js';
+import type { BrandSlug } from '../domain/orderProfile.js';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import { listTiersByVariant } from './priceTiers.js';
 import { listReferenceImageUrls } from './referenceImages.js';
@@ -165,6 +167,16 @@ export async function listBrands(): Promise<Brand[]> {
   const db = getDb();
   const rows = await db.select().from(brands).orderBy(brands.name);
   return rows.map(mapBrand);
+}
+
+/** The two brand rows by slug (matched by name, case-insensitive); null where a row does not exist. */
+export async function getBrandRowsBySlug(): Promise<Record<BrandSlug, Brand | null>> {
+  const out: Record<BrandSlug, Brand | null> = { kertas_supreme: null, imperial_indopack: null };
+  for (const b of await listBrands()) {
+    const slug = brandSlugOfName(b.name);
+    if (slug && !out[slug]) out[slug] = b;
+  }
+  return out;
 }
 
 export async function createBrand(name: string, description?: string): Promise<Brand> {
