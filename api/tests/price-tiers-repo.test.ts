@@ -39,3 +39,18 @@ describe('replaceVariantTiers - whole rupiah only', () => {
     ]);
   });
 });
+
+// Final review M10: the import refuses two tiers at one pcs threshold; so does the write itself.
+describe('replaceVariantTiers - one price per threshold', () => {
+  it('rejects 5 rim and 2500 pcs together before writing anything', async () => {
+    const { tx, del, insert } = fakeTx();
+    await expect(replaceVariantTiers(tx, 'v1', [tier(2000), { ...tier(1900), minQty: 2500, qtyUnit: 'pcs' }])).rejects.toThrow(/same threshold/);
+    expect(del).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('rejects the same tier twice', async () => {
+    const { tx } = fakeTx();
+    await expect(replaceVariantTiers(tx, 'v1', [tier(2000), tier(1900)])).rejects.toThrow(/same threshold/);
+  });
+});

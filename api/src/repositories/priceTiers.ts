@@ -32,12 +32,18 @@ export async function listTiersByVariant(variantIds: string[]): Promise<Map<stri
 /**
  * Replace all of a variant's tiers (delete then insert), inside the caller's transaction.
  * Prices are whole rupiah: a fractional one is refused before anything is written, so it can never
- * reach the catalog block, hitung_harga or the strict price check, whichever caller sent it.
+ * reach the catalog block, hitung_harga or the strict price check, whichever caller sent it. And one
+ * threshold has one price: "5 rim" next to "2500 pcs" is refused too (final review M10).
  */
 export async function replaceVariantTiers(tx: DbOrTx, variantId: string, tiers: PriceTier[]): Promise<void> {
   const bad = tiers.find((t) => !Number.isSafeInteger(t.priceIdr));
   if (bad) {
     throw new Error(`Tier price must be whole rupiah, got ${bad.priceIdr} (variant ${variantId}, from ${bad.minQty} ${bad.qtyUnit})`);
+  }
+  const thresholds = tiers.map((t) => toPcs(t.minQty, t.qtyUnit));
+  const twin = tiers.find((_, i) => thresholds.indexOf(thresholds[i]!) !== i);
+  if (twin) {
+    throw new Error(`Two tiers at the same threshold (${toPcs(twin.minQty, twin.qtyUnit)} pcs) for variant ${variantId}: one price per quantity`);
   }
   await tx.delete(variantPriceTiers).where(eq(variantPriceTiers.variantId, variantId));
   if (tiers.length === 0) return;

@@ -77,6 +77,21 @@ describe('parseTemplateRows', () => {
     expect(p.errors.map((e) => e.row)).toEqual([2, 4]);
   });
 
+  // Final review M10: "5 rim" and "2500 pcs" are one threshold. Both imported, which price applied hung on
+  // sort order while the catalog block listed both.
+  it('rejects two tiers at the same pcs threshold, whatever their units, and drops the variant', () => {
+    const p = parseTemplateRows([
+      HEADER,
+      ROW(BRAND, PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'tidak'),
+      ROW(BRAND, PRODUCT, SIZE, 2500, 'pcs', 370, 'pcs', 'tidak'),
+      ROW(BRAND, PRODUCT, SIZE, 10, 'rim', 165000, 'rim', 'tidak'),
+      ROW(BRAND, PRODUCT, '25 x 25 cm', 5, 'rim', 150000, 'rim', 'tidak'),
+    ]);
+    expect(p.errors).toEqual([{ row: 3, message: expect.stringContaining('2500 pcs') }]);
+    expect(p.errors[0]!.message).toMatch(/jumlah yang sama|5 rim/);
+    expect(p.variants.map((v) => v.size)).toEqual(['25 x 25 cm']);
+  });
+
   it('skips blank spacer rows', () => {
     const p = parseTemplateRows([HEADER, [], ROW(BRAND, PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'ya')]);
     expect(p.errors).toEqual([]);

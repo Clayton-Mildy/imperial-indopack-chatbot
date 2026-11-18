@@ -7,7 +7,7 @@
  */
 
 import type { Product } from '../domain/types.js';
-import type { PriceTier, QtyUnit } from '../domain/pricing.js';
+import { toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
 import { normalizeHeader } from './leadImport.js';
 
 export const TEMPLATE_SHEET = 'Katalog';
@@ -77,7 +77,8 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
   }
 
   const groups = new Map<string, TemplateVariant>();
-  const seenTiers = new Set<string>();
+  // Per variant, each tier's threshold in pcs -> how the first row wrote it.
+  const seenTiers = new Map<string, string>();
   const failed = new Set<string>();
   const blankKeyRows: { brand: string | null; product: string | null; size: string | null }[] = [];
 
@@ -113,9 +114,18 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
     const deliveryRaw = text(cell('Termasuk Ongkir'))?.toLowerCase() ?? 'tidak';
     if (deliveryRaw !== 'ya' && deliveryRaw !== 'tidak') { bad(`Termasuk Ongkir harus ya atau tidak: "${deliveryRaw}".`); continue; }
 
-    const tierKey = `${key}\u0000${minQty}\u0000${qtyUnit}`;
-    if (seenTiers.has(tierKey)) { bad(`Tier ${minQty} ${qtyUnit} muncul dua kali untuk ukuran ini.`); continue; }
-    seenTiers.add(tierKey);
+    // One threshold, one price: "5 rim" and "2500 pcs" are the same tier, and with both the price that
+    // applied hung on sort order while the catalog block listed both (final review M10).
+    const pcs = toPcs(minQty, qtyUnit);
+    const tierKey = `${key}\u0000${pcs}`;
+    const first = seenTiers.get(tierKey);
+    if (first !== undefined) {
+      bad(first === `${minQty} ${qtyUnit}`
+        ? `Tier ${minQty} ${qtyUnit} muncul dua kali untuk ukuran ini.`
+        : `Tier ${minQty} ${qtyUnit} sama dengan tier ${first} (${pcs} pcs) untuk ukuran ini - satu jumlah hanya boleh punya satu harga.`);
+      continue;
+    }
+    seenTiers.set(tierKey, `${minQty} ${qtyUnit}`);
 
     let variant = groups.get(key);
     if (!variant) {
