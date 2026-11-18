@@ -347,5 +347,9 @@ describe('verifyReplyOrderStatus', () => {
     'Form PO-nya saya kirim di bawah ya kak.',
     'Proses produksi sekitar 7-10 hari kerja kak.',
     'Pengiriman bisa ke seluruh Indonesia kak.',
+    'Untuk sistem pembayaran (DP atau lunas) nanti tim kami yang informasikan ya kak.',
+    'Bisa bayar lunas atau DP 50% kak.',
+    'Pembayaran lunas sebelum barang dikirim ya kak.',
+    'Kertas kami sudah diproduksi dengan bahan food grade kak.',
   ])('lets pass: %s', (msg) => expect(verifyReplyOrderStatus(msg).ok).toBe(true));
 });

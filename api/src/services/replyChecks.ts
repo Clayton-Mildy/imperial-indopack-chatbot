@@ -230,15 +230,21 @@ const ORDER_NOUN_RE = /(?<!\b(?:foto|contoh|gambar|daftar|list|detail|rincian|in
 const DONE = String.raw`(?:sudah|telah|udah|sdh|udh)`;
 const PAID_RE = new RegExp([
   String.raw`\b${DONE}\s+(?:kami\s+|saya\s+)?(?:di)?bayar(?:kan)?\b`,
-  String.raw`\b(?:${DONE}\s+)?lunas\b`,
+  // Bare "lunas" is a payment option ("bisa bayar lunas atau DP 50%"); only "sudah lunas" is a status.
+  String.raw`\b${DONE}\s+lunas\b`,
   String.raw`\b(?:pembayaran|transfer(?:an)?|tf|dana|dp)(?:nya)?\s+(?:kakak\s+|kak\s+)?(?:${DONE}\s+)?(?:kami\s+|saya\s+)?(?:terima|diterima|masuk|berhasil)\b`,
 ].join('|'), 'i');
 const PRODUCED_RE = new RegExp([
-  String.raw`\b(?:sedang|sudah|telah|lagi|udah|sdh)\s+(?:dalam\s+)?(?:(?:di)?produksi|proses\s+produksi)\b`,
+  String.raw`\b(?:sedang|lagi)\s+(?:dalam\s+)?(?:(?:di)?produksi|proses\s+produksi)\b`,
+  String.raw`\b${DONE}\s+dalam\s+(?:proses\s+)?produksi\b`,
   String.raw`\bdalam\s+(?:proses\s+|tahap\s+)?produksi\b`,
   String.raw`\b${DONE}\s+masuk\s+(?:tahap\s+|proses\s+)?produksi\b`,
   String.raw`\b(?:sedang|lagi)\s+(?:di)?cetak\b`,
 ].join('|'), 'i');
+// "sudah diproduksi/dicetak" is a status only about the order; about the paper it is a product fact
+// ("kertas kami sudah diproduksi dengan bahan food grade").
+const PRODUCED_DONE_RE = new RegExp(String.raw`\b${DONE}\s+(?:kami\s+|saya\s+)?(?:di)?(?:produksi|cetak)\b`, 'i');
+const PRODUCT_SUBJECT_RE = /\bproduk(?:nya|\s+kak(?:ak)?)\b/i;
 const CONFIRMED_RE = new RegExp(String.raw`\b${DONE}\s+(?:kami\s+|saya\s+)?(?:di)?konfirmasi\b|\bterkonfirmasi\b`, 'i');
 const SHIPPED_RE = new RegExp([
   String.raw`\b(?:${DONE}|sedang|lagi)\s+(?:kami\s+|saya\s+)?(?:di)?kirim(?:kan)?\b`,
@@ -249,7 +255,8 @@ const SHIPPED_RE = new RegExp([
 const HYPOTHETICAL_RE = /\b(?:kalau|kalo|klo|jika|bila|apabila|setelah|sesudah|begitu|nanti|akan|sebelum|selama|supaya|agar|biar|asal|apakah|sudahkah)\b/i;
 
 function orderStatusClaim(sentence: string): string | null {
-  const checks = [PAID_RE, PRODUCED_RE, ...(ORDER_NOUN_RE.test(sentence) ? [CONFIRMED_RE, SHIPPED_RE] : [])];
+  const checks = [PAID_RE, PRODUCED_RE, ...(ORDER_NOUN_RE.test(sentence) ? [CONFIRMED_RE, SHIPPED_RE] : []),
+    ...(ORDER_NOUN_RE.test(sentence) || PRODUCT_SUBJECT_RE.test(sentence) ? [PRODUCED_DONE_RE] : [])];
   for (const re of checks) {
     const m = re.exec(sentence);
     if (m && !HYPOTHETICAL_RE.test(sentence.slice(0, m.index))) return m[0];
