@@ -25,3 +25,6 @@ api/scripts/data/*
 
 # Agent scratch
 .superpowers/
+
+# Customer-named quote titles; local only
+docs/client/starter-catalog-skipped.md
