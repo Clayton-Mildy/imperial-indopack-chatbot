@@ -40,9 +40,10 @@ export function classifyHandoff(s: HandoffSignals, reason: string): HandoffCateg
   if (s.priceOutcomes.includes('above_top_tier')) return 'pesanan_besar';
   if (s.priceOutcomes.includes('not_in_catalog')) return 'harga_custom';
   if (s.designReceived) return 'desain_masuk';
-  if (/di luar katalog|tidak ada di katalog|custom/i.test(reason)) return 'harga_custom';
+  // Whole words: a bare /custom/ read "Customer menanyakan ..." as a custom price, /file/ read "profile" as a design.
+  if (/di luar katalog|tidak ada di katalog|\b(custom|kustom)\b/i.test(reason)) return 'harga_custom';
   if (/tingkat teratas|pesanan besar/i.test(reason)) return 'pesanan_besar';
-  if (/logo|desain|file/i.test(reason)) return 'desain_masuk';
+  if (/logo|desain|\bfile\b/i.test(reason)) return 'desain_masuk';
   if (/bukan pertanyaan produk/i.test(reason)) return 'bukan_pembeli';
   return 'lainnya';
 }

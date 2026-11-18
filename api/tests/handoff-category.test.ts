@@ -54,6 +54,15 @@ describe('classifyHandoff', () => {
     expect(classifyHandoff(NO_SIGNALS, 'Lowongan kerja - bukan pertanyaan produk')).toBe('bukan_pembeli');
   });
 
+  // "Customer" is not a custom price and "profile" is not a design file: whole words only.
+  it('reads custom, kustom and file only as whole words', () => {
+    expect(classifyHandoff(NO_SIGNALS, 'Customer menanyakan jadwal pengiriman')).toBe('lainnya');
+    expect(classifyHandoff(NO_SIGNALS, 'Profile pelanggan belum lengkap')).toBe('lainnya');
+    expect(classifyHandoff(NO_SIGNALS, 'ukuran custom')).toBe('harga_custom');
+    expect(classifyHandoff(NO_SIGNALS, 'Cetak kustom 3 warna')).toBe('harga_custom');
+    expect(classifyHandoff(NO_SIGNALS, 'Pelanggan mengirim file')).toBe('desain_masuk');
+  });
+
   // A price quote or a minimum is not a hand-off reason by itself.
   it('ignores quote and below_minimum outcomes', () =>
     expect(classifyHandoff({ ...NO_SIGNALS, priceOutcomes: ['quote', 'below_minimum'] }, 'Low confidence')).toBe('lainnya'));

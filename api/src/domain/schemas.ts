@@ -52,6 +52,13 @@ export const PaginationQuerySchema = z.object({
 
 export const ConversationsQuerySchema = PaginationQuerySchema.extend({
   agentId: z.string().optional(),
+  // The inbox tabs: team = escalated or needs_human, ai = active, resolved = resolved. None = all.
+  view: z.enum(['team', 'ai', 'resolved']).optional(),
+  search: z.string().trim().max(200).optional(),
+});
+
+export const TeamQueueQuerySchema = z.object({
+  assignedTo: z.string().trim().max(200).optional(),
 });
 
 export const ContactsQuerySchema = PaginationQuerySchema.extend({

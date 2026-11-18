@@ -60,7 +60,7 @@ function parseUnit(v: unknown): 'rim' | 'pcs' | undefined {
 }
 
 /** Keep only well-typed fields of a model-sent (or stored) item. */
-function sanitizeItem(raw: Record<string, unknown>): OrderItem {
+export function sanitizeItem(raw: Record<string, unknown>): OrderItem {
   const out: OrderItem = {};
   for (const k of ['product', 'size', 'gsm', 'print'] as const) {
     const v = str(raw[k]);

@@ -36,12 +36,15 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
         status: status as Parameters<typeof listConversations>[0]['status'],
         agentId: query.data.agentId,
         upsellAccepted: upsellAccepted || undefined,
+        view: query.data.view,
+        search: query.data.search || undefined,
       });
 
       return reply.send({
         data: result.items,
         error: null,
-        meta: { page: query.data.page, total: result.total, limit: query.data.limit },
+        // counts: each inbox tab's size under the same search.
+        meta: { page: query.data.page, total: result.total, limit: query.data.limit, counts: result.counts },
       });
     }
   );

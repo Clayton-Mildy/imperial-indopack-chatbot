@@ -1,8 +1,12 @@
 import { eq, asc, desc, and, sql, inArray, type SQL } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
-import { conversations, messages, contacts, phoneNumbers, conversationReads } from '../db/schema.js';
+import { conversations, messages, contacts, contactProfiles, phoneNumbers, conversationReads } from '../db/schema.js';
 import type { Conversation, Message, ConversationStatus, PaginationParams } from '../domain/types.js';
 import type { HandoffCategory } from '../domain/handoff.js';
+import type { BrandSlug } from '../domain/orderProfile.js';
+import { contactHeadline } from '../domain/orderDetails.js';
+import { CANNED_PO_FORM_FROM_TEAM } from '../domain/constants.js';
+import { MESSAGE_SOURCE } from '../domain/messageSources.js';
 
 // When the conversation was actually handed to a human. escalateConversation writes exactly one
 // message tagged source='escalation' per hand-off, so its timestamp is the real one - and it is
@@ -111,9 +115,57 @@ export async function upsertConversation(
   return mapConversation(row);
 }
 
+export type ConversationView = 'team' | 'ai' | 'resolved';
+
+/** The statuses behind each inbox tab (Perlu tim / Dibalas AI / Selesai). */
+const VIEW_STATUSES: Record<ConversationView, ConversationStatus[]> = {
+  team: ['escalated', 'needs_human'],
+  ai: ['active'],
+  resolved: ['resolved'],
+};
+
+export interface ConversationListRow extends Conversation {
+  contact?: { id: string; waId: string; displayName: string | null };
+  phoneNumber?: { id: string; number: string; label: string | null };
+  unread: boolean;
+  lastMessageAt: Date;
+  escalatedAt: Date | null;
+  /** The name the bot collected (profile `name`), else the WhatsApp display name. */
+  customerName: string | null;
+  businessName: string | null;
+  /** Brands discussed (profile `brands`), known slugs only. */
+  brands: BrandSlug[];
+  lastMessage: { body: string; role: string; senderName: string | null } | null;
+  /** When the PO form link last went to the customer. */
+  poFormSentAt: Date | null;
+}
+
+// The newest message of any role - the same row lastMessageAtExpr times, so the preview and its
+// time agree. The `m` alias is deliberate - see the warning on lastMessageAtExpr below.
+const lastMessageExpr = sql<{ body: string; role: string; senderName: string | null } | null>`(
+  SELECT json_build_object('body', m.body, 'role', m.role, 'senderName', m.sender_name)
+  FROM messages m WHERE m.conversation_id = conversations.id
+  ORDER BY m.created_at DESC, m.id DESC LIMIT 1
+)`;
+
+// The PO form LINK reaching the customer. While the link setting is still the placeholder the bot
+// sends CANNED_PO_FORM_FROM_TEAM instead - a promise that the team will send the form - under the
+// same source, so that line is told apart by its fixed text, as closeSilentLeads does.
+const poFormSentAtExpr = sql<Date | null>`(
+  SELECT MAX(m.created_at) FROM messages m
+  WHERE m.conversation_id = conversations.id
+    AND m.metadata->>'source' = ${MESSAGE_SOURCE.poForm}
+    AND m.body <> ${CANNED_PO_FORM_FROM_TEAM}
+)`;
+
+/** A LIKE pattern for `s` anywhere, taken literally: %, _ and \ escaped with the ESCAPE character \. */
+function containsPattern(s: string): string {
+  return `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
 export async function listConversations(
-  params: PaginationParams & { status?: ConversationStatus; agentId?: string; upsellAccepted?: boolean }
-): Promise<{ items: (Conversation & { contact?: { id: string; waId: string; displayName: string | null }; phoneNumber?: { id: string; number: string; label: string | null }; unread: boolean; lastMessageAt: Date })[]; total: number }> {
+  params: PaginationParams & { status?: ConversationStatus; agentId?: string; upsellAccepted?: boolean; view?: ConversationView; search?: string }
+): Promise<{ items: ConversationListRow[]; total: number; counts: { all: number; team: number; ai: number; resolved: number } }> {
   const db = getDb();
   const offset = (params.page - 1) * params.limit;
 
@@ -130,16 +182,32 @@ export async function listConversations(
     conversations.created_at
   )`;
 
-  const conditions = [];
-  if (params.status) conditions.push(eq(conversations.status, params.status));
+  // What the tabs count: the search (and the upsell filter), never the tab itself, so each tab
+  // says how many matches it holds.
+  const base: SQL[] = [];
   if (params.upsellAccepted === true) {
-    conditions.push(sql`EXISTS (
+    base.push(sql`EXISTS (
       SELECT 1 FROM contact_profiles cp
       WHERE cp.contact_id = ${conversations.contactId}
       AND cp.profile->>'upsell_accepted' = 'true'
     )`);
   }
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const search = params.search?.trim();
+  if (search) {
+    const pattern = containsPattern(search);
+    base.push(sql`(
+      ${contacts.waId} ILIKE ${pattern} ESCAPE '\\'
+      OR ${contacts.displayName} ILIKE ${pattern} ESCAPE '\\'
+      OR ${contactProfiles.profile}->>'name' ILIKE ${pattern} ESCAPE '\\'
+      OR ${contactProfiles.profile}->>'business_name' ILIKE ${pattern} ESCAPE '\\'
+    )`);
+  }
+  // What the page lists: the tab and the status filter on top.
+  const narrow: SQL[] = [];
+  if (params.status) narrow.push(eq(conversations.status, params.status));
+  if (params.view) narrow.push(inArray(conversations.status, VIEW_STATUSES[params.view]));
+  const whereClause = base.length + narrow.length > 0 ? and(...base, ...narrow) : undefined;
+  const narrowed = narrow.length > 0 ? and(...narrow)! : sql`true`;
 
   const agentId = params.agentId ?? '';
   const unreadExpr = agentId
@@ -176,15 +244,20 @@ export async function listConversations(
         contactDisplayName: contacts.displayName,
         phoneNumber: phoneNumbers.number,
         phoneLabel: phoneNumbers.label,
+        profile: contactProfiles.profile,
         unread: unreadExpr,
         lastMessageAt: lastMessageAtExpr,
         escalatedAt: escalatedAtExpr,
+        lastMessage: lastMessageExpr,
+        poFormSentAt: poFormSentAtExpr,
       })
       .from(conversations)
       // @ts-ignore drizzle-orm dual-module resolution
       .leftJoin(contacts, eq(conversations.contactId, contacts.id))
       // @ts-ignore drizzle-orm dual-module resolution
       .leftJoin(phoneNumbers, eq(conversations.phoneNumberId, phoneNumbers.id))
+      // @ts-ignore drizzle-orm dual-module resolution
+      .leftJoin(contactProfiles, eq(contactProfiles.contactId, conversations.contactId))
       .where(whereClause)
       // Sort by the same value the UI shows, or the list looks shuffled. The escalation queue
       // shows (and promises) time-since-hand-off, so it sorts by that: sorting it by last
@@ -193,13 +266,24 @@ export async function listConversations(
       .orderBy(params.status === 'escalated' ? asc(escalatedAtExpr) : desc(lastMessageAtExpr))
       .limit(params.limit)
       .offset(offset),
+    // The same joins as the page, so the search reads the same columns.
     db
-      .select({ count: sql<number>`count(*)::int` })
+      .select({
+        total: sql<number>`(count(*) FILTER (WHERE ${narrowed}))::int`,
+        all: sql<number>`count(*)::int`,
+        team: sql<number>`(count(*) FILTER (WHERE ${inArray(conversations.status, VIEW_STATUSES.team)}))::int`,
+        ai: sql<number>`(count(*) FILTER (WHERE ${inArray(conversations.status, VIEW_STATUSES.ai)}))::int`,
+        resolved: sql<number>`(count(*) FILTER (WHERE ${inArray(conversations.status, VIEW_STATUSES.resolved)}))::int`,
+      })
       .from(conversations)
-      .where(whereClause),
+      // @ts-ignore drizzle-orm dual-module resolution
+      .leftJoin(contacts, eq(conversations.contactId, contacts.id))
+      // @ts-ignore drizzle-orm dual-module resolution
+      .leftJoin(contactProfiles, eq(contactProfiles.contactId, conversations.contactId))
+      .where(base.length > 0 ? and(...base) : undefined),
   ]);
 
-  const items = rows.map((row) => ({
+  const items: ConversationListRow[] = rows.map((row) => ({
     ...mapConversation(row),
     contact: row.contactWaId
       ? { id: row.contactId, waId: row.contactWaId, displayName: row.contactDisplayName }
@@ -210,12 +294,70 @@ export async function listConversations(
     unread: row.unread,
     lastMessageAt: new Date(row.lastMessageAt),
     escalatedAt: row.escalatedAt ? new Date(row.escalatedAt) : null,
+    ...contactHeadline(row.profile, row.contactDisplayName),
+    lastMessage: row.lastMessage ?? null,
+    poFormSentAt: row.poFormSentAt ? new Date(row.poFormSentAt) : null,
   }));
 
+  const c = countResult[0];
   return {
     items,
-    total: countResult[0]?.count ?? 0,
+    total: c?.total ?? 0,
+    counts: { all: c?.all ?? 0, team: c?.team ?? 0, ai: c?.ai ?? 0, resolved: c?.resolved ?? 0 },
   };
+}
+
+/** A chat waiting on the team, as the Perlu Tim queue reads it. */
+export interface HeldConversationRow {
+  id: string;
+  status: 'escalated' | 'needs_human';
+  handoffCategory: HandoffCategory | null;
+  assignedAgent: string | null;
+  waId: string;
+  displayName: string | null;
+  profile: unknown;
+  waitingSince: Date;
+}
+
+/**
+ * Every chat waiting on the team (escalated or needs_human), oldest wait first. The wait starts at the
+ * hand-off message (escalatedAtExpr); a chat staff took before any hand-off has none and falls back to
+ * the row's updated_at. `assignedTo`: only the chats that person holds.
+ */
+export async function listHeldConversations(opts: { assignedTo?: string } = {}): Promise<HeldConversationRow[]> {
+  const db = getDb();
+  const waitingSinceExpr = sql<string>`COALESCE(${escalatedAtExpr}, conversations.updated_at)`;
+  const conditions: SQL[] = [inArray(conversations.status, VIEW_STATUSES.team)];
+  if (opts.assignedTo) conditions.push(eq(conversations.assignedAgent, opts.assignedTo));
+  const rows = await db
+    .select({
+      id: conversations.id,
+      status: conversations.status,
+      handoffCategory: conversations.handoffCategory,
+      assignedAgent: conversations.assignedAgent,
+      waId: contacts.waId,
+      displayName: contacts.displayName,
+      profile: contactProfiles.profile,
+      waitingSince: waitingSinceExpr,
+    })
+    .from(conversations)
+    // @ts-ignore drizzle-orm dual-module resolution
+    .leftJoin(contacts, eq(conversations.contactId, contacts.id))
+    // @ts-ignore drizzle-orm dual-module resolution
+    .leftJoin(contactProfiles, eq(contactProfiles.contactId, conversations.contactId))
+    .where(and(...conditions))
+    .orderBy(asc(waitingSinceExpr), asc(conversations.id));
+
+  return rows.map((r) => ({
+    id: r.id,
+    status: r.status as HeldConversationRow['status'],
+    handoffCategory: (r.handoffCategory as HandoffCategory | null) ?? null,
+    assignedAgent: r.assignedAgent,
+    waId: r.waId ?? '',
+    displayName: r.displayName ?? null,
+    profile: r.profile ?? null,
+    waitingSince: new Date(r.waitingSince),
+  }));
 }
 
 /**

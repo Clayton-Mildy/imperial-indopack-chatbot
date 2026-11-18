@@ -24,6 +24,7 @@ import { attachmentRoutes } from './routes/dashboard/attachments.js';
 import { uploadRoutes } from './routes/dashboard/uploads.js';
 import { pushRoutes } from './routes/dashboard/push.js';
 import { leadRoutes } from './routes/dashboard/leads.js';
+import { teamQueueRoutes } from './routes/dashboard/teamQueue.js';
 
 // @fastify/reply-from overwrites the outgoing Host with the upstream's (its index.js:
 // `headers.host = url.host`) and sets no x-forwarded-host. Next then synthesises one from that
@@ -136,6 +137,7 @@ export function buildApp() {
   void app.register(conversationRoutes);
   void app.register(contactRoutes);
   void app.register(escalationRoutes);
+  void app.register(teamQueueRoutes);
   void app.register(numberRoutes);
   void app.register(catalogRoutes);
   void app.register(catalogProductRoutes);
