@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { normalizeSize, runPriceTool, PriceToolInput, PRICE_TOOL, PRICE_TOOL_NAME } from '../src/services/priceTool.js';
-import { CATALOG, IVORY_INPUT, SUPREME_INPUT } from './price-fixtures.js';
+import { CATALOG, IVORY_BOX, IVORY_INPUT, SUPREME, SUPREME_2, SUPREME_INPUT } from './price-fixtures.js';
 
 describe('runPriceTool - the plan cases', () => {
   it('quotes 12 rim of Kertas Supreme 30x30', async () => {
@@ -82,6 +82,14 @@ describe('runPriceTool - what is not priceable', () => {
     const r = await runPriceTool({ ...SUPREME_INPUT, size: '25x25' }, CATALOG);
     expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/);
     expect(r.figures).toEqual([]);
+  });
+
+  // Matches the catalog block: only no_stock hides a variant's prices there.
+  it.each(['price_rise', 'price_drop'] as const)('a %s variant is quoted like a normal one', async (stockStatus) => {
+    const marked = { ...SUPREME, variants: SUPREME.variants!.map((v) => (v.id === 'v-ks1-30' ? { ...v, stockStatus } : v)) };
+    const r = await runPriceTool(SUPREME_INPUT, [marked, SUPREME_2, IVORY_BOX]);
+    expect(r.text).toMatch(/^HARGA:/);
+    expect(r.figures).toEqual([165000, 1980000, 160000]);
   });
 
   it('an inactive variant is not quoted', async () => {

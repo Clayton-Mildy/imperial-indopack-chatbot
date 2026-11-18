@@ -107,16 +107,15 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
   const active = (product.variants ?? []).filter((v) => v.isActive);
   const sizes = active.filter((v) => normalizeSize(v.name) === normalizeSize(input.size));
   if (sizes.length !== 1) {
-    const ready = active.filter((v) => v.stockStatus === 'normal').map((v) => v.name);
+    const ready = active.filter((v) => v.stockStatus !== 'no_stock').map((v) => v.name);
     return notInCatalog(`${product.name} ukuran "${input.size}" tidak ada di katalog.${ready.length ? ` Ukuran yang ada: ${ready.join(', ')}.` : ''}`);
   }
   const variant: ProductVariant = sizes[0]!;
   const item = `${product.name} ukuran ${variant.name}`;
 
-  // Out of stock: the catalog block prints no price for it, so neither does this. The legacy
-  // price_rise / price_drop statuses are not quoted either - the team prices those.
+  // Out of stock: the catalog block prints no price for it, so neither does this. Every other
+  // status (price_rise / price_drop included) has its tiers in the block and is quoted from them.
   if (variant.stockStatus === 'no_stock') return notInCatalog(`${item} sedang kosong (stok habis).`);
-  if (variant.stockStatus !== 'normal') return notInCatalog(`${item} tidak bisa dihitung otomatis saat ini.`);
 
   const quote = quotePrice(variant.priceTiers ?? [], input.qty, input.unit);
   switch (quote.kind) {
