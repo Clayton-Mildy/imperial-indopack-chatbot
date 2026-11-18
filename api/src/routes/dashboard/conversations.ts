@@ -13,6 +13,7 @@ import {
   PatchConversationBodySchema,
   MarkReadBodySchema,
 } from '../../domain/schemas.js';
+import { NO_SIGNALS, classifyHandoff } from '../../domain/handoff.js';
 
 export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/v1/conversations
@@ -99,11 +100,15 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const { status, assignedAgent } = bodyResult.data;
+      const next = status ?? existing.status;
+      // Every held chat is in a Perlu Tim group: one a staff member holds before any hand-off goes by its reason.
+      const held = next === 'escalated' || next === 'needs_human';
       const updated = await updateConversationStatus(
         id,
-        status ?? existing.status,
+        next,
         undefined,
-        assignedAgent
+        assignedAgent,
+        held ? existing.handoffCategory ?? classifyHandoff(NO_SIGNALS, existing.escalationReason ?? '') : undefined
       );
 
       return reply.send({ data: updated, error: null });

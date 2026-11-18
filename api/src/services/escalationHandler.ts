@@ -16,6 +16,7 @@ import { findPhoneNumberById } from '../repositories/phoneNumbers.js';
 import { notifyStaff } from './staffNotify.js';
 import { mergeOrderFacts, orderDetailsSummary, type OrderItem } from '../domain/orderProfile.js';
 import { ASKS_NAME_RE } from './replyChecks.js';
+import { HANDOFF_LABEL, NO_SIGNALS, classifyHandoff, type HandoffCategory } from '../domain/handoff.js';
 
 /**
  * The one customer fact the team will need next, as a fixed question — or null when the
@@ -145,6 +146,8 @@ function hasNoFact(facts: Record<string, unknown>, keys: string[]): boolean {
  * `askProfileGap: false` when the customer explicitly asked for a human, is complaining, or asked
  * about tax: tacking a sales question onto that hand-off reads as the bot ignoring the request and
  * continuing to sell. `lead` replaces the canned line itself (CANNED_COMPLAINT_REPLY).
+ * `category`: why the team has it (domain/handoff.ts) - the caller's, from its signals, or else read
+ * off the reason text.
  */
 export async function escalateConversation(
   conversation: Conversation,
@@ -152,14 +155,16 @@ export async function escalateConversation(
   customerWaId: string,
   askProfileGap = true,
   knownPhoneNumber?: PhoneNumber | null,
-  lead: string = CANNED_ESCALATION_REPLY
+  lead: string = CANNED_ESCALATION_REPLY,
+  category?: HandoffCategory
 ): Promise<void> {
+  const handoffCategory = category ?? classifyHandoff(NO_SIGNALS, reason);
   // Status write, phone-number lookup (skipped when the caller already has it) and the
   // profile/history reads are independent — run them together; this all sits before the
   // hand-off message the customer is waiting on.
   // The profile is read even without a gap question: staff get the order details in their note.
   const [, phoneNumber, profile, recent] = await Promise.all([
-    updateConversationStatus(conversation.id, 'escalated', reason),
+    updateConversationStatus(conversation.id, 'escalated', reason, undefined, handoffCategory),
     knownPhoneNumber ? Promise.resolve(knownPhoneNumber) : findPhoneNumberById(conversation.phoneNumberId),
     getContactProfile(conversation.contactId).catch(() => null),
     askProfileGap ? getLastNMessages(conversation.id, MAX_CONTEXT_MESSAGES).catch(() => []) : Promise.resolve([]),
@@ -171,7 +176,7 @@ export async function escalateConversation(
   // before the customer send so a failed send still raises the alarm.
   const summary = orderDetailsSummary(mergeOrderFacts({}, profile?.profile ?? {}));
   notifyStaff({
-    title: 'Eskalasi baru',
+    title: `Perlu tim: ${HANDOFF_LABEL[handoffCategory]}`,
     body: summary ? `${reason}\n${summary}` : reason,
     path: `/conversations/${conversation.id}`,
   });

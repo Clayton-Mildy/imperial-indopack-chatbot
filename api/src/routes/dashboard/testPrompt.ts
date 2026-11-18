@@ -20,6 +20,7 @@ import {
   listTestConversations,
 } from '../../repositories/conversations.js';
 import { MAX_CONTEXT_MESSAGES } from '../../domain/constants.js';
+import { NO_SIGNALS, classifyHandoff } from '../../domain/handoff.js';
 
 const TEST_WA_ID = 'test-kc-demo';
 const TEST_DISPLAY_NAME = 'Demo (Test Prompt)';
@@ -129,7 +130,8 @@ export async function testPromptRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(502).send({ data: null, error: 'AI_UNAVAILABLE' });
       }
 
-      const escalate = !!aiResponse.escalationReason || detectHumanRequest(newMessage);
+      const humanRequested = detectHumanRequest(newMessage);
+      const escalate = !!aiResponse.escalationReason || humanRequested;
 
       // 6. Save the customer message to DB
       await insertMessage({
@@ -142,10 +144,14 @@ export async function testPromptRoutes(app: FastifyInstance): Promise<void> {
 
       if (escalate) {
         // 7a. Update conversation status + save bot escalation notice
+        // Grouped like a live hand-off, from the signals this simulator has.
+        const signals = { ...NO_SIGNALS, humanRequested, priceOutcomes: (aiResponse.priceCalls ?? []).map((c) => c.outcome), designReceived: Boolean(imageData) };
         await updateConversationStatus(
           conversationId,
           'escalated',
-          aiResponse.escalationReason
+          aiResponse.escalationReason,
+          undefined,
+          classifyHandoff(signals, aiResponse.escalationReason ?? '')
         );
         if (aiResponse.message) {
           await insertMessage({

@@ -1224,6 +1224,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation).toHaveBeenCalledTimes(1);
     expect(mockEscalateConversation.mock.calls[0][1]).toContain('Invoice-INV-2026-0613.pdf');
     expect(mockEscalateConversation.mock.calls[0][3]).toBe(false); // no sales question
+    expect(mockEscalateConversation.mock.calls[0][6]).toBe('bukan_pembeli'); // paperwork, like the non-sales topics
   });
 
   it('still lets a captioned document reach the model', async () => {
@@ -1699,6 +1700,115 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(reply.metadata?.priceCalls).toBeUndefined();
   });
 
+  // ─── Hand-off category: why the team has the chat (Plan 2 Task 3) ───────────
+  const categoryOf = () => mockEscalateConversation.mock.calls[0]?.[6];
+  const lowTurn = (extra: Record<string, unknown> = {}) =>
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: 'Low confidence', ...extra });
+
+  it.each([
+    ['above_top_tier', 'pesanan_besar'],
+    ['not_in_catalog', 'harga_custom'],
+  ] as const)('a low-confidence text turn with a %s price call is stored as %s', async (outcome, want) => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    lowTurn({ priceCalls: [PRICE_CALL, { ...PRICE_CALL, outcome }] });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-HC1', 'box ivory 22x22x7 5000 pcs berapa?'));
+    await vi.runAllTimersAsync();
+
+    expect(categoryOf()).toBe(want);
+  });
+
+  it('a request for a person outranks the price outcome', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockDetectHumanRequest.mockReturnValue(true);
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, priceCalls: [{ ...PRICE_CALL, outcome: 'not_in_catalog' }] });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-HC2', 'mau bicara dengan admin aja'));
+    await vi.runAllTimersAsync();
+
+    expect(categoryOf()).toBe('minta_orang');
+  });
+
+  it('a complaint is stored as komplain', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    lowTurn();
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-HC3', 'box yang kemarin datang penyok semua kak'));
+    await vi.runAllTimersAsync();
+
+    expect(categoryOf()).toBe('komplain');
+  });
+
+  it.each([
+    ['a non-sales topic', 'sudah transfer ya kak, tolong dicek', {}],
+    ['the model saying so', 'kami pabrik plastik kak', { escalationReason: 'BUKAN PEMBELI: pabrik plastik menawarkan produknya' }],
+  ] as const)('not a buyer by %s is stored as bukan_pembeli', async (_by, text, extra) => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    lowTurn(extra);
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-HC4', text));
+    await vi.runAllTimersAsync();
+
+    expect(categoryOf()).toBe('bukan_pembeli');
+  });
+
+  it('a hand-off from a batch that held a captioned document is a design received', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    lowTurn();
+
+    await routeInboundBaileysMessage({
+      ...makeTextPayload('wamid-HC5', 'ini file cetaknya kak'),
+      type: 'document' as const,
+      media: { base64: 'JVBER', mimeType: 'application/pdf', filename: 'cetak.pdf' },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(categoryOf()).toBe('desain_masuk');
+  });
+
+  it('a plain text hand-off with no signal goes by its reason, else lainnya', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    lowTurn();
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-HC6', 'bisa kirim ke luar pulau?'));
+    await vi.runAllTimersAsync();
+
+    expect(categoryOf()).toBe('lainnya');
+  });
+
+  it('a photo the bot could not match is a design received', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockMatchCustomerPhoto.mockResolvedValueOnce({ certainty: 'none', product: null, compared: ['BOX NASI'], reason: 'beda' });
+
+    await routeInboundBaileysMessage(makeImagePayload('wamid-HC7', 'ada yang seperti ini?'));
+    await vi.runAllTimersAsync();
+
+    expect(mockBuildContextAndCallAI).not.toHaveBeenCalled();
+    expect(categoryOf()).toBe('desain_masuk');
+  });
+
+  it('a photo turn still puts a complaint first', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    lowTurn();
+
+    await routeInboundBaileysMessage(makeImagePayload('wamid-HC8', 'boxnya datang penyok kak'));
+    await vi.runAllTimersAsync();
+
+    expect(categoryOf()).toBe('komplain');
+  });
+
+  it('the still-checking refresh stores this turn\'s category with its reason', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated', escalationReason: 'Low confidence' });
+    lowTurn({ escalationReason: '150 rim box ivory', priceCalls: [{ ...PRICE_CALL, outcome: 'above_top_tier' }] });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-HC9', 'kalau 150 rim berapa kak?'));
+    await vi.runAllTimersAsync();
+
+    expect(mockEscalateConversation).not.toHaveBeenCalled();
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', '150 rim box ivory', undefined, 'pesanan_besar');
+  });
+
   it('tags the PO form row as po_form', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     mockGetPoFormUrl.mockResolvedValue(PO_URL);
@@ -1763,7 +1873,8 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(CANNED_PO_FORM_FROM_TEAM).toBe('Untuk form PO-nya, tim kami kirimkan sebentar lagi ya kak 🙏');
     expect(sentTexts()).toEqual(['AI reply', CANNED_PO_FORM_FROM_TEAM]);
     expect(sentTexts().join(' ')).not.toContain('REPLACE-ME');
-    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Form PO belum diatur di Pengaturan'));
+    // Its reason tells staff what to do; it is no sales category of its own (Plan 2 Task 3).
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Form PO belum diatur di Pengaturan'), undefined, 'lainnya');
     expect(mockNotifyStaff).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining('Form PO belum diatur di Pengaturan') }));
     expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: CANNED_PO_FORM_FROM_TEAM, metadata: expect.objectContaining({ source: 'po_form' }) }));
     // A reply, not a hand-off message: the customer is not sent the canned escalation.
@@ -1796,7 +1907,8 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     await vi.runAllTimersAsync();
 
     expect(sentTexts()).toEqual(['AI reply', CANNED_PO_FORM_FROM_TEAM]);
-    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Form PO belum diatur di Pengaturan'));
+    // Its reason tells staff what to do; it is no sales category of its own (Plan 2 Task 3).
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Form PO belum diatur di Pengaturan'), undefined, 'lainnya');
     expect(mockNotifyStaff).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining('Form PO belum diatur di Pengaturan') }));
   });
 
@@ -1811,7 +1923,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
     expect(sentTexts()).toEqual(['AI reply', CANNED_PO_FORM_FROM_TEAM]);
     expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'AI reply', waMessageId: 'wa-sent-id' }));
-    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Form PO'));
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Form PO'), undefined, 'lainnya');
     expect(mockSaveConversationInsights).toHaveBeenCalledTimes(1);
   });
 
@@ -1904,7 +2016,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
     expect(CANNED_DESIGN_EXAMPLES_FROM_TEAM).toBe('Untuk contoh desainnya, tim kami kirimkan sebentar lagi ya kak 🙏');
     expect(sentTexts()).toEqual(['Siap kak, belum ada desain ya.', CANNED_DESIGN_EXAMPLES_FROM_TEAM]);
-    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Contoh desain diminta'));
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Contoh desain diminta'), undefined, 'desain_masuk');
     const body = (mockNotifyStaff.mock.calls[0]![0] as { body: string }).body;
     expect(body).toContain('Contoh desain diminta');
     expect(body).toContain('Nama: Budi');
@@ -1936,7 +2048,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
     expect(sentTexts()).toEqual(['AI reply', CANNED_DESIGN_EXAMPLES_FROM_TEAM]);
     expect(mockSendImageMessage.mock.invocationCallOrder[0]).toBeLessThan(mockSendTextMessage.mock.invocationCallOrder[1]!);
-    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Contoh desain diminta'));
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Contoh desain diminta'), undefined, 'desain_masuk');
     expect(mockNotifyStaff).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining('Contoh desain diminta') }));
     expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: CANNED_DESIGN_EXAMPLES_FROM_TEAM, metadata: expect.objectContaining({ source: 'design_examples' }) }));
     expect(mockEscalateConversation).not.toHaveBeenCalled();
@@ -2134,7 +2246,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     await vi.runAllTimersAsync();
 
     expect(sentTexts()).not.toContain(CANNED_DESIGN_EXAMPLES_FROM_TEAM);
-    expect(mockEscalateConversation).toHaveBeenCalledWith(expect.anything(), expect.stringMatching(/^Ukuran custom; Contoh desain diminta/), expect.anything(), expect.anything(), expect.anything(), undefined);
+    expect(mockEscalateConversation).toHaveBeenCalledWith(expect.anything(), expect.stringMatching(/^Ukuran custom; Contoh desain diminta/), expect.anything(), expect.anything(), expect.anything(), undefined, 'harga_custom');
   });
 
   // Live 2026-09-21: two numbers were configured and getFirstPhoneNumber() picked the older
@@ -2250,7 +2362,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     await vi.runAllTimersAsync();
 
     expect(mockUpdateConversationStatus).toHaveBeenCalledWith(
-      'conv-uuid-1', 'escalated', 'Box 50x50 - ukuran tidak ada di katalog'
+      'conv-uuid-1', 'escalated', 'Box 50x50 - ukuran tidak ada di katalog', undefined, 'harga_custom'
     );
     expect(mockEscalateConversation).not.toHaveBeenCalled();
   });
@@ -2714,7 +2826,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     await vi.runAllTimersAsync();
 
     expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual([`${answer}\n\n${CANNED_SIZE_FOR_TEAM}`]);
-    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('ukuran'));
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('ukuran'), undefined, 'lainnya');
   });
 
   it('leaves a reply that gives the size alone', async () => {
@@ -2739,7 +2851,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
     expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual([`Box nasi 20x20: Rp 1.800/pcs\n\n${CANNED_TOTAL_FOR_TEAM}`]);
     expect(mockEscalateConversation).not.toHaveBeenCalled();
-    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('total'));
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('total'), undefined, 'lainnya');
     expect(mockNotifyStaff).toHaveBeenCalled();
   });
 
@@ -2752,7 +2864,8 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     await vi.runAllTimersAsync();
 
     expect(mockSendTextMessage.mock.calls[0]![2]).toContain(CANNED_TOTAL_FOR_TEAM);
-    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('total'));
+    // A photo turn's hand-off is a design received unless a stronger signal fired (Plan 2 Task 3).
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('total'), undefined, 'desain_masuk');
   });
 
   // ─── PPN / tax questions hand off, whatever the model thought ────────────────

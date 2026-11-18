@@ -197,6 +197,13 @@
       "when": 1794200000000,
       "tag": "0027_lead_order_fields_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794300000000,
+      "tag": "0028_conversation_handoff_and_notes",
+      "breakpoints": true
     }
   ]
 }

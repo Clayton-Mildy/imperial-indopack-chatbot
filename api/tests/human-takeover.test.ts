@@ -26,7 +26,7 @@ vi.mock('../src/repositories/conversations.js', () => ({
 
 const { markHumanTakeover } = await import('../src/services/humanTakeover.js');
 
-const CONV = { id: 'conv-1', contactId: 'contact-1', phoneNumberId: 'pn-1', status: 'active' };
+const CONV = { id: 'conv-1', contactId: 'contact-1', phoneNumberId: 'pn-1', status: 'active', escalationReason: null, handoffCategory: null };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -38,7 +38,8 @@ describe('markHumanTakeover', () => {
     mockFindConversationById.mockResolvedValue({ ...CONV });
 
     expect(await markHumanTakeover('conv-1', 'Tim CS')).toBe(true);
-    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-1', 'needs_human', expect.stringContaining('Tim CS'));
+    // No hand-off before it: the reason says who answered, and the queue groups it by that reason.
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-1', 'needs_human', 'Dibalas langsung oleh Tim CS', 'Tim CS', 'lainnya');
     // A note in the thread, not just a badge - the takeover has to be visible where the
     // conversation is read, and the next AI turn can see a human stepped in.
     expect(mockInsertMessage.mock.calls[0]![0]).toMatchObject({ conversationId: 'conv-1', role: 'system_note' });
@@ -50,6 +51,22 @@ describe('markHumanTakeover', () => {
 
     expect(await markHumanTakeover('conv-1', 'Tim CS')).toBe(true);
     expect(mockUpdateConversationStatus.mock.calls[0]![1]).toBe('needs_human');
+  });
+
+  // The Perlu Tim banner keeps the bot's reason after the takeover, and the queue shows who took it.
+  it('keeps the bot\'s reason and category and records the assignee', async () => {
+    mockFindConversationById.mockResolvedValue({ ...CONV, status: 'escalated', escalationReason: 'Box 22x22x7 tidak ada di katalog', handoffCategory: 'harga_custom' });
+
+    expect(await markHumanTakeover('conv-1', 'Admin Rina')).toBe(true);
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-1', 'needs_human', 'Box 22x22x7 tidak ada di katalog', 'Admin Rina', 'harga_custom');
+  });
+
+  // Escalated before categories existed: grouped by the reason it was handed off with.
+  it('reads a missing category off the kept reason', async () => {
+    mockFindConversationById.mockResolvedValue({ ...CONV, status: 'escalated', escalationReason: '150 rim, di atas tingkat teratas', handoffCategory: null });
+
+    await markHumanTakeover('conv-1', 'Tim CS');
+    expect(mockUpdateConversationStatus.mock.calls[0]![4]).toBe('pesanan_besar');
   });
 
   // chakraSync replays history, so an agent who sent five messages must not produce five

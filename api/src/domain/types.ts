@@ -9,6 +9,7 @@ export type StockStatus = 'normal' | 'no_stock' | 'price_rise' | 'price_drop';
 import type { PriceTier } from './pricing.js';
 import type { BrandSlug, OrderItem } from './orderProfile.js';
 import type { PriceToolCall } from '../services/priceTool.js';
+import type { HandoffCategory } from './handoff.js';
 
 export type Brand = {
   id: string;
@@ -135,8 +136,13 @@ export interface Conversation {
   status: ConversationStatus;
   escalationReason: string | null;
   assignedAgent: string | null;
+  /** Why the chat went to the team; null when it is not held. */
+  handoffCategory: HandoffCategory | null;
   conversationSummary: string | null;
   followUpNotes: string | null;
+  teamNotes: string | null;
+  teamNotesUpdatedAt: Date | null;
+  teamNotesUpdatedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

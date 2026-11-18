@@ -25,6 +25,7 @@ import { notifyStaff } from './staffNotify.js';
 import { mergeOrderFacts, orderDetailsSummary } from '../domain/orderProfile.js';
 import { claudeTokensExhausted } from './claude.js';
 import { getConfig } from '../config.js';
+import { NO_SIGNALS, classifyHandoff, type HandoffCategory, type HandoffSignals } from '../domain/handoff.js';
 
 // Quiet window before a batch of texts is answered. 4s was shorter than how people actually type
 // on WhatsApp - a line, a pause to think, another line - so ordinary bursts landed in separate
@@ -92,6 +93,12 @@ interface TextDebounceEntry {
   superseded?: boolean;
   /** The note of the price lists a dropped draft's turn already sent: the re-run sends none again. */
   carriedCatalogNote?: string;
+  /**
+   * The batch carries a file the customer sent: a document with a caption (one without hands off on
+   * arrival), a photo whose media could not be downloaded, or photos folded in from a dropped photo
+   * turn. A hand-off from this batch is a design received (domain/handoff.ts) unless a stronger signal fired.
+   */
+  designReceived?: boolean;
 }
 
 /** One customer photo, waiting with the others sent alongside it. */
@@ -350,20 +357,40 @@ function replyText(r: AIResponse, f: TeamFollowUp = { total: Boolean(r.totalForT
   return lines.filter(Boolean).join('\n\n');
 }
 
+function teamFollowUpReason(f: TeamFollowUp): string {
+  return [
+    f.total ? 'Pelanggan minta total harga - harga per item sudah dikirim, total keseluruhan mohon dihitung tim' : '',
+    f.size ? 'Pelanggan menanyakan ukuran/panjang yang tidak ada di data katalog - mohon diinfokan tim' : '',
+    f.poForm ?? '',
+    f.examples ? DESIGN_EXAMPLES_REASON : '',
+  ].filter(Boolean).join('; ');
+}
+
+/**
+ * The Perlu Tim group of a team follow-up: design examples are the team's design work (desain_masuk);
+ * the PO form sent by hand is a chore its reason spells out (lainnya); a total or a size goes by the
+ * turn's signals and the reason - a size the catalog lacks, priced not_in_catalog, is harga_custom.
+ */
+function teamFollowUpCategory(f: TeamFollowUp, signals: HandoffSignals): HandoffCategory {
+  if (f.examples) return 'desain_masuk';
+  if (f.poForm) return 'lainnya';
+  return classifyHandoff(signals, teamFollowUpReason(f));
+}
+
+/** What the turn knew, for the hand-off's category: the detectors and this turn's hitung_harga outcomes. */
+function handoffSignals(notBuyer: boolean, complaint: boolean, humanRequested: boolean, r: AIResponse, designReceived: boolean): HandoffSignals {
+  return { nonSales: notBuyer, complaint, humanRequested, priceOutcomes: (r.priceCalls ?? []).map((c) => c.outcome), designReceived };
+}
+
 /**
  * A total over several items is the team's to calculate (owner, 2026-10-27), and so is a size the
  * catalog does not have (client 2026-11-11), and so is the PO form while its link is not set. The reply
  * that answered the rest also hands the chat to them - the canned line is a promise, and an escalation
  * is what makes someone keep it (it is also what the nudge reminds them of).
  */
-async function handToTeam(conv: { id: string; status: string; contactId: string }, text: string, f: TeamFollowUp): Promise<void> {
-  const reason = [
-    f.total ? 'Pelanggan minta total harga - harga per item sudah dikirim, total keseluruhan mohon dihitung tim' : '',
-    f.size ? 'Pelanggan menanyakan ukuran/panjang yang tidak ada di data katalog - mohon diinfokan tim' : '',
-    f.poForm ?? '',
-    f.examples ? DESIGN_EXAMPLES_REASON : '',
-  ].filter(Boolean).join('; ');
-  await updateConversationStatus(conv.id, 'escalated', reason)
+async function handToTeam(conv: { id: string; status: string; contactId: string }, text: string, f: TeamFollowUp, category: HandoffCategory): Promise<void> {
+  const reason = teamFollowUpReason(f);
+  await updateConversationStatus(conv.id, 'escalated', reason, undefined, category)
     .catch((err) => console.warn('[messageRouter] team hand-off status failed:', err instanceof Error ? err.message : err));
   // Same six order details escalateConversation gives staff.
   const profile = await getContactProfile(conv.contactId).catch(() => null);
@@ -430,6 +457,7 @@ function supersedeStaleTurn(entry: TextDebounceEntry, sentCatalogNote: string | 
   pending.sentAt = [...entry.sentAt, ...pending.sentAt];
   pending.quotedWaMessageId ??= entry.quotedWaMessageId;
   pending.superseded = true;
+  if (entry.designReceived) pending.designReceived = true;
   if (sentCatalogNote) pending.carriedCatalogNote ??= sentCatalogNote;
   console.log(`[messageRouter] customer wrote again during the turn for ${entry.conversationId} - dropping the draft, answering both batches together`);
   return true;
@@ -619,6 +647,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // question - the model's own hand-off reason included (taxHandoff).
     const notBuyer = notABuyer(nonSales, aiResponse, conv);
     const askGap = !humanRequested && !isNonSalesHandoff(combinedText) && !notBuyer && !ppnAsked && !taxHandoff(aiResponse);
+    const signals = handoffSignals(notBuyer, complaint, humanRequested, aiResponse, Boolean(entry.designReceived));
     if (aiResponse.confidence === 'low' || humanRequested || ppnAsked || (!aiResponse.message && !onlyFixedLines(aiResponse))) {
       // Save this turn's profile facts BEFORE escalating: the hand-off question reads the
       // profile and must not re-ask something the customer said in this very message.
@@ -626,14 +655,15 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
       if (nonSales) void tagNonSalesLead(conv.contactId, nonSales).catch((err) => console.error('[leads] tag non-sales failed:', err));
       const reason = withExamplesAsked(aiResponse.escalationReason
         ?? (ppnAsked ? 'Pertanyaan PPN/pajak — kebijakan pajak hanya dari tim' : 'Low confidence'), aiResponse);
+      const category = classifyHandoff(signals, reason);
       // Already handed to the team — no second escalation, but never dead silence either:
       // the customer asked something new and a human CS would at least acknowledge it.
       if (conv.status === 'escalated') {
         console.warn(`[messageRouter] escalated conversation ${conversationId}: low-confidence turn → still-checking ack`);
         // Keep the banner on THIS turn's reason. Without it the team reads whatever first
         // escalated the conversation - live, a price objection sat on the banner of a
-        // conversation that had moved on to another product eighteen days earlier.
-        await updateConversationStatus(conversationId, 'escalated', reason)
+        // conversation that had moved on to another product eighteen days earlier. Its category too.
+        await updateConversationStatus(conversationId, 'escalated', reason, undefined, category)
           .catch((err) => console.warn('[messageRouter] escalated-status refresh failed:', err instanceof Error ? err.message : err));
         // The hand-off notification only fires once, on the first escalation - but the
         // customer keeps talking, and those messages are the ones a waiting CS most needs to
@@ -653,7 +683,8 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
       // Someone who just asked for a human gets the hand-off line only, no sales question.
       await escalateConversation(
         conv, reason, entry.escalationJid, askGap, entry.phoneNumber,
-        complaint ? CANNED_COMPLAINT_REPLY : notBuyer ? CANNED_NON_SALES_REPLY : undefined
+        complaint ? CANNED_COMPLAINT_REPLY : notBuyer ? CANNED_NON_SALES_REPLY : undefined,
+        category
       );
       // The price list asked for still follows the hand-off, as it did when it went before the reply.
       await deliverPriceList('', false);
@@ -668,7 +699,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // decision read them, and so does the next queued turn (final review M1, M2).
     await saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
     const { followUp, poForm } = await onceOnlyFollowUp(conv, aiResponse, combinedText);
-    if (needsTeam(followUp)) await handToTeam(conv, combinedText, followUp);
+    if (needsTeam(followUp)) await handToTeam(conv, combinedText, followUp, teamFollowUpCategory(followUp, signals));
     else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conversationId, combinedText);
     const reply = replyText(aiResponse, followUp);
     let sentId: string | null = null;
@@ -809,6 +840,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     waiting.sentAt = [...items.map((i) => i.sentAt), ...waiting.sentAt];
     waiting.quotedWaMessageId ??= quotedWaMessageId;
     waiting.superseded = true;
+    waiting.designReceived = true;
     console.log(`[messageRouter] customer wrote again during the photo turn for ${conv.id} - dropping the draft, answering both together`);
     return;
   }
@@ -830,6 +862,8 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   const complaint = detectComplaint(body);
   const notBuyer = notABuyer(nonSales, aiResponse, conv);
   const askGap = !humanRequested && !isNonSalesHandoff(body) && !notBuyer && !ppnAsked && !taxHandoff(aiResponse);
+  // The customer sent photos: a hand-off is a design received unless a stronger signal fired.
+  const signals = handoffSignals(notBuyer, complaint, humanRequested, aiResponse, true);
   // humanRequested belongs in this condition exactly as it does on the text path: it was
   // computed here and used below for askProfileGap, but left OUT of the gate, so a photo
   // captioned "ini fotonya, tolong sambungkan ke CS" kept talking to the bot whenever the
@@ -842,10 +876,11 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     const reason = withExamplesAsked(aiResponse.escalationReason
       ?? (ppnAsked ? 'Pertanyaan PPN/pajak — kebijakan pajak hanya dari tim'
         : nonSales ? `${nonSales} - bukan pertanyaan produk` : 'Low confidence'), aiResponse);
+    const category = classifyHandoff(signals, reason);
     // No second escalation, but acknowledge the new question (same as the text path).
     if (conv.status === 'escalated') {
       console.warn(`[messageRouter] escalated conversation ${conv.id}: low-confidence turn → still-checking ack`);
-      await updateConversationStatus(conv.id, 'escalated', reason)
+      await updateConversationStatus(conv.id, 'escalated', reason, undefined, category)
         .catch((err) => console.warn('[messageRouter] escalated-status refresh failed:', err instanceof Error ? err.message : err));
       // Same as the text path: a photo sent while waiting is still the customer talking.
       notifyStaff({
@@ -864,7 +899,8 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     await escalateConversation(
       conv, reason, replyJid, askGap, phoneNumber,
       complaint ? CANNED_COMPLAINT_REPLY : notBuyer ? CANNED_NON_SALES_REPLY
-        : reason.startsWith(PHOTO_UNSURE_REASON) ? CANNED_PHOTO_CHECK_REPLY : undefined
+        : reason.startsWith(PHOTO_UNSURE_REASON) ? CANNED_PHOTO_CHECK_REPLY : undefined,
+      category
     );
     return;
   }
@@ -873,7 +909,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   // and inside the turn, before the next one starts (M2).
   await saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
   const { followUp, poForm } = await onceOnlyFollowUp(conv, aiResponse, body);
-  if (needsTeam(followUp)) await handToTeam(conv, body, followUp);
+  if (needsTeam(followUp)) await handToTeam(conv, body, followUp, teamFollowUpCategory(followUp, signals));
   else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conv.id, body);
   const reply = replyText(aiResponse, followUp);
   let sentId: string | null = null;
@@ -1212,13 +1248,9 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
   // told the customer to ask about products only (UAT F-22). Hand it to the team, no sales question.
   if (isDocument && !payload.text?.trim()) {
     const name = payload.media?.filename;
-    await escalateConversation(
-      conversation,
-      `Pelanggan mengirim dokumen tanpa keterangan${name ? `: ${name}` : ''} - mohon dicek tim.`,
-      replyJid,
-      false,
-      phoneNumber
-    );
+    const reason = `Pelanggan mengirim dokumen tanpa keterangan${name ? `: ${name}` : ''} - mohon dicek tim.`;
+    // Paperwork for a person, like the non-sales topics: same category.
+    await escalateConversation(conversation, reason, replyJid, false, phoneNumber, undefined, classifyHandoff({ ...NO_SIGNALS, nonSales: true }, reason));
     return;
   }
 
@@ -1320,7 +1352,10 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
     existing.sentAt.push(payload.timestamp > 0 ? payload.timestamp : 0);
     const timer = setTimeout(() => { fireTextDebounce(conversation.id).catch((err) => console.error('[messageRouter] debounce fire error:', err)); }, nextDebounceWait(existing));
     // Latest quoted message in the batch wins; keep the previous one if this msg had none.
-    textDebounceMap.set(conversation.id, { ...existing, timer, quotedWaMessageId: payload.quotedWaMessageId ?? existing.quotedWaMessageId });
+    textDebounceMap.set(conversation.id, {
+      ...existing, timer, quotedWaMessageId: payload.quotedWaMessageId ?? existing.quotedWaMessageId,
+      designReceived: existing.designReceived || isDocument || isImage,
+    });
   } else {
     const timer = setTimeout(() => { fireTextDebounce(conversation.id).catch((err) => console.error('[messageRouter] debounce fire error:', err)); }, TYPING_DEBOUNCE_FIRST_MS);
     textDebounceMap.set(conversation.id, {
@@ -1341,6 +1376,8 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
       conversationId: conversation.id,
       promptSections: phoneNumber.promptSections,
       quotedWaMessageId: payload.quotedWaMessageId ?? null,
+      // Only a captioned document or a photo without its media reaches the text path.
+      designReceived: isDocument || isImage,
     });
   }
 }

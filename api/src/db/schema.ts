@@ -93,6 +93,13 @@ export const conversations = pgTable(
     contextResetAt: timestamp('context_reset_at', { withTimezone: true }),
     // Newest customer message the lead-insights pass has read - see services/leadInsights.ts.
     insightsExtractedAt: timestamp('insights_extracted_at', { withTimezone: true }),
+    // Why the chat went to the team (domain/handoff.ts; CHECK list in migration 0028). Written with
+    // the hand-off, cleared with escalation_reason when the chat leaves the held state.
+    handoffCategory: text('handoff_category'),
+    // The team's own notes on the conversation, written from the dashboard.
+    teamNotes: text('team_notes'),
+    teamNotesUpdatedAt: timestamp('team_notes_updated_at', { withTimezone: true }),
+    teamNotesUpdatedBy: text('team_notes_updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

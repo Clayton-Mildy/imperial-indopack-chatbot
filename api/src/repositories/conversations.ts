@@ -2,6 +2,7 @@ import { eq, asc, desc, and, sql, inArray, type SQL } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { conversations, messages, contacts, phoneNumbers, conversationReads } from '../db/schema.js';
 import type { Conversation, Message, ConversationStatus, PaginationParams } from '../domain/types.js';
+import type { HandoffCategory } from '../domain/handoff.js';
 
 // When the conversation was actually handed to a human. escalateConversation writes exactly one
 // message tagged source='escalation' per hand-off, so its timestamp is the real one - and it is
@@ -36,8 +37,12 @@ export async function findConversationById(id: string): Promise<(Conversation & 
       status: conversations.status,
       escalationReason: conversations.escalationReason,
       assignedAgent: conversations.assignedAgent,
+      handoffCategory: conversations.handoffCategory,
       conversationSummary: conversations.conversationSummary,
       followUpNotes: conversations.followUpNotes,
+      teamNotes: conversations.teamNotes,
+      teamNotesUpdatedAt: conversations.teamNotesUpdatedAt,
+      teamNotesUpdatedBy: conversations.teamNotesUpdatedBy,
       createdAt: conversations.createdAt,
       updatedAt: conversations.updatedAt,
       contactWaId: contacts.waId,
@@ -159,8 +164,12 @@ export async function listConversations(
         status: conversations.status,
         escalationReason: conversations.escalationReason,
         assignedAgent: conversations.assignedAgent,
+        handoffCategory: conversations.handoffCategory,
         conversationSummary: conversations.conversationSummary,
         followUpNotes: conversations.followUpNotes,
+        teamNotes: conversations.teamNotes,
+        teamNotesUpdatedAt: conversations.teamNotesUpdatedAt,
+        teamNotesUpdatedBy: conversations.teamNotesUpdatedBy,
         createdAt: conversations.createdAt,
         updatedAt: conversations.updatedAt,
         contactWaId: contacts.waId,
@@ -250,19 +259,24 @@ export async function updateConversationStatus(
   id: string,
   status: ConversationStatus,
   escalationReason?: string,
-  assignedAgent?: string
+  assignedAgent?: string,
+  handoffCategory?: HandoffCategory
 ): Promise<Conversation | null> {
   const db = getDb();
   // A caller that names no reason means "leave it alone", not "clear it". The dashboard PATCH
   // never sends one, so treating undefined as null wiped the reason on take-over - the one
-  // action whose whole point is to read it. Only leaving the held state for good drops it.
+  // action whose whole point is to read it. Only leaving the held state for good drops it, and
+  // the hand-off category with it.
   const leavingHeldState = status === 'active' || status === 'resolved';
   const [row] = await db
     .update(conversations)
     .set({
       status,
       escalationReason: escalationReason !== undefined ? escalationReason : (leavingHeldState ? null : undefined),
-      assignedAgent: assignedAgent ?? undefined,
+      handoffCategory: handoffCategory !== undefined ? handoffCategory : (leavingHeldState ? null : undefined),
+      // Back to the AI, nobody holds the chat: the router stays silent on any assigned chat, and a
+      // staff reply records its sender here (markHumanTakeover), so "Kembalikan ke AI" must clear it.
+      assignedAgent: assignedAgent ?? (status === 'active' ? null : undefined),
       updatedAt: new Date(),
     })
     .where(eq(conversations.id, id))
@@ -482,7 +496,8 @@ export async function resetConversationToActive(id: string): Promise<Conversatio
   const db = getDb();
   const [row] = await db
     .update(conversations)
-    .set({ status: 'active', escalationReason: null, updatedAt: new Date() })
+    // The whole hand-off goes: reason, category, and who held it (the router stays silent on an assigned chat).
+    .set({ status: 'active', escalationReason: null, handoffCategory: null, assignedAgent: null, updatedAt: new Date() })
     .where(eq(conversations.id, id))
     .returning();
   return row ? mapConversation(row) : null;
@@ -509,6 +524,8 @@ export async function resetConversationContext(id: string, at?: Date): Promise<v
       followUpNotes: null,
       status: 'active',
       escalationReason: null,
+      handoffCategory: null,
+      assignedAgent: null,
       updatedAt: new Date(),
     })
     .where(eq(conversations.id, id));
@@ -565,8 +582,12 @@ function mapConversation(row: Omit<typeof conversations.$inferSelect, 'contextRe
     status: row.status as ConversationStatus,
     escalationReason: row.escalationReason,
     assignedAgent: row.assignedAgent,
+    handoffCategory: (row.handoffCategory as HandoffCategory | null) ?? null,
     conversationSummary: row.conversationSummary ?? null,
     followUpNotes: row.followUpNotes ?? null,
+    teamNotes: row.teamNotes ?? null,
+    teamNotesUpdatedAt: row.teamNotesUpdatedAt ?? null,
+    teamNotesUpdatedBy: row.teamNotesUpdatedBy ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

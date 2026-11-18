@@ -1,4 +1,5 @@
 import { findConversationById, updateConversationStatus, insertMessage } from '../repositories/conversations.js';
+import { NO_SIGNALS, classifyHandoff } from '../domain/handoff.js';
 
 /**
  * A human answered this customer themselves, so the AI stops.
@@ -15,7 +16,11 @@ export async function markHumanTakeover(conversationId: string, agent: string): 
   const conv = await findConversationById(conversationId);
   if (!conv || conv.status === 'needs_human' || conv.status === 'resolved') return false;
 
-  await updateConversationStatus(conversationId, 'needs_human', `Dibalas langsung oleh ${agent}`);
+  // The bot's hand-off reason and category stay on the chat (the Perlu Tim banner keeps reading
+  // them), and the queue shows who picked it up. A chat taken over before any hand-off says so, and
+  // is grouped by that reason.
+  const reason = conv.escalationReason ?? `Dibalas langsung oleh ${agent}`;
+  await updateConversationStatus(conversationId, 'needs_human', reason, agent, conv.handoffCategory ?? classifyHandoff(NO_SIGNALS, reason));
 
   // Persisted so the takeover is visible in the thread itself, not only in a status badge -
   // and so the next AI turn (after someone hands it back) can see that a human stepped in.
