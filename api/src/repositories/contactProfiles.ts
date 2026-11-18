@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { contactProfiles } from '../db/schema.js';
+import { mergeOrderFacts } from '../domain/orderProfile.js';
 import type { ContactProfile, ContactProfileFollowUpStatus, CustomerType } from '../domain/types.js';
 
 export async function upsertContactProfile(
@@ -15,36 +16,37 @@ export async function upsertContactProfile(
   const db = getDb();
   const now = new Date();
 
-  // Single round trip: ON CONFLICT merges into the existing row (jsonb || is the same
-  // top-level merge the old read-then-write spread did). Runs right before the
-  // escalation hand-off message, so the extra SELECT was on the customer's clock.
-  const [row] = await db
-    .insert(contactProfiles)
-    .values({
-      contactId,
-      customerType: updates.customerType ?? null,
-      profile: updates.profilePatch ?? {},
-      followUpStatus: updates.followUpStatus ?? 'none',
-      followUpNotes: updates.followUpNotes ?? null,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: contactProfiles.contactId,
-      set: {
-        customerType: updates.customerType !== undefined
-          ? updates.customerType
-          : sql`${contactProfiles.customerType}`,
+  // Read-merge-write under a row lock: items and brands accumulate (mergeOrderFacts), which jsonb ||
+  // cannot do. The INSERT ... DO NOTHING first guarantees the row exists, so FOR UPDATE always has
+  // something to lock and two concurrent first calls for one contact serialise instead of racing.
+  const row = await db.transaction(async (tx) => {
+    await tx
+      .insert(contactProfiles)
+      .values({ contactId, profile: {}, followUpStatus: 'none', updatedAt: now })
+      .onConflictDoNothing({ target: contactProfiles.contactId });
+
+    const [current] = await tx
+      .select()
+      .from(contactProfiles)
+      .where(eq(contactProfiles.contactId, contactId))
+      .for('update');
+    if (!current) throw new Error('Failed to upsert contact profile');
+
+    const [updated] = await tx
+      .update(contactProfiles)
+      .set({
+        customerType: updates.customerType !== undefined ? updates.customerType : current.customerType,
         profile: updates.profilePatch
-          ? sql`coalesce(${contactProfiles.profile}, '{}'::jsonb) || ${JSON.stringify(updates.profilePatch)}::jsonb`
-          : sql`${contactProfiles.profile}`,
-        followUpStatus: updates.followUpStatus ?? sql`${contactProfiles.followUpStatus}`,
-        followUpNotes: updates.followUpNotes !== undefined
-          ? updates.followUpNotes
-          : sql`${contactProfiles.followUpNotes}`,
+          ? mergeOrderFacts((current.profile as Record<string, unknown>) ?? {}, updates.profilePatch)
+          : current.profile,
+        followUpStatus: updates.followUpStatus ?? current.followUpStatus,
+        followUpNotes: updates.followUpNotes !== undefined ? updates.followUpNotes : current.followUpNotes,
         updatedAt: now,
-      },
-    })
-    .returning();
+      })
+      .where(eq(contactProfiles.contactId, contactId))
+      .returning();
+    return updated;
+  });
 
   if (!row) throw new Error('Failed to upsert contact profile');
   return mapProfile(row);

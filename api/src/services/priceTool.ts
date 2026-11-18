@@ -14,6 +14,7 @@
 
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import { normalizeSize } from '../domain/orderProfile.js';
 import { quotePrice, toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
 import type { Product, ProductVariant } from '../domain/types.js';
 import { getCatalogProducts } from './ragQuery.js';
@@ -54,10 +55,7 @@ export const PRICE_TOOL: Anthropic.Tool = {
   },
 };
 
-/** '30 x 30 cm', '30*30', '30×30' and '30 X 30' are all '30x30'; '7,5' and '7.5' are the same. */
-export function normalizeSize(s: string): string {
-  return s.toLowerCase().replace(/[×*]/g, 'x').replace(/cm/g, '').replace(/,/g, '.').replace(/\s+/g, '');
-}
+export { normalizeSize };
 
 export interface PriceToolResult {
   text: string;

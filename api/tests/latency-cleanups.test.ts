@@ -15,7 +15,7 @@ import { listProducts } from '../src/repositories/products.js';
 
 const TEST_PREFIX = '__latency_cleanups_test__';
 
-describe('upsertContactProfile — single-statement upsert', () => {
+describe('upsertContactProfile — create then merge', () => {
   let contactId: string;
 
   beforeAll(async () => {
