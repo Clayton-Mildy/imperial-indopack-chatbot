@@ -93,8 +93,17 @@ const NO_PRICE = 'Jangan sebut harga untuk item ini; harganya dihitung tim kami.
 const notInCatalog = (reason: string): PriceToolResult => ({ text: `TIDAK_ADA_DI_KATALOG: ${reason} ${NO_PRICE}`, figures: [] });
 
 export async function runPriceTool(input: PriceToolInputType, catalog?: Product[]): Promise<PriceToolResult> {
+  let source: Product[];
+  try {
+    source = catalog ?? (await getCatalogProducts());
+  } catch (err) {
+    // One place for both call paths: an unreadable catalog prices nothing, but must not fail the
+    // whole turn - the model hands this item to the team and answers the rest.
+    console.error('[priceTool] catalog load failed:', err instanceof Error ? err.message : err);
+    return { text: `TIDAK_ADA_DI_KATALOG: Harga tidak bisa dihitung saat ini (katalog gagal dimuat). ${NO_PRICE}`, figures: [] };
+  }
   // Same universe as the catalog block the model reads: only products with an active variant.
-  const products = (catalog ?? (await getCatalogProducts())).filter((p) => (p.variants ?? []).some((v) => v.isActive));
+  const products = source.filter((p) => (p.variants ?? []).some((v) => v.isActive));
 
   const match = matchProduct(products, input.product);
   if (Array.isArray(match)) {
@@ -106,8 +115,21 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
 
   const active = (product.variants ?? []).filter((v) => v.isActive);
   const sizes = active.filter((v) => normalizeSize(v.name) === normalizeSize(input.size));
-  if (sizes.length !== 1) {
-    const ready = active.filter((v) => v.stockStatus !== 'no_stock').map((v) => v.name);
+  if (sizes.length > 1) {
+    // Two variants the import let through with one size (e.g. "30 x 30 cm" and "30x30"): which
+    // tiers are right is the team's call, never a guess.
+    return notInCatalog(`${product.name} punya lebih dari satu varian dengan ukuran "${input.size}" (${sizes.map((v) => v.name).join('; ')}); tim kami perlu memeriksanya.`);
+  }
+  if (sizes.length === 0) {
+    // One entry per size, however many variants share it.
+    const ready: string[] = [];
+    const seen = new Set<string>();
+    for (const v of active) {
+      const key = normalizeSize(v.name);
+      if (v.stockStatus === 'no_stock' || seen.has(key)) continue;
+      seen.add(key);
+      ready.push(v.name);
+    }
     return notInCatalog(`${product.name} ukuran "${input.size}" tidak ada di katalog.${ready.length ? ` Ukuran yang ada: ${ready.join(', ')}.` : ''}`);
   }
   const variant: ProductVariant = sizes[0]!;

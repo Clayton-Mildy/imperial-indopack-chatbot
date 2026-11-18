@@ -4,10 +4,15 @@
  * The figures returned here are also the only ones the strict price check accepts for the turn, so
  * a quote's `figures` must be exactly what its text prints, and every non-quote returns none.
  *
- * Pure - fixture catalog, no DATABASE_URL, no API key.
+ * Pure - fixture catalog (the cached catalog source is mocked), no DATABASE_URL, no API key.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// The default catalog source - a pure stand-in for the cached snapshot (no database).
+const { mockGetCatalogProducts } = vi.hoisted(() => ({ mockGetCatalogProducts: vi.fn() }));
+vi.mock('../src/services/ragQuery.js', () => ({ getCatalogProducts: mockGetCatalogProducts }));
+
 import { normalizeSize, runPriceTool, PriceToolInput, PRICE_TOOL, PRICE_TOOL_NAME } from '../src/services/priceTool.js';
 import { CATALOG, IVORY_BOX, IVORY_INPUT, SUPREME, SUPREME_2, SUPREME_INPUT } from './price-fixtures.js';
 
@@ -121,9 +126,58 @@ describe('runPriceTool - product match', () => {
     expect(r.figures).toEqual([]);
   });
 
+  it('"... cetak 2 warna" gets the 2-warna product\'s own prices, not the 1-warna sibling\'s', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, product: 'kertas supreme 64 gsm cetak 2 warna' }, CATALOG);
+    expect(r.text).toMatch(/^HARGA: Kertas Supreme 64 gsm cetak 2 warna /);
+    expect(r.figures).toEqual([185_000, 2_220_000, 180_000]);
+    // The words alone pick it too: only the sibling has no "2".
+    expect((await runPriceTool({ ...SUPREME_INPUT, product: 'supreme 2 warna' }, CATALOG)).figures).toEqual([185_000, 2_220_000, 180_000]);
+  });
+
   it('an exact name wins over longer names that contain it', async () => {
     const longer = { ...CATALOG[2]!, id: 'p-ii2', name: 'Box Ivory 270 gsm cetak full color laminasi' };
     expect((await runPriceTool(IVORY_INPUT, [...CATALOG, longer])).text).toMatch(/^HARGA:/);
+  });
+});
+
+describe('runPriceTool - two variants with one size', () => {
+  const twin = (names: string[]) => [{
+    ...SUPREME,
+    variants: names.map((name, i) => ({ ...SUPREME.variants![0]!, id: `v-twin-${i}`, name })),
+  }];
+
+  it('is the team\'s to check, said as such, never a guess between them', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, size: '30x30' }, twin(['30 x 30 cm', '30x30']));
+    expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/);
+    expect(r.text).toContain('lebih dari satu varian');
+    expect(r.text).not.toContain('tidak ada di katalog');
+    expect(r.figures).toEqual([]);
+  });
+
+  it('lists that size once among the sizes there are', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, size: '32x32' }, twin(['30 x 30 cm', '30x30', '25 x 25 cm']));
+    expect(r.text).toContain('Ukuran yang ada: 30 x 30 cm, 25 x 25 cm.');
+  });
+});
+
+describe('runPriceTool - the catalog source', () => {
+  it('prices from the cached catalog when no catalog is passed', async () => {
+    mockGetCatalogProducts.mockResolvedValueOnce(CATALOG);
+    expect((await runPriceTool(SUPREME_INPUT)).figures).toEqual([165000, 1980000, 160000]);
+  });
+
+  it('a catalog that cannot be loaded prices nothing and does not throw', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockGetCatalogProducts.mockRejectedValueOnce(new Error('db down'));
+
+    const r = await runPriceTool(SUPREME_INPUT);
+
+    expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/);
+    expect(r.text).toContain('tidak bisa dihitung');
+    expect(r.text).not.toMatch(/Rp/);
+    expect(r.figures).toEqual([]);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
   });
 });
 

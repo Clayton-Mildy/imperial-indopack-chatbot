@@ -130,6 +130,82 @@ describe('API path', () => {
     expect(result.toolFigures).toEqual([]);
   });
 
+  // A reply sent in the same response as its own price calls was written before their results came
+  // back, so its figures are the model's arithmetic. It is not final: the prices run, and the reply
+  // is asked for again with their results in view.
+  const WRONG = { ...REPLY, message: '12 rim jadi Rp 2.220.000 ya kak.' };
+
+  it('runs the price calls sent with a reply, and returns the reply resent after their results', async () => {
+    mockCreate
+      .mockResolvedValueOnce(toolTurn(priceCall('t1', SUPREME_INPUT), { type: 'tool_use', id: 'r1', name: 'respond_to_customer', input: WRONG }))
+      .mockResolvedValueOnce(respondTurn());
+
+    const result = await callAIWithHistory(HISTORY, ASK);
+
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(result.message).toBe(REPLY.message);
+    expect(result.toolFigures).toEqual(SUPREME_FIGURES);
+    const [price, unsent] = toolResults(mockCreate.mock.calls[1]![0]);
+    expect(price).toMatchObject({ tool_use_id: 't1' });
+    expect(price!.content).toMatch(/^HARGA:/);
+    expect(unsent).toMatchObject({ tool_use_id: 'r1' });
+    expect(unsent!.content).toContain('BELUM terkirim');
+    expect(unsent!.content).toContain('hitung_harga');
+  });
+
+  it('a reply sent with only a link lookup is still final', async () => {
+    mockCreate.mockResolvedValueOnce(toolTurn(
+      { type: 'tool_use', id: 'l1', name: 'resolve_link', input: { url: 'https://example.test' } },
+      { type: 'tool_use', id: 'r1', name: 'respond_to_customer', input: REPLY },
+    ));
+    const result = await callAIWithHistory(HISTORY, 'halo');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(result.message).toBe(REPLY.message);
+  });
+
+  it('the failsafe treats a reply sent with price calls the same way: one more ask, same tools', async () => {
+    mockCreate
+      .mockResolvedValueOnce(textTurn('Untuk 12 rim ...'))
+      .mockResolvedValueOnce(toolTurn(priceCall('t1', SUPREME_INPUT), { type: 'tool_use', id: 'r1', name: 'respond_to_customer', input: WRONG }))
+      .mockResolvedValueOnce(respondTurn());
+
+    const result = await callAIWithHistory(HISTORY, ASK);
+
+    expect(mockCreate).toHaveBeenCalledTimes(3);
+    expect(result.message).toBe(REPLY.message);
+    expect(result.toolFigures).toEqual(SUPREME_FIGURES);
+    expect(mockCreate.mock.calls[2]![0].tools).toBe(mockCreate.mock.calls[0]![0].tools);
+    const results = toolResults(mockCreate.mock.calls[2]![0]);
+    expect(results.map((r) => r.tool_use_id)).toEqual(['t1', 'r1']);
+    expect(results[1]!.content).toContain('BELUM terkirim');
+  });
+
+  it('the failsafe also gives a forced answer that only prices its results and one more ask', async () => {
+    mockCreate
+      .mockResolvedValueOnce(textTurn('Untuk 12 rim ...'))
+      .mockResolvedValueOnce(toolTurn(priceCall('t1', SUPREME_INPUT)))
+      .mockResolvedValueOnce(respondTurn());
+
+    const result = await callAIWithHistory(HISTORY, ASK);
+
+    expect(mockCreate).toHaveBeenCalledTimes(3);
+    expect(result.message).toBe(REPLY.message);
+    expect(result.toolFigures).toEqual(SUPREME_FIGURES);
+  });
+
+  it('the failsafe asks only once more: a second reply sent with price calls is not sent', async () => {
+    const mixed = toolTurn(priceCall('t1', SUPREME_INPUT), { type: 'tool_use', id: 'r1', name: 'respond_to_customer', input: WRONG });
+    mockCreate
+      .mockResolvedValueOnce(textTurn('Untuk 12 rim ...'))
+      .mockResolvedValueOnce(mixed)
+      .mockResolvedValueOnce(mixed);
+
+    const result = await callAIWithHistory(HISTORY, ASK);
+
+    expect(mockCreate).toHaveBeenCalledTimes(3);
+    expect(result).toMatchObject({ message: '', confidence: 'low', escalationReason: 'AI response failed structured output' });
+  });
+
   it('a call to a tool the bot no longer has still gets a result, so the next request is valid', async () => {
     mockCreate
       .mockResolvedValueOnce(toolTurn({ type: 'tool_use', id: 't1', name: 'search_legacy_website', input: { query: 'box' } }))

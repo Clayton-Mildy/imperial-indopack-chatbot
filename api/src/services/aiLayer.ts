@@ -882,6 +882,41 @@ async function priceToolResult(block: Anthropic.ToolUseBlock, figures: number[])
   return { type: 'tool_result', tool_use_id: block.id, content: text };
 }
 
+const isToolUse = (name: string) => (b: Anthropic.ContentBlock): b is Anthropic.ToolUseBlock =>
+  b.type === 'tool_use' && b.name === name;
+
+/**
+ * The reply in a response that also calls hitung_harga was written before the prices came back, so
+ * its figures are the model's own arithmetic. It is answered as not sent, and asked for again.
+ */
+const UNSENT_REPLY_RESULT =
+  'Balasan ini BELUM terkirim ke pelanggan: kamu menulisnya sebelum hasil hitung_harga keluar. Panggil respond_to_customer lagi dan pakai angka dari hasil hitung_harga di atas, persis seperti tertulis.';
+
+/** A tool_result for EVERY tool_use in the response - the next request is rejected otherwise. */
+async function answerToolCalls(content: Anthropic.ContentBlock[], figures: number[]): Promise<Anthropic.ToolResultBlockParam[]> {
+  const results: Anthropic.ToolResultBlockParam[] = [];
+  for (const block of content) {
+    if (block.type !== 'tool_use') continue;
+    if (block.name === PRICE_TOOL_NAME) {
+      results.push(await priceToolResult(block, figures));
+    } else if (block.name === RESOLVE_LINK_TOOL_NAME) {
+      results.push({ type: 'tool_result', tool_use_id: block.id, content: await resolveLink((block.input as { url: string }).url) });
+    } else if (block.name === RESPOND_TOOL_NAME) {
+      results.push({ type: 'tool_result', tool_use_id: block.id, content: UNSENT_REPLY_RESULT });
+    } else {
+      // e.g. a call to the website search tool this bot no longer has.
+      results.push({ type: 'tool_result', tool_use_id: block.id, is_error: true, content: `Tool ${block.name} tidak tersedia.` });
+    }
+  }
+  return results;
+}
+
+/** Final only when no hitung_harga rides in the same response (see UNSENT_REPLY_RESULT). */
+function finalReply(response: Anthropic.Message): Anthropic.ToolUseBlock | undefined {
+  if (response.content.some(isToolUse(PRICE_TOOL_NAME))) return undefined;
+  return response.content.find(isToolUse(RESPOND_TOOL_NAME));
+}
+
 // Split the assembled prompt into system content-blocks with the cache breakpoint at the
 // catalog-end marker: everything before it is byte-stable across customers (identity, rules,
 // glossary, full catalog), everything after (customer name) varies. Marker-based because the
@@ -978,30 +1013,11 @@ async function callViaAPI(systemPrompt: string, messages: ChatMessage[]): Promis
 
     if (response.stop_reason !== 'tool_use') break;
 
-    const respondBlock = response.content.find(
-      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === RESPOND_TOOL_NAME
-    );
+    const respondBlock = finalReply(response);
     if (respondBlock) return respond(respondBlock);
 
     loopMessages.push({ role: 'assistant', content: response.content });
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const block of response.content) {
-      if (block.type !== 'tool_use') continue;
-      if (block.name === PRICE_TOOL_NAME) {
-        toolResults.push(await priceToolResult(block, figures));
-      } else if (block.name === RESOLVE_LINK_TOOL_NAME) {
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: block.id,
-          content: await resolveLink((block.input as { url: string }).url),
-        });
-      } else {
-        // Every tool_use needs a tool_result or the next request is rejected - e.g. a call to the
-        // website search tool this bot no longer has.
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, is_error: true, content: `Tool ${block.name} tidak tersedia.` });
-      }
-    }
-    loopMessages.push({ role: 'user', content: toolResults });
+    loopMessages.push({ role: 'user', content: await answerToolCalls(response.content, figures) });
   }
 
   // Failsafe: same tool array as the loop — a different tools list would invalidate the
@@ -1010,19 +1026,28 @@ async function callViaAPI(systemPrompt: string, messages: ChatMessage[]): Promis
   // tool, so instead of forcing we instruct hard. A plain-text answer is dropped, not sent
   // (structuredOutputFailed); a turn with nothing to say has no_reply: the escalation default is what the customer gets.
   loopMessages.push({ role: 'user', content: FAILSAFE_INSTRUCTION });
-  const forcedResponse = await client.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 2048,
-    temperature: 0, // same reason as the loop above
-    system,
-    tools,
-    messages: loopMessages,
-  });
-  logUsage('failsafe', forcedResponse.usage);
+  const forcedCall = async (tag: string): Promise<Anthropic.Message> => {
+    const r = await client.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 2048,
+      temperature: 0, // same reason as the loop above
+      system,
+      tools,
+      messages: loopMessages,
+    });
+    logUsage(tag, r.usage);
+    return r;
+  };
+  let forcedResponse = await forcedCall('failsafe');
+  // Price calls in the forced answer (with a reply written before their results, or alone) get
+  // their results and exactly one more ask, through the same tools.
+  if (forcedResponse.content.some(isToolUse(PRICE_TOOL_NAME))) {
+    loopMessages.push({ role: 'assistant', content: forcedResponse.content });
+    loopMessages.push({ role: 'user', content: await answerToolCalls(forcedResponse.content, figures) });
+    forcedResponse = await forcedCall('failsafe-resend');
+  }
 
-  const forcedBlock = forcedResponse.content.find(
-    (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === RESPOND_TOOL_NAME
-  );
+  const forcedBlock = finalReply(forcedResponse);
   if (forcedBlock) return respond(forcedBlock);
   const plainText = forcedResponse.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
