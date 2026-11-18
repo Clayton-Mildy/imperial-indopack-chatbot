@@ -67,9 +67,10 @@ type RecentRow = { role: string; body: string };
 // "10 rim", "2500 pcs", "500 lembar", "3 karton", "10 box", or a bare number answering "berapa banyak?"
 // ("20", "1 aja", "100 kak"). Not a size ("30x30", "30mm"), a price ("150rb") or a phone number.
 // "koli"/"colly" is how some buyers count cartons ("campur 10 koli"); a missed unit means the hand-off
-// asks "berapa banyak?" again right after the customer said it.
+// asks "berapa banyak?" again right after the customer said it. Never across a line break: in a list
+// ("uk 20" then "Box kue" on the next line) the number is a size, not 20 boxes.
 const QUANTITY_RE =
-  /\b\d{1,4}\s*(?:rim|lembar|lbr|pcs|pc|biji|buah|unit|set|pasang|lusin|lsn|karton|ctn|dus|box|pack|koli|colly|coli|roll)\b|^\s*\d{1,4}\s*(?:aja|saja|dulu|kak|ka|pak|bu|ya|deh|dong)?\s*(?:[,.!?]|$)/im;
+  /\b\d{1,4}[ \t]*(?:rim|lembar|lbr|pcs|pc|biji|buah|unit|set|pasang|lusin|lsn|karton|ctn|dus|box|pack|koli|colly|coli|roll)\b|^[ \t]*\d{1,4}[ \t]*(?:aja|saja|dulu|kak|ka|pak|bu|ya|deh|dong)?[ \t]*(?:[,.!?]|$)/im;
 
 // A number with no unit, read as a quantity only from its context: "300 an" / "300an" (about 300),
 // a need word right before it ("kebutuhan kurang lebih 300", "butuh sekitar 50"), or a per-item
@@ -184,7 +185,7 @@ export async function escalateConversation(
 // No bare "garansi": "garansinya berapa lama?" is a sales question.
 // ponytail: keyword list, not intent - an escalated replacement enquiry gets the apology too.
 const COMPLAINT_RE =
-  /\b(?:komplain|complain|keluhan|klaim\s+garansi|retur|refund|kecewa|cacat|rusak|patah|macet|(?:tidak|nggak|ngga|gak|ga)\s+berfungsi)\b/i;
+  /\b(?:komplain|complain|keluhan|klaim\s+garansi|retur|refund|kecewa|cacat|rusak|patah|macet|penyok|sobek|robek|luntur|bocor|berjamur|salah\s+cetak|cetakan(?:nya)?\s+pudar|lem(?:nya)?\s+lepas|lepas\s+lem|(?:tidak|nggak|ngga|gak|ga)\s+berfungsi)\b/i;
 
 export function detectComplaint(message: string): boolean {
   return COMPLAINT_RE.test(message);
@@ -224,37 +225,53 @@ const ORDER_FOLLOWUP_RE = new RegExp([
 ].join('|'), 'i');
 
 // Our own names as a supplier writes them: the company or either brand ("PT Imperial Indopack",
-// "Kertas Supreme"). Only after supplier/kebutuhan wording - a buyer names the brands all the time.
-const OUR_NAME = String.raw`(?:pt\.?\s*)?(?:imperial(?:\s*indopack)?|kertas\s+supreme)`;
+// "Kertas Supreme"). Never a bare "imperial": "Imperial Kitchen" is a buyer's restaurant.
+const OUR_NAME = String.raw`(?:pt\.?\s*imperial(?:\s*indopack)?|imperial\s*indopack|kertas\s*supreme)`;
 
-// Someone selling TO us. Not a bare "supplier": "cari supplier kertas nasi" is a buyer.
+// Someone selling TO us: an explicit offer to sell or supply. Not a bare "supplier" ("cari supplier
+// kertas nasi" is a buyer), not a PT/CV introduction ("Kami dari PT Sari Roti, produsen roti" buys
+// boxes), and not "bisa tawarkan box ...?" - that is a buyer asking US to offer.
 const PARTNERSHIP_OFFER_RE = new RegExp([
   String.raw`\b(?:menawarkan|tawarkan|tawarin|penawaran)\s+kerja\s*sama\b`,
+  String.raw`\b(?:kami|saya)\s+(?:ingin\s+|mau\s+|akan\s+)?menawarkan\b`,
+  String.raw`\b(?:ingin|mau)\s+menawarkan\b`,
+  String.raw`\b(?:menawarkan|tawarkan|tawarin)\s+(?:produk|jasa|barang|layanan)\s+(?:kami|kita)\b`,
   String.raw`\b(?:kontak|hubungi|menghubungi)\s+(?:bagian|tim|divisi)?\s*(?:purchasing|pembelian|procurement|pengadaan)\b`,
   String.raw`\b(?:bagian|tim|divisi)\s+(?:purchasing|procurement|pengadaan)\b`,
-  String.raw`\bkami\s+(?:dari\s+)?(?:pt|cv)\b[^.?!\n]{0,40}\b(?:supplier|pabrik|produsen|vendor)\b`,
   // A plastics factory: "Kami ingin coba menjajaki kebutuhan plastik untuk produk di perusahaan
   // bapak". Exploring OUR needs is seller's language; a buyer has needs of their own.
   String.raw`\bmenjajaki\s+kebutuhan\b`,
-  String.raw`\b(?:menawarkan|tawarkan|tawarin)\s+(?:produk|jasa|barang|layanan)\s+(?:kami|kita)\b`,
+  String.raw`\bkami\s+(?:bisa\s+|siap\s+)?(?:supply|suplai|memasok|menyuplai)\b`,
+  String.raw`\b(?:bisa|siap)\s+(?:supply|suplai|memasok|menyuplai)\b`,
   String.raw`\b(?:jadi|menjadi)\s+(?:supplier|pemasok|vendor)\b`,
-  String.raw`\b(?:supplier|pemasok|vendor)\s+(?:untuk|bagi|ke)\s+${OUR_NAME}\b`,
+  String.raw`\b(?:supplier|pemasok|vendor)\s+(?:untuk|bagi|ke)\s+(?:kalian|anda|${OUR_NAME})\b`,
+  String.raw`\b(?:boleh|bisa|izin|ijin)\s+(?:kami\s+)?(?:kirim|mengirim|mengirimkan|ajukan|mengajukan)\s+(?:penawaran|company\s*profile|compro)\b`,
+  String.raw`\b(?:company\s*profile|compro)\s+kami\b`,
 ].join('|'), 'i');
 
 // A factory or supplier introducing itself ("Kami dari pabrik plastik kantongan, shrink, stretch film").
 // Not enough alone - a bakery buying boxes for its cakes says the same ("kami pabrik roti") - so it
-// counts only with an offer, and the two may come in different messages: the factory says what it makes in
-// one and asks "Terkait kebutuhan plastik kami bisa menghubungi kemana ya kak?" three minutes later.
-// "minta penawaran" is a buyer asking for a quote, so the offer is OUR side being offered something.
+// counts only with a question about our needs, and the two may come in different messages: the
+// factory says what it makes in one and asks "Terkait kebutuhan plastik kami bisa menghubungi kemana
+// ya kak?" three minutes later.
 const SUPPLIER_SELF_ID_RE =
   /\b(?:kami|saya)\s+(?:dari\s+|adalah\s+)?(?:(?:pt|cv)\.?\s+[^,.?!\n]{1,40}?\s+(?:yang\s+)?)?(?:pabrik|produsen|manufaktur|supplier|pemasok|vendor)\b/i;
 const SUPPLIER_OFFER_RE = new RegExp([
-  // Not "produk kami": a food factory buys "box untuk produk kami". Not "menawarkan harga": that is
-  // a buyer asking us for one.
-  String.raw`\b(?:menawarkan|tawarkan|tawarin)\b(?!\s+harga)`,
   String.raw`\bkebutuhan\s+\w+(?:\s+\w+)?\s+(?:kami\s+)?(?:bisa|boleh)\s+(?:menghubungi|hubungi|kontak)\b`,
   String.raw`\bkebutuhan\b[^,.?!\n]{0,40}\b(?:di|untuk|bagi)\s+${OUR_NAME}\b`,
 ].join('|'), 'i');
+
+// Buy intent overrides every supplier signal (client ruling, Task 13 review): a message that asks for,
+// prices or names what we sell is a buyer's, whoever wrote it. What a supplier says about its own goods
+// ("supplier kertas kraft roll", "vendor tinta sablon", "bisa supply plastik ke ...") and the "mau" of
+// "mau menawarkan" are cut first, so they never read as buying.
+const BUY_INTENT_RE = /\b(?:butuh|pesan|order|beli|mau|cari|harga|berapa|box|dus|kertas|cetak|sablon|kemasan)(?:nya)?\b/i;
+const SELLER_GOODS_RE = /\b(?:supplier|pemasok|vendor|distributor|pabrik|produsen|manufaktur|supply|suplai|memasok|menyuplai)\b[^,.?!\n]{0,40}/gi;
+const OFFER_MODAL_RE = /\b(?:mau|ingin|akan)\s+(?=(?:menawarkan|tawarkan|tawarin|memasok|menyuplai|supply|suplai|(?:jadi|menjadi)\s+(?:supplier|pemasok|vendor))\b)/gi;
+
+function wantsToBuy(message: string): boolean {
+  return BUY_INTENT_RE.test(message.replace(SELLER_GOODS_RE, ' ').replace(OFFER_MODAL_RE, ' '));
+}
 
 /**
  * A hand-off that is not a sale in progress - after-sales trouble or a job enquiry - gets no
@@ -298,6 +315,7 @@ export function detectNonSalesTopic(message: string, earlier = ''): string | nul
   if (detectCourierMessage(message)) return 'Kurir / pengambilan pesanan';
   if (JOB_ENQUIRY_RE.test(message)) return 'Lowongan kerja';
   if (ORDER_FOLLOWUP_RE.test(message)) return 'Pembayaran / status pesanan';
+  if (wantsToBuy(message)) return null;
   if (PARTNERSHIP_OFFER_RE.test(message)) return 'Penawaran kerja sama / supplier';
   if (SUPPLIER_OFFER_RE.test(message) && SUPPLIER_SELF_ID_RE.test(`${earlier}\n${message}`)) return 'Penawaran kerja sama / supplier';
   return null;
@@ -355,8 +373,8 @@ const SIZE_QUESTION_RES = [
   new RegExp(`\\b${SIZE_WORD}\\s*(?:berapa|brp|brpa|brapa|apa)\\b`, 'i'),
 ];
 // A size in the reply: "25 cm", "1,5mm", "16\"", or the catalog's p x l (x t) as written - "30 x 30",
-// "20x20x7,5" - which often carries no unit at all.
-const MEASUREMENT_RE = /\d+(?:[.,/]\d+)?\s*(?:mm|cm|meter|m\b|inch|inci|in\b|"|”|'')|\b\d+(?:[.,]\d+)?\s*[x×]\s*\d+(?:[.,]\d+)?\b/i;
+// "20x20x7,5" - which often carries no unit at all. Not a quantity: "1 x 500 lembar", "2 x 5 rim".
+const MEASUREMENT_RE = /\d+(?:[.,/]\d+)?\s*(?:mm|cm|meter|m\b|inch|inci|in\b|"|”|'')|\b\d+(?:[.,]\d+)?\s*[x×]\s*\d+(?:[.,]\d+)?\b(?!\s*(?:rim|lembar|lbr|pcs|pc|pack|set|buah)\b)/i;
 // The model's own "tim kami cek ukurannya" - one promise is enough.
 const TEAM_CHECKS_SIZE_RE = /\btim\b[^.\n]{0,40}\b(?:cek|konfirmasi|kabari)/i;
 

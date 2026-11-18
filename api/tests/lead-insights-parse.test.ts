@@ -162,7 +162,7 @@ it('gives the order call box and paper examples', async () => {
 describe('a name the model did not find', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it.each(['unknown', 'Unknown', 'tidak diketahui', '-', ' - ', 'null', 'none'])('reads %j as no name and no business', async (v) => {
+  it.each(['unknown', 'Unknown', 'tidak diketahui', '-', ' - ', 'null', 'none', 'tidak disebutkan', 'Belum diketahui', 'N/A'])('reads %j as no name and no business', async (v) => {
     modelSays(JSON.stringify({ lead_kind: 'lead', name: v, business_name: v }));
     expect(await extractLeadInsights('x')).toMatchObject({ name: null, business_name: null });
   });

@@ -1700,97 +1700,177 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation).not.toHaveBeenCalled();
   });
 
-  // Task 13 carry: the team's promise goes out once per conversation.
-  describe('the examples line and the PO-placeholder line go out once per conversation', () => {
-    const botSaid = async (line: 'examples' | 'po') => {
+  // Task 13 carry + fix round 1: the team's promise is made once per hand-off - suppressed only while
+  // the chat is still escalated and no staff message came after the earlier line.
+  describe('the examples line and the PO-placeholder line, once per hand-off', () => {
+    const EXAMPLES_REASON = 'Contoh desain diminta';
+    const PO_REASON = 'Form PO belum diatur di Pengaturan';
+    const lineOf = async (line: 'examples' | 'po') => {
       const { CANNED_DESIGN_EXAMPLES_FROM_TEAM, CANNED_PO_FORM_FROM_TEAM } = await import('../src/domain/constants.js');
-      const body = line === 'examples' ? CANNED_DESIGN_EXAMPLES_FROM_TEAM : CANNED_PO_FORM_FROM_TEAM;
+      return line === 'examples' ? CANNED_DESIGN_EXAMPLES_FROM_TEAM : CANNED_PO_FORM_FROM_TEAM;
+    };
+    const botSaid = async (line: 'examples' | 'po', opts: { staffAfter?: boolean } = {}) => {
+      const body = await lineOf(line);
       mockGetLastNMessages.mockResolvedValue([
         { role: 'user', body: 'belum ada desain kak' },
         { role: 'assistant', body: 'Siap kak.' },
         { role: 'assistant', body, metadata: { source: line === 'examples' ? 'design_examples' : 'po_form' } },
+        ...(opts.staffAfter ? [{ role: 'assistant', body: 'Sudah kami kirim ya kak', senderName: 'Tim CS' }] : []),
+        { role: 'user', body: 'oke kak' },
       ] as HistoryRow[]);
       return body;
     };
+    const escalated = () => {
+      mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated' });
+      mockUpsertConversation.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated' });
+    };
+    const handedOffFor = (reason: string) =>
+      mockUpdateConversationStatus.mock.calls.some((c) => c[1] === 'escalated' && String(c[2]).includes(reason));
+    const staffToldOf = (reason: string) =>
+      mockNotifyStaff.mock.calls.some((c) => String((c[0] as { body: string }).body).includes(reason));
+    const examplesTurn = () => mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, examplesForTeam: true });
+    const poTurn = async () => {
+      const { PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+      mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+    };
 
-    it('text path: the examples line already sent is not sent again, and the team is not told again', async () => {
+    // ── already sent, still escalated, no staff reply since → suppressed ──
+    it('text path: an examples line still pending is not sent again, and the team is not told again', async () => {
       const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-      const line = await botSaid('examples');
-      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Siap kak, belum ada desain ya.', examplesForTeam: true });
+      escalated();
+      await botSaid('examples');
+      examplesTurn();
 
       await routeInboundBaileysMessage(makeTextPayload('wamid-EX4', 'contohnya mana kak'));
       await vi.runAllTimersAsync();
 
-      expect(sentTexts()).toEqual(['Siap kak, belum ada desain ya.']);
-      expect(sentTexts()).not.toContain(line);
-      expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
-      expect(mockNotifyStaff).not.toHaveBeenCalled();
+      expect(sentTexts()).toEqual(['AI reply']);
+      expect(handedOffFor(EXAMPLES_REASON)).toBe(false);
+      expect(staffToldOf(EXAMPLES_REASON)).toBe(false);
     });
 
-    it('photo path: the examples line already sent is not sent again, and the team is not told again', async () => {
+    it('photo path: an examples line still pending is not sent again, and the team is not told again', async () => {
       const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      escalated();
       await botSaid('examples');
-      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, examplesForTeam: true });
+      examplesTurn();
 
       await routeInboundBaileysMessage(makeImagePayload('wamid-EX5', 'box seperti ini kak, belum ada desain'));
       await vi.runAllTimersAsync();
 
       expect(sentTexts()).toEqual(['AI reply']);
-      expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
-      expect(mockNotifyStaff).not.toHaveBeenCalled();
+      expect(handedOffFor(EXAMPLES_REASON)).toBe(false);
+      expect(staffToldOf(EXAMPLES_REASON)).toBe(false);
     });
 
-    it('text path: the PO-placeholder line already sent is not sent again, and the team is not told again', async () => {
+    it('text path: a PO-placeholder line still pending is not sent again, and the team is not told again', async () => {
       const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-      const { PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+      escalated();
       await botSaid('po');
-      mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
-      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+      await poTurn();
 
       await routeInboundBaileysMessage(makeTextPayload('wamid-PO8', 'oke kak jadi ambil 10 rim'));
       await vi.runAllTimersAsync();
 
       expect(sentTexts()).toEqual(['AI reply']);
-      expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
-      expect(mockNotifyStaff).not.toHaveBeenCalled();
+      expect(handedOffFor(PO_REASON)).toBe(false);
+      expect(staffToldOf(PO_REASON)).toBe(false);
       expect(mockInsertMessage).not.toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ source: 'po_form' }) }));
     });
 
-    it('photo path: the PO-placeholder line already sent is not sent again, and the team is not told again', async () => {
+    it('photo path: a PO-placeholder line still pending is not sent again, and the team is not told again', async () => {
       const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-      const { PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+      escalated();
       await botSaid('po');
-      mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
-      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+      await poTurn();
 
       await routeInboundBaileysMessage(makeImagePayload('wamid-PO9', 'yang ini kak, saya ambil'));
       await vi.runAllTimersAsync();
 
       expect(sentTexts()).toEqual(['AI reply']);
-      expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
-      expect(mockNotifyStaff).not.toHaveBeenCalled();
+      expect(handedOffFor(PO_REASON)).toBe(false);
+      expect(staffToldOf(PO_REASON)).toBe(false);
+    });
+
+    // ── already sent, but the chat was set back to active → a new job: line and hand-off ──
+    it('text path: chat set back to active, a new agreement gets the PO line and a hand-off again', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const line = await botSaid('po');
+      await poTurn();
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-PO11', 'oke kak, pesanan kedua 5 rim ya'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', line]);
+      expect(handedOffFor(PO_REASON)).toBe(true);
+      expect(staffToldOf(PO_REASON)).toBe(true);
+    });
+
+    it('photo path: chat set back to active, a new examples request gets the line and a hand-off again', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const line = await botSaid('examples');
+      examplesTurn();
+
+      await routeInboundBaileysMessage(makeImagePayload('wamid-EX8', 'kalau box yang ini, contoh desainnya ada?'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', line]);
+      expect(handedOffFor(EXAMPLES_REASON)).toBe(true);
+      expect(staffToldOf(EXAMPLES_REASON)).toBe(true);
+    });
+
+    // ── already sent, still escalated, but staff replied after it → a new job too ──
+    it('text path: staff answered after the examples line - a new request gets the line and a hand-off', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      escalated();
+      const line = await botSaid('examples', { staffAfter: true });
+      examplesTurn();
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-EX9', 'untuk box kue, contoh desainnya juga ada?'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', line]);
+      expect(handedOffFor(EXAMPLES_REASON)).toBe(true);
+      expect(staffToldOf(EXAMPLES_REASON)).toBe(true);
+    });
+
+    it('photo path: staff answered after the PO line - a new agreement gets the line and a hand-off', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      escalated();
+      const line = await botSaid('po', { staffAfter: true });
+      await poTurn();
+
+      await routeInboundBaileysMessage(makeImagePayload('wamid-PO12', 'yang ini juga kak, saya ambil'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', line]);
+      expect(handedOffFor(PO_REASON)).toBe(true);
+      expect(staffToldOf(PO_REASON)).toBe(true);
     });
 
     it('a line said only by the customer, or the other fixed line, does not count', async () => {
       const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
       const { CANNED_DESIGN_EXAMPLES_FROM_TEAM } = await import('../src/domain/constants.js');
+      escalated();
       await botSaid('po');
       mockGetLastNMessages.mockResolvedValue([
         ...(await mockGetLastNMessages()),
         { role: 'user', body: CANNED_DESIGN_EXAMPLES_FROM_TEAM },
       ] as HistoryRow[]);
-      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, examplesForTeam: true });
+      examplesTurn();
 
       await routeInboundBaileysMessage(makeTextPayload('wamid-EX6', 'belum ada desain kak'));
       await vi.runAllTimersAsync();
 
       expect(sentTexts()).toEqual(['AI reply', CANNED_DESIGN_EXAMPLES_FROM_TEAM]);
-      expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Contoh desain diminta'));
+      expect(handedOffFor(EXAMPLES_REASON)).toBe(true);
     });
 
     it('a real PO link is not held back by the placeholder line sent earlier', async () => {
       const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
       const { poFormMessage } = await import('../src/domain/constants.js');
+      escalated();
       await botSaid('po');
       mockGetPoFormUrl.mockResolvedValue(PO_URL);
       mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });

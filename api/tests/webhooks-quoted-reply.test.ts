@@ -26,23 +26,24 @@ vi.mock('../src/config.js', () => ({
   }),
 }));
 
-const QUOTED_WAMID = 'wamid.HBgNNjI4NTE2MTM2NzIzMRUCABIYFjNFQjAzQ0VGREM4MDAxOEM5NkUxQzMA';
-const REPLY_WAMID = 'wamid.HBgNNjI4NTE2MTM2NzIzMRUCABIYFjNFQjBGQ0RDNEIzNURERkM4Qjg3QTgA';
+// Synthetic wamids in Meta's shape, built from the test number 628111000099.
+const QUOTED_WAMID = 'wamid.HBgMNjI4MTExMDAwMDk5FQIAEhgWM0VCMEFBQUEwMDAwMTExMTIyMjIzMwA=';
+const REPLY_WAMID = 'wamid.HBgMNjI4MTExMDAwMDk5FQIAEhgWM0VCMEJCQkIwMDAwNDQ0NDU1NTU2NgA=';
 
-/** Verbatim from ChakraHQ. `from_user_id` is Chakra's own addition - Meta does not send it. */
+/** The shape ChakraHQ sends, with synthetic values. `from_user_id` is Chakra's own addition - Meta does not send it. */
 function chakraBody(message: Record<string, unknown>): string {
   return JSON.stringify({
     entry: [{ changes: [{ value: {
-      contacts: [{ profile: { name: 'Kevin Charles' }, wa_id: '628111000099' }],
+      contacts: [{ profile: { name: 'Pelanggan Contoh' }, wa_id: '628111000099' }],
       messages: [message],
     } }] }],
   });
 }
 
 const QUOTE_REPLY = {
-  context: { from: '628111000099', from_user_id: 'ID.3164587643742121', id: QUOTED_WAMID },
+  context: { from: '628111000099', from_user_id: 'ID.1000000000000001', id: QUOTED_WAMID },
   from: '628111000099',
-  from_user_id: 'ID.3164587643742121',
+  from_user_id: 'ID.1000000000000001',
   id: REPLY_WAMID,
   text: { body: 'can you read this?' },
   timestamp: '1788069196',
@@ -51,7 +52,7 @@ const QUOTE_REPLY = {
 
 const PLAIN = {
   from: '628111000099',
-  from_user_id: 'ID.3164587643742121',
+  from_user_id: 'ID.1000000000000001',
   id: REPLY_WAMID,
   text: { body: 'hi' },
   timestamp: '1788069100',

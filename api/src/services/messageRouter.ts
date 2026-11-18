@@ -279,31 +279,43 @@ function teamFollowUp(r: AIResponse, customerText: string, po?: { teamReason: st
 }
 
 /**
- * The team's promise of design examples, and of the PO form while its link is not set, goes out once
- * per conversation: when the same fixed line is already among the recent bot messages, the team has
- * been told and the customer has read it, so this turn neither repeats the line nor hands off again
- * for it. Read only when one of those lines is due, so most turns cost no extra query.
+ * The team's promise of design examples, and of the PO form while its link is not set, is not made
+ * twice for one hand-off: while the chat is still escalated and no staff message came after the same
+ * fixed line, the team has been told and the customer has read it, so this turn neither repeats the
+ * line nor hands off again for it. Once the team has answered (a staff message after the line) or set
+ * the chat back to active, a new agreement or a new examples request is a new job: the line goes out
+ * and the chat is handed off again. Read only when one of those lines is due, so most turns cost no
+ * extra query.
  */
 async function onceOnlyFollowUp(
-  conversationId: string, r: AIResponse, customerText: string
+  conv: { id: string; status: string }, r: AIResponse, customerText: string
 ): Promise<{ followUp: TeamFollowUp; poForm: PoFormLine | null }> {
   let poForm = r.sendPoForm ? await poFormToSend() : null;
   const due = [
     r.examplesForTeam ? CANNED_DESIGN_EXAMPLES_FROM_TEAM : null,
     poForm?.teamReason ? poForm.body : null,
   ].filter((line): line is string => line !== null);
-  const sent = due.length > 0 ? await linesAlreadySent(conversationId, due) : new Set<string>();
+  const sent = due.length > 0 && conv.status === 'escalated' ? await linesStillPending(conv.id, due) : new Set<string>();
   if (poForm && sent.has(poForm.body)) poForm = null;
   const followUp = teamFollowUp(r, customerText, poForm);
   if (sent.has(CANNED_DESIGN_EXAMPLES_FROM_TEAM)) followUp.examples = false;
   return { followUp, poForm };
 }
 
-/** Which of `lines` a recent bot message already is. A failed read sends them: a repeat beats a lost promise. */
-async function linesAlreadySent(conversationId: string, lines: string[]): Promise<Set<string>> {
+/**
+ * Which of `lines` a recent bot message already is with no staff message after it - the promise the
+ * team has not answered yet. A failed read sends them: a repeat beats a lost promise.
+ */
+async function linesStillPending(conversationId: string, lines: string[]): Promise<Set<string>> {
   const recent = await getLastNMessages(conversationId, MAX_CONTEXT_MESSAGES).catch(() => []);
-  const botBodies = new Set(recent.filter((m) => m.role === 'assistant').map((m) => m.body.trim()));
-  return new Set(lines.filter((line) => botBodies.has(line)));
+  const pending = new Set<string>();
+  // Oldest first: a staff reply clears every promise before it.
+  for (const m of recent) {
+    if (m.role !== 'assistant') continue;
+    if (m.senderName) pending.clear();
+    else if (lines.includes(m.body.trim())) pending.add(m.body.trim());
+  }
+  return pending;
 }
 
 const DESIGN_EXAMPLES_REASON = 'Contoh desain diminta - pelanggan belum punya desain dan produknya belum punya foto contoh, mohon kirimkan contoh desain';
@@ -570,7 +582,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // lands during the escalation checks and staff sync above was missed (live 2026-11-08: "Dengan Rudi
     // ka" typed as a reply about Malang was being sent, which then asked the name again).
     if (supersedeStaleTurn(entry, filesSent)) return;
-    const { followUp, poForm } = await onceOnlyFollowUp(conversationId, aiResponse, combinedText);
+    const { followUp, poForm } = await onceOnlyFollowUp(conv, aiResponse, combinedText);
     if (needsTeam(followUp)) await handToTeam(conv, combinedText, followUp);
     else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conversationId, combinedText);
     const reply = replyText(aiResponse, followUp);
@@ -779,7 +791,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     return;
   }
 
-  const { followUp, poForm } = await onceOnlyFollowUp(conv.id, aiResponse, body);
+  const { followUp, poForm } = await onceOnlyFollowUp(conv, aiResponse, body);
   if (needsTeam(followUp)) await handToTeam(conv, body, followUp);
   else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conv.id, body);
   const reply = replyText(aiResponse, followUp);

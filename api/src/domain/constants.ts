@@ -31,13 +31,6 @@ export const CANNED_DESIGN_EXAMPLES_FROM_TEAM = 'Untuk contoh desainnya, tim kam
 // only urls on them are sent (aiLayer.withCatalogPhotosOnly).
 export const REFERENCE_PHOTOS_MARKER = '[FOTO REFERENSI TERSEDIA]';
 
-
-// What the customer sees on EVERY escalation. Deliberately fixed text, not model prose: the
-// model, asked to explain why it could not help, narrates its own data ("katalog kami khusus
-// didokumentasikan untuk pintu kayu") or invents a reason. Six live replays of the glass-door
-// photo leaked internal vocabulary in five of them despite an explicit ban - the prompt says
-// "katalog" 55 times, so one banning sentence cannot win. The real reason still reaches the
-// team through escalation_reason; the customer just gets a warm hand-off.
 // Voice notes, video, stickers, reactions, location and contact shares reach messageRouter as
 // type 'audio'/'video'/'other'. They used to fall through to the placeholder "[Pelanggan mengirim
 // pesan]", which the AI answered as if it were a real question - a full sales reply to something
@@ -53,6 +46,9 @@ export const CANNED_UNSUPPORTED_OTHER_REPLY =
 export const CANNED_IMAGE_UNREADABLE_REPLY =
   'Maaf kak, fotonya belum bisa kebuka di sini 🙏 Boleh kirim ulang, atau ceritakan kemasan yang dicari ya, biar aku bantu.';
 
+// What the customer sees on EVERY escalation. Deliberately fixed text, not model prose: asked to explain
+// why it could not help, the model narrates its own data or invents a reason. The real reason reaches
+// the team through escalation_reason; the customer just gets a warm hand-off.
 export const CANNED_ESCALATION_REPLY = 'Kita coba cek dengan tim dulu ya kak 🙏';
 
 // Under a reply that gives per-item prices, when the customer asked for a total over several items

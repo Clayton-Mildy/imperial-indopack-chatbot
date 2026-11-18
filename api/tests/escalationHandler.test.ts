@@ -77,6 +77,15 @@ describe('size questions (client 2026-11-11)', () => {
     expect(unansweredSizeQuestion('ukuran box nya berapa?', 'Box ivory ukuran 20x20x7,5 kak')).toBe(false);
     expect(unansweredSizeQuestion('ukuran apa aja?', 'Ada 2 pilihan warna cetak kak')).toBe(true);
   });
+
+  // Task 13 review m5: "1 x 500 lembar" is a quantity, not a size.
+  it('does not take a quantity written "N x M lembar/rim/pcs" for a size', async () => {
+    const { unansweredSizeQuestion } = await import('../src/services/escalationHandler.js');
+    for (const reply of ['Isinya 1 x 500 lembar kak', 'Bisa 2 x 5 rim ya kak', 'Paketnya 4 x 250 pcs kak']) {
+      expect(unansweredSizeQuestion('ukurannya berapa?', reply), reply).toBe(true);
+    }
+    expect(unansweredSizeQuestion('ukurannya berapa?', 'Ukurannya 30 x 30 cm, isi 1 x 500 lembar')).toBe(false);
+  });
 });
 
 describe('detectPpnQuestion', () => {
@@ -409,6 +418,9 @@ describe('pickProfileGapQuestion — facts the customer already typed', () => {
     'butuh 3" aja',
     'budget sekitar 150rb',
     'butuh 2,5 inch',
+    // Task 13 review m7: never across a line break - in a list the number before a product is a size.
+    'uk 20\nBox kue',
+    'Box kue uk 20\nbox nasi uk 18',
   ])('still does not read a size, a price or a sentence with no number as a quantity: %s', (m) => expect(mentionsQuantity(m)).toBe(false));
 
   // A quantity typed with no unit and never saved by the turn that read it.
@@ -526,21 +538,43 @@ describe('detectNonSalesTopic - a supplier across messages', () => {
     expect(detectNonSalesTopic(intro)).toBeNull(); // a greeting - the bot asks what she needs
     expect(detectNonSalesTopic(factory, intro)).toBeNull(); // what it makes, no offer yet
     expect(detectNonSalesTopic('Kami ingin coba menjajaki kebutuhan plastik untuk produk di Imperial Indopack', `${intro}\n${factory}`)).toBe(SUPPLIER);
-    expect(detectNonSalesTopic('Kami ingin tahu kebutuhan plastik untuk outer box di PT Imperial Indopack', `${intro}\n${factory}`)).toBe(SUPPLIER);
+    expect(detectNonSalesTopic('Kami ingin tahu kebutuhan plastik untuk gudang di PT Imperial Indopack', `${intro}\n${factory}`)).toBe(SUPPLIER);
     expect(detectNonSalesTopic('Terkait dengan kebutuhan plastik kami bisa menghubungi kemana ya kak? 😊🙏', `${intro}\n${factory}`)).toBe(SUPPLIER);
   });
 
   // Task 13 carry: the supplier patterns name Imperial Indopack and Kertas Supreme.
   it.each([
-    'kami ingin menjajaki kebutuhan kemasan di perusahaan bapak',
-    'mau menawarkan produk kami kak, kardus box custom',
+    'kami ingin menjajaki kebutuhan plastik di perusahaan bapak',
+    'mau menawarkan produk kami kak, tinta dan lem',
     'boleh minta kontak bagian purchasing?',
     'bisa hubungi tim pengadaan kemana ya?',
     'kami ingin jadi supplier imperial indopack',
     'kami supplier untuk PT Imperial Indopack sejak 2020',
     'kami bisa jadi pemasok bagi Kertas Supreme',
     'pabrik kami vendor ke kertas supreme sejak lama',
+    // Task 13 review: explicit offers to sell or supply TO us.
+    'Kami supplier kertas kraft roll, boleh kirim penawaran ke bagian pembelian?',
+    'Perkenalkan kami vendor tinta sablon, ingin menawarkan kerja sama',
+    'Kami dari CV Maju, bisa supply plastik ke Imperial Indopack',
+    'Kami mau menawarkan kerja sama untuk pengiriman barang',
+    'kami siap jadi supplier kalian untuk lem dan tinta',
+    'izin kirim company profile kami ya kak',
   ])('an offer on its own: %s', (m) => expect(detectNonSalesTopic(m)).toBe(SUPPLIER));
+
+  // Task 13 review: Imperial's core buyers are factories, caterers and resellers who introduce
+  // themselves with a PT/CV and a trade - buy intent always wins, and "tawarkan box" asks US to offer.
+  const bakery = 'Kami produsen roti dari PT Sari Roti Lezat';
+  it.each([
+    ['Kami dari PT Sari Roti Lezat, produsen roti, butuh box 5000 pcs', ''],
+    ['Kami dari CV Berkah Catering, supplier nasi kotak, butuh box nasi 20x20', ''],
+    ['bisa tawarkan box ukuran lain?', bakery],
+    ['tawarin dong box yang murah', bakery],
+    ['kebutuhan box kami bisa hubungi siapa?', bakery],
+    ['kami supplier untuk Imperial Kitchen, butuh box dimsum', ''],
+    ['kami supplier untuk Imperial Kitchen sejak 2019', ''], // m1: a bare "imperial" is not us
+    ['boleh kirim penawaran harga box 2000 pcs?', bakery],
+    ['Kami dari PT Sinar Kue, mau pesan kertas bungkus cetak logo', ''],
+  ])('a buyer with a supplier-sounding introduction: %s', (m, earlier) => expect(detectNonSalesTopic(m, earlier)).toBeNull());
 
   it.each([
     ['kami dari pabrik roti, butuh box kue untuk produk kami', ''],
@@ -579,6 +613,17 @@ describe('detectComplaint', () => {
   it.each([
     'box yang saya pesan bulan lalu banyak yang rusak, gimana ini?',
     'baru dipakai sudah patah tutup boxnya',
+    // Task 13 review m6: packaging complaints.
+    'box nya penyok',
+    'kertasnya sobek semua kak',
+    'boxnya robek di sudut',
+    'tintanya luntur kena minyak',
+    'kemasannya bocor',
+    'boxnya berjamur pas sampai',
+    'salah cetak kak, logonya kebalik',
+    'cetakannya pudar',
+    'lemnya lepas semua',
+    'boxnya lepas lem',
     'cetakannya cacat kak, logonya geser',
     'saya kecewa, mau retur',
   ])('reads after-sales trouble: %s', (m) => expect(detectComplaint(m)).toBe(true));

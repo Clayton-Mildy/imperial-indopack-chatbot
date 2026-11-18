@@ -7,11 +7,12 @@ WhatsApp AI sales agent for Imperial Indopack.
 
 ## Origin
 
-`api/` started as a copy of `legacy-app/legacy-api` (branch `new-main`, commit `9fa8805`) taken
-on 2026-11-18. It is **Legacy's chatbot, not yet adapted**: the prompts, constants, brand lists,
-reply checks and tests still describe Legacy's business (hardware distributor). They are replaced
-as the Imperial Indopack chatbot brief comes in. See `docs/porting-from-legacy.md` for what was
-copied, what was left out on purpose, and where the Legacy-specific content lives.
+`api/` was adapted from Legacy's chatbot engine (`legacy-app/legacy-api`, branch `new-main`,
+commit `9fa8805`, copied 2026-11-18). The engine - webhooks, debounce, hand-offs, staff takeover,
+ChakraHQ sync, the lead pipeline - was kept; the business layer was rebuilt, and it is now the
+Imperial Indopack bot: the prompt, price tool (quantity tiers), catalog, replies, checks and tests
+all describe Imperial Indopack (printed boxes) and Kertas Supreme (printed food-wrapping paper). No
+Legacy business is left. `docs/porting-from-legacy.md` records what was copied at the start.
 
 ## Local development
 
@@ -23,6 +24,7 @@ npm install
 cp .env.example .env     # fill DATABASE_URL, API_SECRET_KEY, ANTHROPIC_API_KEY, WhatsApp transport keys
 npm run db:migrate
 npm run db:seed          # first admin + API key
-npm run dev              # API on :50050
+npx tsx scripts/seed-default-prompt.ts   # the default prompt
+npm run dev              # API on :50050 (PORT in .env)
 npm test
 ```

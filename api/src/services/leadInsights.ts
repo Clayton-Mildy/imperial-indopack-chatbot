@@ -44,7 +44,7 @@ const MAX_INTEREST_CHARS = 80;
 // and the first backfill on 2026-10-08 logged a run of "unreadable answer" lines for exactly that.
 // An odd value now costs only its own field. Each is .optional() first: in zod 4 a missing key on a
 // bare z.unknown().transform() is an error, which would put the all-or-nothing failure right back.
-const NO_VALUE = new Set(['', 'null', 'none', 'unknown', 'tidak diketahui', '-']);
+const NO_VALUE = new Set(['', 'null', 'none', 'unknown', 'n/a', 'tidak diketahui', 'belum diketahui', 'tidak disebutkan', '-']);
 const enumField = <T>(parse: (raw: unknown) => T | undefined) =>
   z.unknown().optional().transform((v) =>
     v == null || (typeof v === 'string' && NO_VALUE.has(v.trim().toLowerCase())) ? null : parse(v) ?? null);
