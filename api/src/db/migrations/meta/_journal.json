@@ -183,6 +183,13 @@
       "when": 1794000000000,
       "tag": "0025_lead_field_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794100000000,
+      "tag": "0026_imperial_catalog_and_lead_fields",
+      "breakpoints": true
     }
   ]
 }

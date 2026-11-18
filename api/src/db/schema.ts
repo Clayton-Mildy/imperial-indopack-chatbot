@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   uniqueIndex,
+  unique,
   index,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
@@ -226,6 +227,43 @@ export const productVariants = pgTable(
   ]
 );
 
+
+// ─── variant_price_tiers / product_reference_images (0026) ──────────────────
+
+export const variantPriceTiers = pgTable(
+  'variant_price_tiers',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    variantId: uuid('variant_id')
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    minQty: integer('min_qty').notNull(),
+    // 'rim' | 'pcs': the unit of min_qty
+    qtyUnit: text('qty_unit').notNull(),
+    priceIdr: numeric('price_idr').notNull(),
+    // 'pcs' | 'rim': the unit price_idr is per
+    priceUnit: text('price_unit').notNull(),
+    includesDelivery: boolean('includes_delivery').notNull().default(false),
+    note: text('note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique().on(table.variantId, table.minQty, table.qtyUnit)]
+);
+
+export const productReferenceImages = pgTable(
+  'product_reference_images',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    imageUrl: text('image_url').notNull(),
+    sort: integer('sort').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_product_reference_images_product').on(table.productId, table.sort)]
+);
+
 // ─── staff_profiles ────────────────────────────────────────────────────────
 
 export const staffProfiles = pgTable('staff_profiles', {
@@ -360,6 +398,9 @@ export const leads = pgTable(
     totalOrdersSetBy: uuid('total_orders_set_by').references(() => staffProfiles.id, { onDelete: 'set null' }),
     dealValueSetAt: timestamp('deal_value_set_at', { withTimezone: true }),
     dealValueSetBy: uuid('deal_value_set_by').references(() => staffProfiles.id, { onDelete: 'set null' }),
+    // Brands the customer asked about, and their item lines (0026). Filled from the chat.
+    brands: text('brands').array().notNull().default(sql`'{}'::text[]`),
+    items: jsonb('items').$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
     submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
     matchedAt: timestamp('matched_at', { withTimezone: true }),
     // 'lead' | 'kurir' | 'status_pesanan' | 'lamaran_kerja' | 'supplier' | 'lainnya'

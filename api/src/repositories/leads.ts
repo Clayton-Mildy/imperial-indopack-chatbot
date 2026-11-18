@@ -509,6 +509,8 @@ export async function listLeads(
         closedAt: leads.closedAt,
         previousLeadId: leads.previousLeadId,
         firstContactAt: leads.firstContactAt,
+        brands: leads.brands,
+        items: leads.items,
         createdAt: leads.createdAt,
         updatedAt: leads.updatedAt,
         waId: contacts.waId,
