@@ -9,7 +9,8 @@
  *   HARGA:                    a quote
  *   DI_BAWAH_MINIMUM:         below the lowest tier - explain the minimum, quote nothing
  *   DI_ATAS_TINGKAT_TERATAS:  above the top tier - big orders are negotiated by staff
- *   TIDAK_ADA_DI_KATALOG:     no such product or size, out of stock, or no tiers - staff prices it
+ *   TIDAK_ADA_DI_KATALOG:     no such product or size, or no tiers - staff prices it; out of stock -
+ *                             offer the ready sizes first
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
@@ -22,7 +23,7 @@ import { getCatalogProducts } from './ragQuery.js';
 export const PRICE_TOOL_NAME = 'hitung_harga';
 
 export const PRICE_TOOL_DESC =
-  'Calculate the price of one catalog item for the quantity the customer wants. You MUST call this before stating any price for a quantity, any total, or which tier applies, and repeat its figures exactly as returned - never do price arithmetic yourself. One call per item (product + size); for several items make several calls in the same turn. The result starts with HARGA: (the tier used, unit price, total, delivery, and the next tier to mention), DI_BAWAH_MINIMUM: (below the minimum order: explain the minimum, quote nothing), DI_ATAS_TINGKAT_TERATAS: or TIDAK_ADA_DI_KATALOG: (quote nothing: the team calculates it).';
+  'Calculate the price of one catalog item for the quantity the customer wants. You MUST call this before stating any price for a quantity, any total, or which tier applies, and repeat its figures exactly as returned - never do price arithmetic yourself. One call per item (product + size); for several items make several calls in the same turn. The result starts with HARGA: (the tier used, unit price, total, delivery, and the next tier to mention), DI_BAWAH_MINIMUM: (below the minimum order: explain the minimum, quote nothing), DI_ATAS_TINGKAT_TERATAS: (quote nothing: the team calculates it) or TIDAK_ADA_DI_KATALOG: (quote nothing; the result says why and what to offer instead).';
 
 const PRICE_FIELD_DESC = {
   product: 'The product name exactly as written after "Produk:" in the catalog block.',
@@ -88,6 +89,19 @@ function matchProduct(catalog: Product[], query: string): Product | Product[] {
 }
 
 const NO_PRICE = 'Jangan sebut harga untuk item ini; harganya dihitung tim kami.';
+
+/** The product's sizes that are in stock, one entry per size however many variants share it. */
+function readySizes(active: ProductVariant[]): string[] {
+  const ready: string[] = [];
+  const seen = new Set<string>();
+  for (const v of active) {
+    const key = normalizeSize(v.name);
+    if (v.stockStatus === 'no_stock' || seen.has(key)) continue;
+    seen.add(key);
+    ready.push(v.name);
+  }
+  return ready;
+}
 const notInCatalog = (reason: string): PriceToolResult => ({ text: `TIDAK_ADA_DI_KATALOG: ${reason} ${NO_PRICE}`, figures: [] });
 
 export async function runPriceTool(input: PriceToolInputType, catalog?: Product[]): Promise<PriceToolResult> {
@@ -119,15 +133,7 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
     return notInCatalog(`${product.name} punya lebih dari satu varian dengan ukuran "${input.size}" (${sizes.map((v) => v.name).join('; ')}); tim kami perlu memeriksanya.`);
   }
   if (sizes.length === 0) {
-    // One entry per size, however many variants share it.
-    const ready: string[] = [];
-    const seen = new Set<string>();
-    for (const v of active) {
-      const key = normalizeSize(v.name);
-      if (v.stockStatus === 'no_stock' || seen.has(key)) continue;
-      seen.add(key);
-      ready.push(v.name);
-    }
+    const ready = readySizes(active);
     return notInCatalog(`${product.name} ukuran "${input.size}" tidak ada di katalog.${ready.length ? ` Ukuran yang ada: ${ready.join(', ')}.` : ''}`);
   }
   const variant: ProductVariant = sizes[0]!;
@@ -135,7 +141,14 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
 
   // Out of stock: the catalog block prints no price for it, so neither does this. Every other
   // status (price_rise / price_drop included) has its tiers in the block and is quoted from them.
-  if (variant.stockStatus === 'no_stock') return notInCatalog(`${item} sedang kosong (stok habis).`);
+  // The prompt's STOK HABIS rule: offer the ready sizes first; the team only if the customer insists.
+  if (variant.stockStatus === 'no_stock') {
+    const ready = readySizes(active);
+    return {
+      text: `TIDAK_ADA_DI_KATALOG: ${item} sedang kosong (stok habis).${ready.length ? ` Ukuran yang ready: ${ready.join(', ')}.` : ''} Jangan sebut harga untuk ukuran ini; ${ready.length ? 'tawarkan dulu ukuran yang ready' : 'sampaikan kosong'}, dan serahkan ke tim hanya kalau pelanggan tetap mau ukuran ini.`,
+      figures: [],
+    };
+  }
 
   const quote = quotePrice(variant.priceTiers ?? [], input.qty, input.unit);
   switch (quote.kind) {

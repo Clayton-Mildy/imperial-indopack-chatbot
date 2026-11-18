@@ -1701,6 +1701,121 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation).not.toHaveBeenCalled();
   });
 
+  // Task 13 carry: the team's promise goes out once per conversation.
+  describe('the examples line and the PO-placeholder line go out once per conversation', () => {
+    const botSaid = async (line: 'examples' | 'po') => {
+      const { CANNED_DESIGN_EXAMPLES_FROM_TEAM, CANNED_PO_FORM_FROM_TEAM } = await import('../src/domain/constants.js');
+      const body = line === 'examples' ? CANNED_DESIGN_EXAMPLES_FROM_TEAM : CANNED_PO_FORM_FROM_TEAM;
+      mockGetLastNMessages.mockResolvedValue([
+        { role: 'user', body: 'belum ada desain kak' },
+        { role: 'assistant', body: 'Siap kak.' },
+        { role: 'assistant', body, metadata: { source: line === 'examples' ? 'design_examples' : 'po_form' } },
+      ] as HistoryRow[]);
+      return body;
+    };
+
+    it('text path: the examples line already sent is not sent again, and the team is not told again', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const line = await botSaid('examples');
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Siap kak, belum ada desain ya.', examplesForTeam: true });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-EX4', 'contohnya mana kak'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['Siap kak, belum ada desain ya.']);
+      expect(sentTexts()).not.toContain(line);
+      expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
+      expect(mockNotifyStaff).not.toHaveBeenCalled();
+    });
+
+    it('photo path: the examples line already sent is not sent again, and the team is not told again', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      await botSaid('examples');
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, examplesForTeam: true });
+
+      await routeInboundBaileysMessage(makeImagePayload('wamid-EX5', 'box seperti ini kak, belum ada desain'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply']);
+      expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
+      expect(mockNotifyStaff).not.toHaveBeenCalled();
+    });
+
+    it('text path: the PO-placeholder line already sent is not sent again, and the team is not told again', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+      await botSaid('po');
+      mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-PO8', 'oke kak jadi ambil 10 rim'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply']);
+      expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
+      expect(mockNotifyStaff).not.toHaveBeenCalled();
+      expect(mockInsertMessage).not.toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ source: 'po_form' }) }));
+    });
+
+    it('photo path: the PO-placeholder line already sent is not sent again, and the team is not told again', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+      await botSaid('po');
+      mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+
+      await routeInboundBaileysMessage(makeImagePayload('wamid-PO9', 'yang ini kak, saya ambil'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply']);
+      expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
+      expect(mockNotifyStaff).not.toHaveBeenCalled();
+    });
+
+    it('a line said only by the customer, or the other fixed line, does not count', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { CANNED_DESIGN_EXAMPLES_FROM_TEAM } = await import('../src/domain/constants.js');
+      await botSaid('po');
+      mockGetLastNMessages.mockResolvedValue([
+        ...(await mockGetLastNMessages()),
+        { role: 'user', body: CANNED_DESIGN_EXAMPLES_FROM_TEAM },
+      ] as HistoryRow[]);
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, examplesForTeam: true });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-EX6', 'belum ada desain kak'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', CANNED_DESIGN_EXAMPLES_FROM_TEAM]);
+      expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Contoh desain diminta'));
+    });
+
+    it('a real PO link is not held back by the placeholder line sent earlier', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      await botSaid('po');
+      mockGetPoFormUrl.mockResolvedValue(PO_URL);
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-PO10', 'oke kak saya ambil'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+    });
+  });
+
+  // Task 13 carry: a low-confidence turn hands off, and the examples request rides on the hand-off reason.
+  it('a hand-off turn that also asked for examples tells the team in the hand-off reason', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { CANNED_DESIGN_EXAMPLES_FROM_TEAM } = await import('../src/domain/constants.js');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: 'Ukuran custom', examplesForTeam: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-EX7', 'belum ada desain, ukurannya 50x50 kak'));
+    await vi.runAllTimersAsync();
+
+    expect(sentTexts()).not.toContain(CANNED_DESIGN_EXAMPLES_FROM_TEAM);
+    expect(mockEscalateConversation).toHaveBeenCalledWith(expect.anything(), expect.stringMatching(/^Ukuran custom; Contoh desain diminta/), expect.anything(), expect.anything(), expect.anything(), undefined);
+  });
+
   // Live 2026-09-21: two numbers were configured and getFirstPhoneNumber() picked the older
   // one, so every reply was sent AS a number the Chakra plugin does not own. Chakra answered
   // 400, the send threw, and each send site swallows that into a console.warn - so inbound kept

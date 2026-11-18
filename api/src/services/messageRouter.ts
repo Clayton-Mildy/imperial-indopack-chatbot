@@ -278,7 +278,43 @@ function teamFollowUp(r: AIResponse, customerText: string, po?: { teamReason: st
   };
 }
 
+/**
+ * The team's promise of design examples, and of the PO form while its link is not set, goes out once
+ * per conversation: when the same fixed line is already among the recent bot messages, the team has
+ * been told and the customer has read it, so this turn neither repeats the line nor hands off again
+ * for it. Read only when one of those lines is due, so most turns cost no extra query.
+ */
+async function onceOnlyFollowUp(
+  conversationId: string, r: AIResponse, customerText: string
+): Promise<{ followUp: TeamFollowUp; poForm: PoFormLine | null }> {
+  let poForm = r.sendPoForm ? await poFormToSend() : null;
+  const due = [
+    r.examplesForTeam ? CANNED_DESIGN_EXAMPLES_FROM_TEAM : null,
+    poForm?.teamReason ? poForm.body : null,
+  ].filter((line): line is string => line !== null);
+  const sent = due.length > 0 ? await linesAlreadySent(conversationId, due) : new Set<string>();
+  if (poForm && sent.has(poForm.body)) poForm = null;
+  const followUp = teamFollowUp(r, customerText, poForm);
+  if (sent.has(CANNED_DESIGN_EXAMPLES_FROM_TEAM)) followUp.examples = false;
+  return { followUp, poForm };
+}
+
+/** Which of `lines` a recent bot message already is. A failed read sends them: a repeat beats a lost promise. */
+async function linesAlreadySent(conversationId: string, lines: string[]): Promise<Set<string>> {
+  const recent = await getLastNMessages(conversationId, MAX_CONTEXT_MESSAGES).catch(() => []);
+  const botBodies = new Set(recent.filter((m) => m.role === 'assistant').map((m) => m.body.trim()));
+  return new Set(lines.filter((line) => botBodies.has(line)));
+}
+
 const DESIGN_EXAMPLES_REASON = 'Contoh desain diminta - pelanggan belum punya desain dan produknya belum punya foto contoh, mohon kirimkan contoh desain';
+
+/**
+ * A hand-off turn sends no examples line - the team now has the chat - but a design-examples request
+ * made on it still reaches them: without this the flag was dropped with the rest of the reply.
+ */
+function withExamplesAsked(reason: string, r: AIResponse): string {
+  return r.examplesForTeam ? `${reason}; ${DESIGN_EXAMPLES_REASON}` : reason;
+}
 
 /** Anything in the follow-up the team has to act on. */
 const needsTeam = (f: TeamFollowUp): boolean => f.total || f.size || Boolean(f.poForm) || Boolean(f.examples);
@@ -497,8 +533,8 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
       // profile and must not re-ask something the customer said in this very message.
       await saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
       if (nonSales) void tagNonSalesLead(conv.contactId, nonSales).catch((err) => console.error('[leads] tag non-sales failed:', err));
-      const reason = aiResponse.escalationReason
-        ?? (ppnAsked ? 'Pertanyaan PPN/pajak — kebijakan pajak hanya dari tim' : 'Low confidence');
+      const reason = withExamplesAsked(aiResponse.escalationReason
+        ?? (ppnAsked ? 'Pertanyaan PPN/pajak — kebijakan pajak hanya dari tim' : 'Low confidence'), aiResponse);
       // Already handed to the team — no second escalation, but never dead silence either:
       // the customer asked something new and a human CS would at least acknowledge it.
       if (conv.status === 'escalated') {
@@ -534,8 +570,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // lands during the escalation checks and staff sync above was missed (live 2026-11-08: "Dengan Jovi
     // ka" typed as a reply about Malang was being sent, which then asked the name again).
     if (supersedeStaleTurn(entry, filesSent)) return;
-    const poForm = aiResponse.sendPoForm ? await poFormToSend() : null;
-    const followUp = teamFollowUp(aiResponse, combinedText, poForm);
+    const { followUp, poForm } = await onceOnlyFollowUp(conversationId, aiResponse, combinedText);
     if (needsTeam(followUp)) await handToTeam(conv, combinedText, followUp);
     else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conversationId, combinedText);
     const reply = replyText(aiResponse, followUp);
@@ -714,9 +749,9 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     // must land before the hand-off question picks what to ask.
     await saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
     if (nonSales) void tagNonSalesLead(conv.contactId, nonSales).catch((err) => console.error('[leads] tag non-sales failed:', err));
-    const reason = aiResponse.escalationReason
+    const reason = withExamplesAsked(aiResponse.escalationReason
       ?? (ppnAsked ? 'Pertanyaan PPN/pajak — kebijakan pajak hanya dari tim'
-        : nonSales ? `${nonSales} - bukan pertanyaan produk` : 'Low confidence');
+        : nonSales ? `${nonSales} - bukan pertanyaan produk` : 'Low confidence'), aiResponse);
     // No second escalation, but acknowledge the new question (same as the text path).
     if (conv.status === 'escalated') {
       console.warn(`[messageRouter] escalated conversation ${conv.id}: low-confidence turn → still-checking ack`);
@@ -744,8 +779,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     return;
   }
 
-  const poForm = aiResponse.sendPoForm ? await poFormToSend() : null;
-  const followUp = teamFollowUp(aiResponse, body, poForm);
+  const { followUp, poForm } = await onceOnlyFollowUp(conv.id, aiResponse, body);
   if (needsTeam(followUp)) await handToTeam(conv, body, followUp);
   else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conv.id, body);
   const reply = replyText(aiResponse, followUp);
@@ -802,7 +836,9 @@ const PO_FORM_NOT_SET_REASON = 'Form PO belum diatur di Pengaturan';
  * out: the customer gets the team's promise instead and `teamReason` hands the chat to the team, who
  * send the form by hand.
  */
-async function poFormToSend(): Promise<{ body: string; teamReason: string | null }> {
+interface PoFormLine { body: string; teamReason: string | null }
+
+async function poFormToSend(): Promise<PoFormLine> {
   const fromTeam = (why: string) => ({ body: CANNED_PO_FORM_FROM_TEAM, teamReason: `${why} - pelanggan setuju harga, mohon kirimkan form PO` });
   try {
     const url = await getPoFormUrl();

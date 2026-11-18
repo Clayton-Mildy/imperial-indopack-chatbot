@@ -89,6 +89,25 @@ describe('runPriceTool - what is not priceable', () => {
     expect(r.figures).toEqual([]);
   });
 
+  // Task 13 carry: one out-of-stock rule - the ready sizes first, the team only if the customer insists.
+  it('an out-of-stock variant names the ready sizes to offer first, not the team', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, size: '25x25' }, CATALOG);
+    expect(r.text).toContain('sedang kosong (stok habis)');
+    expect(r.text).toContain('Ukuran yang ready: 30 x 30 cm, 35 x 35 cm.');
+    expect(r.text).toContain('tawarkan dulu ukuran yang ready');
+    expect(r.text).toContain('hanya kalau pelanggan tetap mau ukuran ini');
+    expect(r.text).not.toContain('harganya dihitung tim kami');
+    // The inactive 40 x 40 is never offered.
+    expect(r.text).not.toContain('40 x 40');
+  });
+
+  it('an out-of-stock variant with no ready sibling says so plainly', async () => {
+    const lone = { ...SUPREME, variants: SUPREME.variants!.filter((v) => v.stockStatus === 'no_stock') };
+    const r = await runPriceTool({ ...SUPREME_INPUT, size: '25x25' }, [lone]);
+    expect(r.text).toMatch(/^TIDAK_ADA_DI_KATALOG: .*sedang kosong \(stok habis\)\. Jangan sebut harga untuk ukuran ini; sampaikan kosong/);
+    expect(r.figures).toEqual([]);
+  });
+
   // Matches the catalog block: only no_stock hides a variant's prices there.
   it.each(['price_rise', 'price_drop'] as const)('a %s variant is quoted like a normal one', async (stockStatus) => {
     const marked = { ...SUPREME, variants: SUPREME.variants!.map((v) => (v.id === 'v-ks1-30' ? { ...v, stockStatus } : v)) };

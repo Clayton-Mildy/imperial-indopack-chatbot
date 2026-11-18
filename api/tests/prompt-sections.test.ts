@@ -100,6 +100,17 @@ describe('behavioural rules (shipped with the build)', () => {
     expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).toContain('stoknya sedang habis TETAP relevan');
   });
 
+  // Task 13 carry: one out-of-stock rule for an availability question and a price request alike.
+  it('one out-of-stock rule: offer the ready sizes; the team only if the customer insists on that size', () => {
+    const rule = SYSTEM_PROMPT_BEHAVIORAL_RULES.slice(SYSTEM_PROMPT_BEHAVIORAL_RULES.indexOf('- STOK HABIS:'));
+    expect(rule).toMatch(/^- STOK HABIS:[^\n]*TETAP relevan/);
+    expect(rule).toMatch(/Ditanya ada\/ready[^\n]*kosong[^\n]*ukuran lain yang ready/);
+    expect(rule).toMatch(/Diminta harga ukuran yang kosong[^\n]*jangan sebut harga[^\n]*tawarkan dulu ukuran yang ready[^\n]*TETAP mau ukuran yang kosong[^\n]*confidence "low"/);
+    // The Pricing section points here rather than handing every out-of-stock price to the team.
+    const pricing = SYSTEM_PROMPT_SECTIONS.find((s) => s.name === 'Pricing')!.content;
+    expect(pricing).toMatch(/\(c\)[^\n]*aturan STOK HABIS di ATURAN KATALOG TERTUTUP/);
+  });
+
   // UAT Run 3 D-10: a fit claim about a product type named no product, and went out unchecked.
   it('binds fit claims about a product TYPE to the data too', () => {
     expect(SYSTEM_PROMPT_BEHAVIORAL_RULES).toContain('JENIS produk tanpa nama produknya');

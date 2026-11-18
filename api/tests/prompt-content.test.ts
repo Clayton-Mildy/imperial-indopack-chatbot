@@ -98,7 +98,10 @@ describe('the facts each section must state', () => {
     const c = section('Pricing');
     expect(c).toMatch(/\(a\)[^\n]*lebih dari satu produk[^\n]*hitung_harga lagi[^\n]*nama produk persis[^\n]*gsm/);
     expect(c).toMatch(/\(b\)[^\n]*Ukuran yang ada[^\n]*SEKALI[^\n]*custom[^\n]*confidence "low"/);
-    expect(c).toMatch(/\(c\)[^\n]*(?:stok habis|kosong)[^\n]*belum punya harga[^\n]*confidence "low"/);
+    expect(c).toMatch(/\(c\)[^\n]*stok habis[^\n]*STOK HABIS[^\n]*ukuran yang ready[^\n]*"low" hanya kalau pelanggan tetap mau/);
+    expect(c).toMatch(/\(d\)[^\n]*tidak ada di katalog[^\n]*belum punya harga[^\n]*confidence "low"/);
+    // Out of stock is no longer a straight hand-off.
+    expect(c).not.toMatch(/\(d\)[^\n]*stok habis/);
     expect(c).not.toMatch(/(?:atau|dan) TIDAK_ADA_DI_KATALOG: → jangan sebut harga/);
   });
 
@@ -128,6 +131,10 @@ describe('the facts each section must state', () => {
     expect(c).toContain('[FOTO REFERENSI TERSEDIA]');
     expect(c).toMatch(/tim/);
   });
+
+  // Task 13 carry: the team's examples promise is made once per conversation (messageRouter enforces it too).
+  it('Design: examples_for_team once only', () =>
+    expect(section('Design')).toMatch(/examples_for_team: true[^\n]*Sekali saja[^\n]*jangan set lagi/));
 
   // Review fix (Task 10 I1): the team is told through the flag; the model does not promise it itself.
   it('Design: no reference photos sets examples_for_team instead of promising examples itself', () => {
