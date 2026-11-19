@@ -6,6 +6,7 @@ import type { HandoffCategory } from '../domain/handoff.js';
 import type { BrandSlug } from '../domain/orderProfile.js';
 import { contactHeadline } from '../domain/orderDetails.js';
 import { CANNED_PO_FORM_FROM_TEAM } from '../domain/constants.js';
+import { containsPattern } from '../domain/likePattern.js';
 import { MESSAGE_SOURCE } from '../domain/messageSources.js';
 
 // When the conversation was actually handed to a human. escalateConversation writes exactly one
@@ -165,10 +166,6 @@ const poFormSentAtExpr = sql<Date | null>`(
     AND ${PO_FORM_LINK_ROW_SQL}
 )`;
 
-/** A LIKE pattern for `s` anywhere, taken literally: %, _ and \ escaped with the ESCAPE character \. */
-function containsPattern(s: string): string {
-  return `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-}
 
 export async function listConversations(
   params: PaginationParams & { status?: ConversationStatus; agentId?: string; upsellAccepted?: boolean; view?: ConversationView; search?: string }

@@ -1,4 +1,4 @@
-import { eq, and, or, ilike, inArray, desc, asc, gte, lt, sql, type SQL, type AnyColumn } from 'drizzle-orm';
+import { eq, and, or, inArray, desc, asc, gte, lt, sql, type SQL, type AnyColumn } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { leads, contacts, contactProfiles, leadOrders, staffProfiles } from '../db/schema.js';
 import { canAdvance, kindFromNonSalesTopic } from '../domain/leadStages.js';
@@ -19,6 +19,7 @@ import type {
   PaginationParams,
 } from '../domain/types.js';
 import { ORGANIC_CAMPAIGN } from '../domain/types.js';
+import { containsPattern } from '../domain/likePattern.js';
 import { BRAND_SLUGS } from '../domain/brands.js';
 import { CANNED_PO_FORM_FROM_TEAM } from '../domain/constants.js';
 
@@ -415,27 +416,32 @@ export async function listLeads(
           : eq(leads.utmCampaign, params.campaign)
     );
   }
-  if (params.search) {
-    const pattern = `%${params.search}%`;
+  const search = params.search?.trim();
+  if (search) {
+    const pattern = containsPattern(search);
+    // Item values compare with whitespace stripped and lowercased on both sides: "35x35" finds "35 x 35".
+    const flat = containsPattern(search.toLowerCase().replace(/\s+/g, ''));
     conditions.push(
       or(
-        ilike(contacts.displayName, pattern),
-        ilike(contacts.waId, pattern),
+        sql`${contacts.displayName} ilike ${pattern} escape '\\'`,
+        sql`${contacts.waId} ilike ${pattern} escape '\\'`,
         // Both jsonb bags hold per-form / per-extraction keys, so search the values rather
         // than naming any one field.
         sql`exists (
-          select 1 from jsonb_each_text(${leads.payload}) kv where kv.value ilike ${pattern}
+          select 1 from jsonb_each_text(${leads.payload}) kv where kv.value ilike ${pattern} escape '\\'
         )`,
         sql`exists (
           select 1 from jsonb_each_text(coalesce(${contactProfiles.profile}, '{}'::jsonb)) kv
-          where kv.value ilike ${pattern}
+          where kv.value ilike ${pattern} escape '\\'
         )`,
         // The business name, and the item lines (product, size, print ...) the customer asked for.
-        sql`${contactProfiles.profile}->>'business_name' ilike ${pattern}`,
-        sql`exists (
+        sql`${contactProfiles.profile}->>'business_name' ilike ${pattern} escape '\\'`,
+        flat === '%%'
+          ? undefined
+          : sql`exists (
           select 1 from jsonb_array_elements(case when jsonb_typeof(${leads.items}) = 'array' then ${leads.items} else '[]'::jsonb end) it,
             jsonb_each_text(case when jsonb_typeof(it) = 'object' then it else '{}'::jsonb end) kv
-          where kv.value ilike ${pattern}
+          where regexp_replace(lower(kv.value), '\\s', '', 'g') like ${flat} escape '\\'
         )`
       )!
     );
@@ -1333,7 +1339,7 @@ export async function getBrandSummary(params: { startDate?: string; endDate?: st
            count(*) FILTER (WHERE l.status = 'won')::int AS won,
            count(*) FILTER (WHERE l.status = 'lost')::int AS lost
     FROM leads l
-    CROSS JOIN LATERAL unnest(l.brands) AS b(brand)
+    CROSS JOIN LATERAL (SELECT DISTINCT unnest(l.brands) AS brand) AS b
     WHERE l.kind = 'lead'
       ${start ? sql`AND l.submitted_at >= ${start.toISOString()}::timestamptz` : sql``}
       ${end ? sql`AND l.submitted_at < ${end.toISOString()}::timestamptz` : sql``}

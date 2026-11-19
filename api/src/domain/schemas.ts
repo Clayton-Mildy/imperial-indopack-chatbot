@@ -365,6 +365,6 @@ export const AddCampaignBodySchema = LeadCampaignFieldsSchema.extend({
 });
 
 export const LeadsBrandSummaryQuerySchema = z.object({
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
+  startDate: ReportDay.optional(),
+  endDate: ReportDay.optional(),
 });
