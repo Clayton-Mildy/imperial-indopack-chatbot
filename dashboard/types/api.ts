@@ -95,84 +95,90 @@ export interface ConversationWithMessages extends Conversation {
   messages: Message[];
 }
 
-export type StockStatus = 'normal' | 'no_stock' | 'price_rise' | 'price_drop';
+/** A quantity or price unit: 1 rim = 500 pcs (api/src/domain/pricing.ts). */
+export type QtyUnit = "rim" | "pcs";
 
-export type Brand = {
-  id: string;
-  name: string;
-  description: string | null;
-  catalogFileUrl?: string | null;
-  createdAt: string;
-};
+/** One quantity tier of a size (api/src/domain/pricing.ts). */
+export interface PriceTier {
+  minQty: number;
+  qtyUnit: QtyUnit;
+  priceIdr: number;
+  priceUnit: QtyUnit;
+  includesDelivery: boolean;
+  note?: string | null;
+}
 
-export type Category = {
+/** A product as the Katalog editor shows it (api/src/services/catalogEditor.ts). */
+export interface CatalogProduct {
   id: string;
+  brand: BrandSlug;
   name: string;
-  description: string | null;
-  createdAt: string;
-};
-
-export type Uom = {
-  id: string;
-  name: string;
-  description: string | null;
-  createdAt: string;
-};
-
-export type ProductVariant = {
-  id: string;
-  productId: string;
-  name: string;
-  sku: string | null;
-  priceIdr: number | null;
-  /** Marketplace price - the figure the AI quotes. null renders as "tanya tim". */
-  mpPriceIdr: number | null;
-  isiCtn: number | null;
-  isiBox: number | null;
-  uomPriceId: string | null;
-  mpUomId: string | null;
-  uomCtnId: string | null;
-  uomBoxId: string | null;
-  minOrderQty: number | null;
-  minOrderUomId: string | null;
-  imageUrl: string | null;
-  stockStatus: StockStatus;
+  gsm: string | null;
+  print: string | null;
+  finishing: string | null;
+  use: string;
   isActive: boolean;
-  description: string | null;
-  createdAt: string;
+  sizes: { id: string; size: string; tiers: PriceTier[] }[];
+  referenceImages: { id: string; imageUrl: string; sort: number }[];
   updatedAt: string;
-  uomPrice?: Uom;
-  /** May differ from uomPrice: MP carries its own unit. */
-  mpUom?: Uom;
-  uomCtn?: Uom;
-  uomBox?: Uom;
-  uomMinOrder?: Uom;
-};
+}
 
-export type ProductTier = 'economic' | 'mid' | 'premium';
+/** GET /catalog/products meta: per brand tab, following search and status but not the brand filter. */
+export type CatalogCounts = Record<"all" | BrandSlug, number>;
 
-export type Product = {
-  id: string;
-  brandId: string;
-  categoryId: string | null;
-  name: string;
-  description: string | null;
-  fungsi: string | null;
-  usp: string | null;
-  kataKunci: string | null;
-  kelengkapan: string | null;
-  bahan: string | null;
-  ketebalan: string | null;
-  imageUrl: string | null;
-  tier?: ProductTier | null;
-  relatedProductIds?: string[] | null;
-  upsellProductId?: string | null;
-  createdAt: string;
-  updatedAt: string;
-  brand?: Brand;
-  category?: Category | null;
-  variants?: ProductVariant[];
-};
+/** api/src/domain/pricing.ts, without `no_tiers` (the price check reports that as not_in_catalog). */
+export type PriceQuote =
+  | {
+      kind: "quote";
+      tier: PriceTier;
+      qtyInPriceUnit: number;
+      unitPriceIdr: number;
+      totalIdr: number;
+      includesDelivery: boolean;
+      nextTier: PriceTier | null;
+    }
+  | { kind: "below_minimum"; minimum: PriceTier }
+  | { kind: "above_top_tier"; top: PriceTier };
+
+/** hitung_harga's input (api/src/services/priceTool.ts PriceToolInput). */
+export interface PriceToolInput {
+  product: string;
+  size: string;
+  qty: number;
+  unit: QtyUnit;
+}
+
+export type PriceOutcome = "quote" | "below_minimum" | "above_top_tier" | "not_in_catalog";
+
+/** What one hitung_harga call came to (api/src/services/priceTool.ts). */
+export interface PriceToolCall {
+  input: PriceToolInput;
+  outcome: PriceOutcome;
+  productId: string | null;
+  productName: string | null;
+  variantName: string | null;
+  /** The quote behind a `quote`, `below_minimum` or `above_top_tier` call; null for `not_in_catalog`. */
+  quote: PriceQuote | null;
+}
+
+/** A brand's price-list PDF, the file the bot sends (api/src/repositories/products.ts). */
+export interface BrandPriceList {
+  brand: BrandSlug;
+  url: string | null;
+  fileName: string | null;
+  uploadedAt: string | null;
+}
+
+/** What importing a file would do, counted without writing (api/src/services/catalogImport.ts). */
+export interface ImportPreview {
+  newProducts: number;
+  newSizes: number;
+  changedPrices: number;
+  unchanged: number;
+  validRows: number;
+  totalRows: number;
+  errors: { row: number; message: string }[];
+}
 
 export interface ApiKey {
   id: string;
@@ -447,13 +453,6 @@ export interface CatalogImportResult {
   untouched: number;
   errors: { row: number; reason: string }[];
 }
-
-/** One file of a bulk catalog-photo upload (POST /api/v1/catalog/images), as the API reports it. */
-export type CatalogImageResult =
-  | { file: string; status: 'matched'; target: { kind: 'product' | 'variant'; id: string; label: string } }
-  | { file: string; status: 'unmatched' }
-  | { file: string; status: 'ambiguous'; options: string[] }
-  | { file: string; status: 'rejected'; reason: string };
 
 export interface ChakraSyncStatus {
   watermarkMs: number;

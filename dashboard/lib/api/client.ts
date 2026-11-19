@@ -55,12 +55,19 @@ export async function apiFetch<T>(
     cache: options?.cache ?? "no-store",
   });
 
-  // DELETE with no response body returns 200/204 with empty body — handle gracefully
+  // DELETE may answer 204 or 200 with an empty body — handle gracefully. A DELETE that does send
+  // an envelope (the catalog's { sizes, tiers }) has it returned.
   if (method === "DELETE" || res.status === 204) {
     if (!res.ok) {
       throw new ApiError(res.status, "API_ERROR", `HTTP ${res.status}`);
     }
-    return { data: null as T, error: null };
+    const text = res.status === 204 ? "" : await res.text();
+    if (!text) return { data: null as T, error: null };
+    try {
+      return JSON.parse(text) as ApiEnvelope<T>;
+    } catch {
+      return { data: null as T, error: null };
+    }
   }
 
   const body: ApiEnvelope<T> = await res.json();

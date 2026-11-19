@@ -43,6 +43,11 @@ export function formatWait(minutes: number, lang: Lang): string {
     : translate(lang, "format.wait.dayHour", { d, h });
 }
 
+/** A file the API stores (/uploads/...) is served by the API; a full URL is used as it is. */
+export function apiFileUrl(url: string): string {
+  return /^https?:\/\//.test(url) ? url : `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:50070"}${url}`;
+}
+
 function wibDay(t: number): number {
   return Math.floor((t + WIB_OFFSET_MS) / DAY_MS);
 }
