@@ -49,7 +49,7 @@ export const RESPOND_FIELD_DESC = {
   send_po_form: 'true only on the turn the customer clearly agrees to buy at the quoted price',
   examples_for_team: 'true when the customer has no design and the product has no reference photos, so the team sends examples',
   profile_update:
-    'CATAT: customer profile fields learned in this turn, only from what the customer wrote. Customer: name, business_name (their shop, restaurant, catering or brand), business_type (what they sell or pack). Order: brands (array of "imperial_indopack" for boxes, "kertas_supreme" for wrapping paper, greaseproof, paper bags, sleeves and envelopes), items (array of { product, size, gsm, print, qty, qty_unit ("rim" or "pcs"), has_design }). Send only the items that changed this turn, never the whole list. To update an item already noted (a new qty, has_design), resend it with the same product and size as before plus only the changed fields - a product or size written differently is saved as a second item. Write qty on the turn the customer states how many they need - if your message says you noted it, it must be here. Upsell/cross-sell tracking: upsell_offered (boolean, set true when you offered an upsell this turn), upsell_accepted (boolean, set when customer responded to upsell offer), crosssell_offered (boolean, set true when you offered cross-sell this turn), crosssell_accepted (boolean, set when customer responded to cross-sell offer). Only set upsell/crosssell fields when relevant — do not set them on every turn. Lead tracking (these three go on the sales report, not the customer profile): "lead_temperature" ("hot" when this person shows real buying intent for something we can supply — asked a price, named a quantity, gave a deadline, or asked how to order; "cold" when they are only browsing, have gone quiet, or what they want is not something we sell or have, and they have not taken up an alternative you offered). "order_confirmed" (true ONLY on the single turn the customer first commits to a concrete order — a product plus a quantity, e.g. "oke kak saya ambil 10 rim". Never repeat it on later turns about the same order, it is counted each time). "order_value_idr" (integer rupiah total for THAT order only, not a running total: the total hitung_harga returned for it. Omit it entirely when hitung_harga gave no total — a missing number is fine, a guessed one is not). Only include fields learned in THIS turn.',
+    'CATAT: customer profile fields learned in this turn, only from what the customer wrote. All keys sit flat at the top level of profile_update: never nest them under "customer" or "order". Customer: name, business_name (their shop, restaurant, catering or brand), business_type (what they sell or pack). Order: brands (array of "imperial_indopack" for boxes, "kertas_supreme" for wrapping paper, greaseproof, paper bags, sleeves and envelopes), items (array of { product, size, gsm, print, qty, qty_unit ("rim" or "pcs"), has_design }). Send only the items that changed this turn, never the whole list. To update an item already noted (a new qty, has_design), resend it with the same product and size as before plus only the changed fields - a product or size written differently is saved as a second item. Write qty on the turn the customer states how many they need - if your message says you noted it, it must be here. Upsell/cross-sell tracking: upsell_offered (boolean, set true when you offered an upsell this turn), upsell_accepted (boolean, set when customer responded to upsell offer), crosssell_offered (boolean, set true when you offered cross-sell this turn), crosssell_accepted (boolean, set when customer responded to cross-sell offer). Only set upsell/crosssell fields when relevant — do not set them on every turn. Lead tracking (these three go on the sales report, not the customer profile): "lead_temperature" ("hot" when this person shows real buying intent for something we can supply — asked a price, named a quantity, gave a deadline, or asked how to order; "cold" when they are only browsing, have gone quiet, or what they want is not something we sell or have, and they have not taken up an alternative you offered). "order_confirmed" (true ONLY on the single turn the customer first commits to a concrete order — a product plus a quantity, e.g. "oke kak saya ambil 10 rim". Never repeat it on later turns about the same order, it is counted each time). "order_value_idr" (integer rupiah total for THAT order only, not a running total: the total hitung_harga returned for it. Omit it entirely when hitung_harga gave no total — a missing number is fine, a guessed one is not). Only include fields learned in THIS turn.',
   follow_up_notes:
     'Fill when a follow-up action is required before the conversation can proceed, OR when the customer has just stated a concrete intent to order (a product plus a quantity, e.g. "oke kak saya ambil 10 rim") — record what they want in one line so a human can follow up and close it, even when your own message this turn already handles everything else. E.g. "Kirim contoh desain kertas nasi ke Kak Budi." / "Order: Kertas Supreme 30x30 10 rim, logo menyusul." Leave empty if no follow-up needed.',
   fit_basis:
@@ -199,6 +199,23 @@ export function withCatalogPhotosOnly(r: AIResponse, catalogBlock: string): AIRe
   return { ...r, imageUrls: kept };
 }
 
+/**
+ * profile_update as the rest of the system reads it: flat keys. The tool description groups the fields
+ * under "Customer:" and "Order:", and the model sometimes writes them as nested { customer: {...},
+ * order: {...} } objects - the order's items then never reached the PO-form choice or the lead
+ * (QA agrees_po_form_no_design). Nested keys are lifted to the top; an explicit top-level key wins.
+ */
+export function flattenProfileUpdate(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const { customer, order, ...rest } = raw as Record<string, unknown>;
+  const lift = (v: unknown): Record<string, unknown> =>
+    v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  const out = { ...lift(customer), ...lift(order), ...rest };
+  if (typeof customer !== 'object' && customer !== undefined) out['customer'] = customer;
+  if (typeof order !== 'object' && order !== undefined) out['order'] = order;
+  return out;
+}
+
 export function extractFromToolInput(rawInput: Record<string, unknown>): AIResponse {
   const input = recoverLeakedFields(rawInput);
   const fallbackEscalationMsg = 'Pertanyaan Anda akan saya teruskan ke tim kami ya! Sebentar lagi mereka akan menghubungi Anda. 🙏';
@@ -222,9 +239,7 @@ export function extractFromToolInput(rawInput: Record<string, unknown>): AIRespo
     imageUrls: photoUrls(input.image_urls),
     sendPoForm: input.send_po_form === true || undefined,
     examplesForTeam: input.examples_for_team === true || undefined,
-    profileUpdate: input.profile_update && typeof input.profile_update === 'object' && !Array.isArray(input.profile_update)
-      ? input.profile_update as Record<string, unknown>
-      : undefined,
+    profileUpdate: flattenProfileUpdate(input.profile_update),
     followUpNotes: typeof input.follow_up_notes === 'string' && input.follow_up_notes.trim()
       ? input.follow_up_notes.trim()
       : undefined,
