@@ -325,6 +325,8 @@ export interface Lead {
   /** Set when this lead reopened an earlier, closed one ("pernah gagal"). */
   previousLeadId: string | null;
   firstContactAt: string | null;
+  /** The customer's first message since the lead began (max 300 chars); null when there is none. */
+  firstMessage: string | null;
   /** When the customer's unanswered message arrived; null = nothing waiting. */
   waitingSince: string | null;
 }

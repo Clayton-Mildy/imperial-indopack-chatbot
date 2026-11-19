@@ -287,6 +287,8 @@ export function LeadsClient({
         </table>
       </div>
 
+      <h2 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#0A0A0A" }}>{t("leads.listTitle")}</h2>
+
       <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #E2E8F0", marginBottom: 14 }}>
         {tabs.map((tab) => {
           const isActive = activeTab === tab;

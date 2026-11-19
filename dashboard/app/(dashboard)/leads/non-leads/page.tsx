@@ -2,6 +2,7 @@ import { getLeads } from "@/lib/api/leads";
 import { isReadOnly } from "@/lib/session";
 import { getT } from "@/lib/i18n";
 import { Header } from "@/components/layout/Header";
+import { stripCustomerText } from "@/lib/leads/redact";
 import { NonLeadsClient } from "./NonLeadsClient";
 import type { Lead, LeadKind } from "@/types/api";
 
@@ -43,7 +44,7 @@ export default async function NonLeadsPage({
   const t = await getT();
   const readOnly = await isReadOnly();
   // As on /leads: the AI's proof quote is customer message text, which marketing never receives.
-  if (readOnly) rows = rows.map((r) => ({ ...r, outcomeEvidence: null }));
+  if (readOnly) rows = stripCustomerText(rows);
 
   return (
     <>

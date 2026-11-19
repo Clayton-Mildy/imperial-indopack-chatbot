@@ -5,6 +5,7 @@ import { BrandTags } from "@/components/BrandTag";
 import type { BrandSlug } from "@/lib/brands";
 import { leadsQueryForTab } from "@/lib/leads/tabs";
 import { itemLine } from "@/lib/leads/items";
+import { stripCustomerText } from "@/lib/leads/redact";
 
 describe("leads tabs", () => {
   it("maps tabs to API filters", () => {
@@ -55,5 +56,12 @@ describe("BrandTags", () => {
     expect(out.indexOf("Kertas Supreme")).toBeGreaterThan(-1);
     expect(out.indexOf("Kertas Supreme")).toBeLessThan(out.indexOf("Imperial Indopack"));
     expect(out.match(/Imperial Indopack/g)).toHaveLength(1);
+  });
+});
+
+describe("stripCustomerText", () => {
+  it("removes the customer's text from every row", () => {
+    const rows = [{ id: "a", outcomeEvidence: "kutipan", firstMessage: "halo" }];
+    expect(stripCustomerText(rows)).toEqual([{ id: "a", outcomeEvidence: null, firstMessage: null }]);
   });
 });

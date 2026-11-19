@@ -3,6 +3,7 @@ import { isReadOnly } from "@/lib/session";
 import { getT } from "@/lib/i18n";
 import { Header } from "@/components/layout/Header";
 import { isLeadTab, leadsQueryForTab, type LeadTab } from "@/lib/leads/tabs";
+import { stripCustomerText } from "@/lib/leads/redact";
 import { LeadsClient } from "./LeadsClient";
 import type { BrandPerformance, Lead, LeadStatus } from "@/types/api";
 
@@ -71,7 +72,7 @@ export default async function LeadsPage({
   const t = await getT();
   // The AI's proof quote is the customer's own message: stripped on the server for marketing,
   // like /leads/[id], so it never reaches their browser in the page data.
-  if (readOnly) leads = leads.map((l) => ({ ...l, outcomeEvidence: null }));
+  if (readOnly) leads = stripCustomerText(leads);
 
   return (
     <>

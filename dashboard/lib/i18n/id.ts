@@ -48,6 +48,7 @@ export const id = {
   "settings.profile.language.en": "English",
 
   "leads.title": "Leads",
+  "leads.listTitle": "Daftar Leads",
   "leads.col.need": "Kebutuhan / Minat",
   "leads.col.totalDeal": "Total Deal",
   "leads.wait.min": "{n} mnt",
@@ -95,7 +96,6 @@ export const id = {
   "leads.col.status": "Status",
   "leads.col.totalOrders": "Total Order",
   "leads.noChat": "Belum chat",
-  "leads.submittedOn": "masuk {date}",
   "leads.status.new": "Baru",
   "leads.status.contacted": "Dihubungi",
   "leads.status.quoted": "Penawaran",
@@ -107,7 +107,6 @@ export const id = {
   "leads.tag.followUp": "follow-up",
   "leads.tag.returning": "pernah gagal",
   "leads.tag.waiting": "belum dibalas · {wait}",
-  "leads.proofWon": "AI · lihat bukti",
   "leads.proofLost": "{by} · {reason}",
   "leads.readOnly": "Akses hanya baca.",
   "leads.saveFailed": "Gagal menyimpan. Silakan coba lagi.",

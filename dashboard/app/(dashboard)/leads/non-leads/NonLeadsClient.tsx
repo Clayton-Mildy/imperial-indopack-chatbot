@@ -183,7 +183,7 @@ export function NonLeadsClient({
             <tbody>
               {rows.map((row) => {
                 const name = row.name ?? pick(row.payload, NAME_KEYS) ?? row.displayName;
-                const message = pick(row.payload, MESSAGE_KEYS);
+                const message = row.firstMessage ?? pick(row.payload, MESSAGE_KEYS);
                 const setByKey = row.kindSetBy ? SET_BY_KEY[row.kindSetBy] : undefined;
                 const busy = busyId === row.id && isPending;
                 return (

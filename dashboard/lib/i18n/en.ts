@@ -47,6 +47,7 @@ export const en: Record<keyof typeof id, string> = {
   "settings.profile.language.en": "English",
 
   "leads.title": "Leads",
+  "leads.listTitle": "Leads list",
   "leads.col.need": "Need / Interest",
   "leads.col.totalDeal": "Total deal",
   "leads.wait.min": "{n} min",
@@ -94,7 +95,6 @@ export const en: Record<keyof typeof id, string> = {
   "leads.col.status": "Status",
   "leads.col.totalOrders": "Total orders",
   "leads.noChat": "No chat yet",
-  "leads.submittedOn": "submitted {date}",
   "leads.status.new": "New",
   "leads.status.contacted": "Contacted",
   "leads.status.quoted": "Quoted",
@@ -106,7 +106,6 @@ export const en: Record<keyof typeof id, string> = {
   "leads.tag.followUp": "follow-up",
   "leads.tag.returning": "failed before",
   "leads.tag.waiting": "unreplied · {wait}",
-  "leads.proofWon": "AI · see proof",
   "leads.proofLost": "{by} · {reason}",
   "leads.readOnly": "Read-only access.",
   "leads.saveFailed": "Could not save. Please try again.",

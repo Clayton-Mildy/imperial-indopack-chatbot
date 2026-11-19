@@ -475,6 +475,15 @@ export async function listLeads(
     ORDER BY created_at ASC
     LIMIT 1
   )`;
+  // The customer's first message since the lead began (first_contact_at, else submitted_at); when
+  // none came after that, the contact's first customer message at all. Trimmed to 300 chars.
+  // Shown on Bukan Lead, where the message is the reason the chat was ruled out.
+  const firstMessageExpr = sql<string | null>`(
+    SELECT left(btrim(m.body), 300) FROM messages m JOIN conversations cv ON cv.id = m.conversation_id
+    WHERE cv.contact_id = ${leads.contactId} AND m.role = 'user'
+    ORDER BY (m.created_at >= coalesce(${leads.firstContactAt}, ${leads.submittedAt})) DESC, m.created_at ASC
+    LIMIT 1
+  )`;
   // The newest message either side wrote, in any of the contact's chats: what "Chat Terakhir" shows
   // and sorts by. System notes are the dashboard's own, not chat.
   const lastChatAtExpr = sql<string | null>`(
@@ -546,6 +555,7 @@ export async function listLeads(
         conversationStatus: conversationStatusExpr,
         conversationStartedAt: conversationStartedAtExpr,
         lastChatAt: lastChatAtExpr,
+        firstMessage: firstMessageExpr,
         waitingSince: waitingSinceExpr,
       })
       .from(leads)
@@ -579,6 +589,7 @@ export async function listLeads(
       ? new Date(row.conversationStartedAt)
       : null,
     lastChatAt: row.lastChatAt ? new Date(row.lastChatAt) : null,
+    firstMessage: row.firstMessage ?? null,
     statusSetByName: row.statusSetByName ?? null,
     totalOrdersSetByName: row.totalOrdersSetByName ?? null,
     dealValueSetByName: row.dealValueSetByName ?? null,
