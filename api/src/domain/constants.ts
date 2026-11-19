@@ -19,6 +19,17 @@ export function poFormMessage(url: string): string {
 /** The po_form_url setting until staff set the real Google Form (getPoFormUrl). Never sent to a customer. */
 export const PO_FORM_PLACEHOLDER_URL = 'https://forms.gle/REPLACE-ME';
 
+const placeholderKey = (url: string): string => url.trim().replace(/\/+$/, '').toLowerCase();
+
+/**
+ * The one check every caller makes before a PO link goes anywhere (the bot, quick-send, go-live,
+ * Settings): the placeholder however it was typed - any case, surrounding space, trailing slashes.
+ * Pure, so a test that mocks the settings repository cannot mock it away.
+ */
+export function isPoFormPlaceholder(url: string): boolean {
+  return placeholderKey(url) === placeholderKey(PO_FORM_PLACEHOLDER_URL);
+}
+
 // Sent instead of the PO link while it is still the placeholder (or cannot be read): a promise, so
 // messageRouter hands the chat to the team, who send the form by hand.
 export const CANNED_PO_FORM_FROM_TEAM = 'Untuk form PO-nya, tim kami kirimkan sebentar lagi ya kak 🙏';

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z, ZodError } from 'zod';
-import { poFormMessage } from '../../domain/constants.js';
+import { isPoFormPlaceholder, poFormMessage } from '../../domain/constants.js';
 import { apiKeyAuth } from '../../middleware/apiKey.js';
 import { getGoLiveIssues, getWhatsAppStatus } from '../../services/goLive.js';
 import {
@@ -16,7 +16,6 @@ import {
   setPoFormUrl,
   getBotSettings,
   patchBotSettings,
-  PO_FORM_PLACEHOLDER_URL,
 } from '../../repositories/appSettings.js';
 
 const PromptSectionSchema = z.object({
@@ -114,7 +113,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/settings/po-form-url', { preHandler: [apiKeyAuth] }, async (_request, reply) => {
     const url = await getPoFormUrl();
     return reply.send({
-      data: { url, isPlaceholder: url === PO_FORM_PLACEHOLDER_URL, message: poFormMessage(url) },
+      data: { url, isPlaceholder: isPoFormPlaceholder(url), message: poFormMessage(url) },
       error: null,
     });
   });

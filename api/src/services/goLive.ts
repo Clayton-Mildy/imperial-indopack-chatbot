@@ -8,7 +8,8 @@ import { getDb } from '../db/client.js';
 import { messages, phoneNumbers, productVariants, products, variantPriceTiers } from '../db/schema.js';
 import { BRAND_SLUGS } from '../domain/brands.js';
 import type { BrandSlug } from '../domain/orderProfile.js';
-import { getPoFormUrl, PO_FORM_PLACEHOLDER_URL } from '../repositories/appSettings.js';
+import { getPoFormUrl } from '../repositories/appSettings.js';
+import { isPoFormPlaceholder } from '../domain/constants.js';
 import { getBrandRowsBySlug } from '../repositories/products.js';
 
 export type WhatsAppTransport = 'chakra' | 'meta' | 'capture';
@@ -77,7 +78,7 @@ async function hasActiveTieredVariant(demoOnly: boolean): Promise<boolean> {
 
 export async function getGoLiveIssues(): Promise<GoLiveIssue[]> {
   const issues: GoLiveIssue[] = [];
-  if ((await getPoFormUrl()) === PO_FORM_PLACEHOLDER_URL) issues.push({ code: 'po_form_placeholder' });
+  if (isPoFormPlaceholder(await getPoFormUrl())) issues.push({ code: 'po_form_placeholder' });
   if (!(await getWhatsAppStatus()).connected) issues.push({ code: 'whatsapp_not_connected' });
   if (!(await hasActiveTieredVariant(false))) issues.push({ code: 'catalog_empty' });
   if (await hasActiveTieredVariant(true)) issues.push({ code: 'catalog_demo' });

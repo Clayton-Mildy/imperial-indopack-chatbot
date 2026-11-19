@@ -9,6 +9,7 @@ import {
   CATALOG_SENT_MARKER,
   LEAKED_TOOL_MARKUP_RE,
   REFERENCE_PHOTOS_MARKER,
+  isPoFormPlaceholder,
 } from '../domain/constants.js';
 import { buildCatalogContext, getFullCatalogBlock } from './ragQuery.js';
 import { withoutInventedTotals, verifyReplyTieredPrices, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, saysNotCarried, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, verifyReplyUrls, verifyReplyOrderStatus, urlsIn, nameGivenIn, ASKS_NAME_RE } from './replyChecks.js';
@@ -20,7 +21,7 @@ import {
   getMessagesForSummary,
 } from '../repositories/conversations.js';
 import { buildBotSettingsBlock, DEFAULT_BOT_SETTINGS } from '../domain/botSettings.js';
-import { getBotSettings, getDefaultPromptSections, getPoFormUrl, PO_FORM_PLACEHOLDER_URL } from '../repositories/appSettings.js';
+import { getBotSettings, getDefaultPromptSections, getPoFormUrl } from '../repositories/appSettings.js';
 import { listBrands } from '../repositories/products.js';
 import type { AIResponse, PromptSection } from '../domain/types.js';
 import { resolveLink } from './linkResolver.js';
@@ -1144,7 +1145,7 @@ function customerTextOf(messages: ChatMessage[]): string {
 async function configuredPoFormUrl(): Promise<string | null> {
   try {
     const url = await getPoFormUrl();
-    return url && url !== PO_FORM_PLACEHOLDER_URL ? url : null;
+    return url && !isPoFormPlaceholder(url) ? url : null;
   } catch {
     return null;
   }

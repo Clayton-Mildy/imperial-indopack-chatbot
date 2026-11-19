@@ -1948,6 +1948,19 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation).not.toHaveBeenCalled();
   });
 
+  it('the placeholder written another way (case, trailing slash) is not sent either', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    const { CANNED_PO_FORM_FROM_TEAM } = await import('../src/domain/constants.js');
+    mockGetPoFormUrl.mockResolvedValue('HTTPS://FORMS.GLE/REPLACE-ME/');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-PO5v', 'oke kak saya ambil 10 rim'));
+    await vi.runAllTimersAsync();
+
+    expect(sentTexts()).toEqual(['AI reply', CANNED_PO_FORM_FROM_TEAM]);
+    expect(sentTexts().join(' ').toLowerCase()).not.toContain('replace-me');
+  });
+
   it('the placeholder-PO hand-off tells staff the order details too', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');

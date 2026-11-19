@@ -16,17 +16,21 @@ import { join } from 'path';
 
 vi.mock('../src/middleware/apiKey.js', () => ({ apiKeyAuth: async () => {} }));
 
-// Every send still goes through the real whatsappSender (capture transport); `fail` makes the
-// provider refuse, to see what a failed send leaves behind.
-const gate = vi.hoisted(() => ({ fail: false }));
+// Every send still goes through the real whatsappSender (capture transport); `refuseNext` makes the
+// provider refuse that many of the next sends, to see what a failed send leaves behind.
+const gate = vi.hoisted(() => ({ refuseNext: 0 }));
 vi.mock('../src/services/whatsappSender.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/services/whatsappSender.js')>();
-  const refuse = () => Promise.reject(new Error('provider refused (test)'));
+  const through = <A extends unknown[]>(send: (...a: A) => Promise<string>) => (...a: A): Promise<string> => {
+    if (gate.refuseNext <= 0) return send(...a);
+    gate.refuseNext--;
+    return Promise.reject(new Error('provider refused (test)'));
+  };
   return {
     ...actual,
-    sendTextMessage: (...a: Parameters<typeof actual.sendTextMessage>) => (gate.fail ? refuse() : actual.sendTextMessage(...a)),
-    sendImageMessage: (...a: Parameters<typeof actual.sendImageMessage>) => (gate.fail ? refuse() : actual.sendImageMessage(...a)),
-    sendDocumentMessage: (...a: Parameters<typeof actual.sendDocumentMessage>) => (gate.fail ? refuse() : actual.sendDocumentMessage(...a)),
+    sendTextMessage: through(actual.sendTextMessage),
+    sendImageMessage: through(actual.sendImageMessage),
+    sendDocumentMessage: through(actual.sendDocumentMessage),
   };
 });
 
@@ -46,7 +50,7 @@ const { conversationRoutes } = await import('../src/routes/dashboard/conversatio
 const { poFormMessage, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
 const { BRAND_NAME, BRAND_SLUGS } = await import('../src/domain/brands.js');
 const { getBrandRowsBySlug, setBrandPriceList } = await import('../src/repositories/products.js');
-const { setPoFormUrl } = await import('../src/repositories/appSettings.js');
+const { setPoFormUrl, isPoFormPlaceholder } = await import('../src/repositories/appSettings.js');
 
 const PREFIX = '__quick_send__';
 const STAFF = 'Admin QA';
@@ -65,7 +69,8 @@ const ids = { productTwo: '', productFour: '', productBare: '', brandII: '' };
 type BrandColumns = { id: string; catalogFileUrl: string | null; catalogFileName: string | null; catalogFileUploadedAt: Date | null };
 const savedBrands: BrandColumns[] = [];
 const createdBrandIds: string[] = [];
-let savedPo: { value: unknown; updatedAt: Date } | null = null;
+// updated_at as text: a JS Date would drop its microseconds.
+let savedPo: { value: unknown; updatedAt: string } | null = null;
 
 async function cleanup() {
   const db = getDb();
@@ -90,6 +95,13 @@ async function chat(nn: string, brandSlugs?: string[]): Promise<{ id: string; to
 
 const rowsOf = (convId: string) =>
   getDb().select().from(messages).where(eq(messages.conversationId, convId)).orderBy(asc(messages.createdAt), asc(messages.id));
+/** The takeover note is the thread's last row: stored after every item (compared in SQL, to the microsecond). */
+const noteIsLast = async (convId: string) => {
+  const { rows } = await getDb().execute(sql`
+    SELECT (SELECT created_at FROM messages WHERE conversation_id = ${convId} AND role = 'system_note')
+         > (SELECT max(created_at) FROM messages WHERE conversation_id = ${convId} AND role <> 'system_note') AS after`);
+  return (rows[0] as { after: boolean | null }).after;
+};
 const statusOf = async (convId: string) =>
   (await getDb().select().from(conversations).where(eq(conversations.id, convId)))[0]!;
 
@@ -111,8 +123,8 @@ beforeAll(async () => {
     savedBrands.push({ id, catalogFileUrl: raw!.catalogFileUrl, catalogFileName: raw!.catalogFileName, catalogFileUploadedAt: raw!.catalogFileUploadedAt });
     if (slug === 'imperial_indopack') ids.brandII = id;
   }
-  const [po] = await db.select().from(appSettings).where(eq(appSettings.key, 'po_form_url'));
-  savedPo = po ? { value: po.value, updatedAt: po.updatedAt } : null;
+  const { rows: poRows } = await db.execute(sql`SELECT value, updated_at::text AS "updatedAt" FROM app_settings WHERE key = 'po_form_url'`);
+  savedPo = (poRows[0] as { value: unknown; updatedAt: string } | undefined) ?? null;
 
   const [number] = await db.insert(phoneNumbers).values({ number: `${PREFIX}n`, wabaId: 'test', phoneNumberId: 'test-quick-send' }).returning();
   numberId = number!.id;
@@ -138,8 +150,10 @@ afterAll(async () => {
     else await db.update(brands).set({ catalogFileUrl: b.catalogFileUrl, catalogFileName: b.catalogFileName, catalogFileUploadedAt: b.catalogFileUploadedAt }).where(eq(brands.id, b.id));
   }
   if (savedPo) {
-    await db.insert(appSettings).values({ key: 'po_form_url', ...savedPo })
-      .onConflictDoUpdate({ target: appSettings.key, set: savedPo });
+    const value = JSON.stringify(savedPo.value);
+    await db.execute(sql`
+      INSERT INTO app_settings (key, value, updated_at) VALUES ('po_form_url', ${value}::jsonb, ${savedPo.updatedAt}::timestamptz)
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`);
   } else {
     await db.delete(appSettings).where(eq(appSettings.key, 'po_form_url'));
   }
@@ -159,8 +173,8 @@ describe('POST /api/v1/conversations/:id/quick-send - price list', () => {
 
     const res = await quickSend(conv.id, { kind: 'price_list' });
     expect(res.statusCode).toBe(200);
-    const { sent } = res.json().data as { sent: { messageId: string; kind: string }[] };
-    expect(sent.map((s) => s.kind)).toEqual(['document', 'document']);
+    const { sent } = res.json().data as { sent: { messageId: string; kind: string; status: string }[] };
+    expect(sent.map((s) => [s.kind, s.status])).toEqual([['document', 'sent'], ['document', 'sent']]);
 
     const captured = readCaptured(LOG, { to: conv.to });
     expect(captured.map((c) => [c.kind, c.path, c.filename])).toEqual([
@@ -242,13 +256,35 @@ describe('POST /api/v1/conversations/:id/quick-send - PO form', () => {
     expect((await statusOf(conv.id)).status).toBe('active');
   });
 
+  it('refuses the placeholder however it is written: case, surrounding space, a trailing slash', async () => {
+    const conv = await chat('77');
+    const before = readCaptured(LOG).length;
+    for (const variant of ['HTTPS://FORMS.GLE/REPLACE-ME', 'https://forms.gle/REPLACE-ME/', 'https://forms.gle/replace-me']) {
+      await setPoFormUrl(variant);
+      const res = await quickSend(conv.id, { kind: 'po_form' });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('PO_FORM_PLACEHOLDER');
+    }
+    expect(readCaptured(LOG)).toHaveLength(before);
+    expect(await rowsOf(conv.id)).toHaveLength(0);
+  });
+
+  it('isPoFormPlaceholder: one check for every caller', () => {
+    for (const v of [PO_FORM_PLACEHOLDER_URL, 'HTTPS://FORMS.GLE/REPLACE-ME', 'https://forms.gle/REPLACE-ME/', '  https://forms.gle/REPLACE-ME//  ']) {
+      expect(isPoFormPlaceholder(v)).toBe(true);
+    }
+    for (const v of [REAL_PO, 'https://forms.gle/REPLACE-ME-2', 'https://forms.gle/', '']) {
+      expect(isPoFormPlaceholder(v)).toBe(false);
+    }
+  });
+
   it('sends the PO message once a real link is set', async () => {
     await setPoFormUrl(REAL_PO);
     const conv = await chat('67');
 
     const res = await quickSend(conv.id, { kind: 'po_form' });
     expect(res.statusCode).toBe(200);
-    expect(res.json().data.sent).toEqual([{ messageId: expect.any(String), kind: 'text' }]);
+    expect(res.json().data.sent).toEqual([{ messageId: expect.any(String), kind: 'text', status: 'sent' }]);
 
     const captured = readCaptured(LOG, { to: conv.to });
     expect(captured).toHaveLength(1);
@@ -264,12 +300,13 @@ describe('POST /api/v1/conversations/:id/quick-send - PO form', () => {
   it('a send the provider refuses is stored as saved, and the chat stays with the AI', async () => {
     await setPoFormUrl(REAL_PO);
     const conv = await chat('68');
-    gate.fail = true;
+    gate.refuseNext = 1;
     try {
       const res = await quickSend(conv.id, { kind: 'po_form' });
       expect(res.statusCode).toBe(200);
+      expect(res.json().data.sent).toEqual([{ messageId: expect.any(String), kind: 'text', status: 'saved' }]);
     } finally {
-      gate.fail = false;
+      gate.refuseNext = 0;
     }
     expect(readCaptured(LOG, { to: conv.to })).toHaveLength(0);
     const rows = await rowsOf(conv.id);
@@ -285,7 +322,7 @@ describe('POST /api/v1/conversations/:id/quick-send - reference photos', () => {
 
     const res = await quickSend(conv.id, { kind: 'reference_photos', productId: ids.productTwo });
     expect(res.statusCode).toBe(200);
-    expect(res.json().data.sent.map((s: { kind: string }) => s.kind)).toEqual(['image', 'image']);
+    expect(res.json().data.sent.map((s: { kind: string; status: string }) => [s.kind, s.status])).toEqual([['image', 'sent'], ['image', 'sent']]);
 
     const captured = readCaptured(LOG, { to: conv.to });
     expect(captured.map((c) => [c.kind, c.path])).toEqual([['image', PHOTO(1)], ['image', PHOTO(2)]]);
@@ -303,6 +340,44 @@ describe('POST /api/v1/conversations/:id/quick-send - reference photos', () => {
     const notes = await getDb().select().from(messages).where(and(eq(messages.conversationId, conv.id), eq(messages.role, 'system_note')));
     expect(notes).toHaveLength(1);
     expect(notes[0]!.body).toContain(STAFF);
+    // Handed over once the batch is out: the note follows the last photo, not the first.
+    expect(await noteIsLast(conv.id)).toBe(true);
+  });
+
+  it('a batch the provider refuses entirely: every item saved, the chat stays with the AI', async () => {
+    const conv = await chat('75');
+    gate.refuseNext = 99;
+    let res;
+    try {
+      res = await quickSend(conv.id, { kind: 'reference_photos', productId: ids.productTwo });
+    } finally {
+      gate.refuseNext = 0;
+    }
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.sent.map((s: { status: string }) => s.status)).toEqual(['saved', 'saved']);
+    expect(readCaptured(LOG, { to: conv.to })).toHaveLength(0);
+    const rows = await rowsOf(conv.id);
+    expect(rows.map((r) => [r.role, r.status])).toEqual([['assistant', 'saved'], ['assistant', 'saved']]);
+    expect((await statusOf(conv.id)).status).toBe('active');
+  });
+
+  it('half refused: the first photo fails, the second goes, and the chat is handed over after the batch', async () => {
+    const conv = await chat('76');
+    gate.refuseNext = 1;
+    let res;
+    try {
+      res = await quickSend(conv.id, { kind: 'reference_photos', productId: ids.productTwo });
+    } finally {
+      gate.refuseNext = 0;
+    }
+    expect(res.statusCode).toBe(200);
+    const sent = res.json().data.sent as { messageId: string; status: string }[];
+    expect(sent.map((s) => s.status)).toEqual(['saved', 'sent']);
+    expect(readCaptured(LOG, { to: conv.to }).map((c) => c.path)).toEqual([PHOTO(2)]);
+    const rows = (await rowsOf(conv.id)).filter((r) => r.role === 'assistant');
+    expect(rows.map((r) => [r.id, r.status])).toEqual(sent.map((s) => [s.messageId, s.status]));
+    expect((await statusOf(conv.id)).status).toBe('needs_human');
+    expect(await noteIsLast(conv.id)).toBe(true);
   });
 
   it('at most three photos go', async () => {

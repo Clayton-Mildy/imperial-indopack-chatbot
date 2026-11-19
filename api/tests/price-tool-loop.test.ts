@@ -379,4 +379,18 @@ describe('links in the reply', () => {
     expect((await callAIWithHistory(HISTORY, 'oke saya ambil')).message).toContain('https://forms.gle/ContohPO123');
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
+
+  it('a placeholder setting written another way is not an allowed link either', async () => {
+    mockGetPoFormUrl.mockResolvedValue('HTTPS://FORMS.GLE/REPLACE-ME/');
+    try {
+      mockCreate
+        .mockResolvedValueOnce(linkReply('Silakan isi form PO di HTTPS://FORMS.GLE/REPLACE-ME/ ya kak'))
+        .mockResolvedValueOnce(linkReply('Siap kak, form PO-nya saya kirim ya.'));
+      const repaired = await callAIWithHistory(HISTORY, 'oke saya ambil');
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+      expect(repaired.message).toBe('Siap kak, form PO-nya saya kirim ya.');
+    } finally {
+      mockGetPoFormUrl.mockImplementation(async () => 'https://forms.gle/REPLACE-ME');
+    }
+  });
 });

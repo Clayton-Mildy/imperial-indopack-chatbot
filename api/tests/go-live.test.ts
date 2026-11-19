@@ -88,6 +88,13 @@ describe('go-live issues', () => {
     expect(await codes()).not.toContain('po_form_placeholder');
   });
 
+  it('the placeholder written another way is still the placeholder', async () => {
+    for (const variant of ['HTTPS://FORMS.GLE/REPLACE-ME', 'https://forms.gle/REPLACE-ME/']) {
+      await setPoFormUrl(variant);
+      expect(await codes()).toContain('po_form_placeholder');
+    }
+  });
+
   it('flags a brand with no price list', async () => {
     const db = getDb();
     await db.update(brands).set({ catalogFileUrl: null }).where(eq(brands.name, 'Kertas Supreme'));
