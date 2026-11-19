@@ -1,7 +1,8 @@
 # Go-live guide
 
-How to run the Imperial Indopack WhatsApp bot for real: configure it, connect the WhatsApp number, fill
-the catalog, and test it from a personal phone before the first customer. Follow the sections in order.
+How to run the Imperial Indopack WhatsApp bot for real: configure it, set the bot up and fill the catalog,
+connect the WhatsApp number with the AI switched off, then switch the AI on and test it from a personal phone
+before the first customer. Follow the sections in order.
 Names (variables, buttons, pages) are exactly what the code and the dashboard use.
 
 Never paste a real key, token or password into chat, a ticket or this repo. Values live only in
@@ -55,11 +56,19 @@ a development machine.
 | Dashboard (Next.js) | `cd dashboard && npm run build && npm start` | 40070 |
 | Postgres 17 + pgvector | any host; migration 0007 runs `CREATE EXTENSION vector` | 5432 |
 
+- Dashboard start: `dashboard/next.config.ts` sets `output: "standalone"`. `npm start` (`next start -p 40070`)
+  still works with that: Next 16 only logs `"next start" does not work with "output: standalone" configuration`
+  as a warning and serves the normal build, reading `dashboard/.env.local`. The smaller standalone server is the
+  alternative: after `npm run build`, from `dashboard/` copy `public` to `.next/standalone/public`, `.next/static`
+  to `.next/standalone/.next/static` and `.env.local` to `.next/standalone/.env.local` (the build copies only
+  `.env` and `.env.production`), then start it with `PORT=40070 HOSTNAME=127.0.0.1 node .next/standalone/server.js`.
+  Redo the copies after every build.
+
 - The dashboard is normally reached through the API: the API proxies `/app/*` to `DASHBOARD_UPSTREAM`
   (default `http://127.0.0.1:40070`). That way the PC needs only one public hostname, and it is the same
   host staff open in the browser, so browser notifications (which are tied to the hostname) stay valid.
   Staff open `https://<host>/app`.
-- The WhatsApp webhook needs a public HTTPS URL (section 4). Hosting of the PC or server is still the
+- The WhatsApp webhook needs a public HTTPS URL (section 5). Hosting of the PC or server is still the
   client's choice (spec section 9, item 8).
 
 ## 2. Environment variables
@@ -82,7 +91,7 @@ and `dashboard/.env.local`. Required means the app does not start, or does not w
 | `PUBLIC_BASE_URL` | yes | The public https URL of this API, no trailing slash, e.g. `https://bot.example.com`. WhatsApp fetches price-list PDFs and photos from it |
 | `DASHBOARD_ORIGIN` | yes | The dashboard's public origin. With the `/app` proxy this is the same as `PUBLIC_BASE_URL`. Empty blocks every cross-origin browser call |
 | `DASHBOARD_UPSTREAM` | no | `http://127.0.0.1:40070` (default). Empty turns the `/app` proxy off |
-| `WHATSAPP_TRANSPORT` | yes | `chakra` (section 4) or `meta` (section 5). `capture` is local testing only and is refused in production |
+| `WHATSAPP_TRANSPORT` | yes | `chakra` (section 5) or `meta` (section 6). `capture` is local testing only and is refused in production |
 | `CHAKRA_BASE_URL` | no | `https://api.chakrahq.com` (default) |
 | `CHAKRA_PLUGIN_ID` | chakra | Chakra, WhatsApp setup, the three-dot menu (top right), Copy Plugin Id |
 | `CHAKRA_ACCESS_TOKEN` | chakra | Chakra, API Keys, create key, Access Tokens |
@@ -95,7 +104,7 @@ and `dashboard/.env.local`. Required means the app does not start, or does not w
 | `META_API_VERSION` | no | `v19.0` (default) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | recommended | Browser notifications for staff. Generate once with `npx web-push generate-vapid-keys`; `VAPID_SUBJECT=mailto:<a real address>`. Changing the pair makes every staff member enable notifications again |
 | `ESCALATION_NOTIFY_WA` | no | Staff WhatsApp number that is pinged on a hand-off (also covers phones push cannot reach) |
-| `ESCALATION_NUDGE_AFTER_MS`, `ESCALATION_NUDGE_INTERVAL_MS` | no | Reminder for a hand-off nobody answered (defaults 30 min, checked every 10 min; 0 = off) |
+| `ESCALATION_NUDGE_AFTER_MS`, `ESCALATION_NUDGE_INTERVAL_MS` | no | Reminder for a hand-off nobody answered. Only on/off and how often it is checked: `ESCALATION_NUDGE_AFTER_MS=0` turns it off, any other value leaves it on (the value itself is not used); `ESCALATION_NUDGE_INTERVAL_MS` is how often it checks (default 10 minutes, `0` = off). How many minutes count as unanswered is set in the dashboard: Pengaturan, **Tim & notifikasi**, "Ingatkan tim bila chat Perlu Tim belum dibalas" (default 30) |
 | `RESET_COMMAND_NUMBERS` | no | Numbers allowed to type `/new` to wipe their own test chat. Leave empty in production unless you are testing |
 | `CAPTURE_LOG_PATH`, `CAPTURE_MEDIA_DIR` | local only | Used only by `WHATSAPP_TRANSPORT=capture`. Never set capture on the live server |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME` | seed only | The first dashboard admin. The script's fallback password is weak: always set your own before running the seed |
@@ -116,6 +125,12 @@ and `dashboard/.env.local`. Required means the app does not start, or does not w
 
 ## 3. First deploy
 
+Use a fresh, empty production database. Never point the live API at the local `imperial_indopack` development
+database or a copy of it: it holds the demo `(CONTOH)` catalog, test chats and leads, and the seeded capture number
+row (label `Nomor lokal (capture)`, Phone Number ID `local-phone-70`) that makes the WhatsApp check in Pengaturan
+read connected although no real number is set up. If a development database is ever reused anyway, delete that
+number on **Nomor WhatsApp** and purge the demo catalog (section 4, step 3) before going further.
+
 From `api/`. Every `npx tsx scripts/X.ts` below becomes `node dist-scripts/X.js` on the server after
 `npm run build:scripts` (e.g. `node dist-scripts/migrate.js`, `node dist-scripts/seed.js`,
 `node dist-scripts/seed-default-prompt.js`, `node dist-scripts/reseed-prompt-defaults.js`):
@@ -127,12 +142,51 @@ From `api/`. Every `npx tsx scripts/X.ts` below becomes `node dist-scripts/X.js`
    `api/.env` and `dashboard/.env.local`. It is never shown again.
 3. `npx tsx scripts/seed-default-prompt.ts` stores the AI's default prompt.
 4. `npm run build && npm start` for the API, then `cd dashboard && npm run build && npm start`.
-5. Every later deploy of new code: `npx tsx scripts/reseed-prompt-defaults.ts` after the new code is in
+5. Log in to the dashboard with the admin from step 2, open **Pengaturan**, section **Bot**, and turn
+   **Balasan otomatis AI** OFF. A fresh database starts with it ON. Leave it OFF until section 7: with it off the
+   bot answers nobody, so connecting the number (section 5) cannot let it talk to a customer before it is set up.
+6. Every later deploy of new code: `npx tsx scripts/reseed-prompt-defaults.ts` after the new code is in
    place. It updates prompt sections nobody edited and keeps the staff's edits (`--force` would replace them).
 
-## 4. Connect WhatsApp: ChakraHQ (primary path)
+## 4. Set up the bot (before connecting WhatsApp)
+
+Do all of this before the number is connected (section 5), with **Balasan otomatis AI** still OFF (section 3,
+step 5). Open Pengaturan: the go-live banner at the top lists what is still missing. It must be empty before the
+AI is switched on (section 7).
+
+1. **Pengaturan, Pemesanan & harga**: enter both PO form links (https). On a fresh production database they
+   are placeholders and the bot will not send a placeholder:
+   - **Form order cetak** (customer has a design): `https://forms.gle/mybbNDzzfEETKP9h9`
+   - **Form order plano** (no design): `https://forms.gle/eiw2k43yrhTZ6odbA`
+
+   When the bot does not know whether the customer has a design, it sends both, labelled. Also check the
+   **Minimum order** value there.
+2. **Pengaturan, Bot**: **Nama bot** and **Sapaan pertama** (the first greeting).
+3. **Katalog, the real catalog.** The client's workbook only held customer-specific quotes, so there is no
+   generic price list yet.
+   - If you loaded the demo catalog: `cd api && npm run catalog:demo -- --purge` deletes only the `(CONTOH)`
+     products. The banner flags "Katalog berisi data contoh" until they are gone.
+   - Import the client's generic price list: **Katalog, Import Excel, Unduh template-katalog.xlsx**, fill it
+     (one row per price tier), upload it.
+   - Upload both brand price-list PDFs under "Daftar harga untuk dikirim bot" (Kertas Supreme and Imperial Indopack, PDF, max 20 MB each).
+   - On each product add up to 3 reference photos ("Foto referensi desain", JPG/PNG, max 5 MB). The bot sends
+     them to customers who have no design yet.
+   - Until a real catalog exists the bot hands every price question to the team.
+4. **Admin**: create the staff accounts. Each staff member opens the dashboard on their own phone/PC (at the
+   public address, so once section 5A is done) and turns on browser notifications (button "Aktifkan
+   notifikasi"; it then reads "Notifikasi aktif"). On iPhone it needs iOS 16.4+ and the site added to the
+   Home Screen.
+5. Check Pengaturan once more: the go-live banner lists nothing but "Nomor WhatsApp belum terhubung", which
+   clears in section 5. If WhatsApp already reads **Terhubung** here, a number row is already stored (see the
+   database note in section 3).
+
+## 5. Connect WhatsApp: ChakraHQ (primary path)
 
 Chakra is the BSP between your WhatsApp Business number and this API. Both directions go through it.
+
+Before step 9 (the webhook) check Pengaturan, section **Bot**: **Balasan otomatis AI** must be OFF. From the moment
+the webhook points here, real customers' messages arrive; with the AI off they wait in **Percakapan** for the team
+and the bot sends nothing.
 
 **A. Public HTTPS address**
 
@@ -187,47 +241,29 @@ Chakra is the BSP between your WhatsApp Business number and this API. Both direc
     if customers' photos or documents arrive unreadable. Chakra's media API cannot serve newer files, and this
     token lets the API fetch them from Meta. Without it the bot still answers from the caption.
 
-## 5. Connect WhatsApp: Meta Cloud API (alternative)
+## 6. Connect WhatsApp: Meta Cloud API (alternative)
+
+Same rule as section 5: **Balasan otomatis AI** stays OFF until section 7.
 
 1. `api/.env`: `WHATSAPP_TRANSPORT=meta`, `META_ACCESS_TOKEN` (system-user token), `META_WEBHOOK_SECRET` (the
    App Secret), `META_WEBHOOK_VERIFY_TOKEN` (a string you choose).
 2. Meta for Developers, your app, WhatsApp, Configuration, Webhook: callback URL
    `https://bot.example.com/webhooks/whatsapp`, Verify token = `META_WEBHOOK_VERIFY_TOKEN`, then subscribe to
    the `messages` field. (The API answers Meta's verification request on both webhook paths.)
-3. Same Cloudflare rules as section 4A.
-4. Add the number on **Nomor WhatsApp** as in section 4D (Phone Number ID is Meta's numeric ID). The form has
+3. Same Cloudflare rules as section 5A.
+4. Add the number on **Nomor WhatsApp** as in section 5D (Phone Number ID is Meta's numeric ID). The form has
    no token field: the API uses `META_ACCESS_TOKEN` from `.env`.
 5. Restart the API; Pengaturan, WhatsApp shows **Terhubung · Meta · 1 nomor**. The Chakra sync box does not appear on meta.
 
-## 6. Before the first customer
+## 7. Switch the AI on and test from a personal phone
 
-Open Pengaturan, and the go-live banner at the top lists what is still missing. It must be empty before
-the first customer.
+Pengaturan: the go-live banner must be empty and WhatsApp must read **Terhubung**. Only then turn **Balasan otomatis
+AI** ON (Pengaturan, section **Bot**).
 
-1. **Pengaturan, Pemesanan & harga**: enter both PO form links (https). On a fresh production database they
-   are placeholders and the bot will not send a placeholder:
-   - **Form order cetak** (customer has a design): `https://forms.gle/mybbNDzzfEETKP9h9`
-   - **Form order plano** (no design): `https://forms.gle/eiw2k43yrhTZ6odbA`
-
-   When the bot does not know whether the customer has a design, it sends both, labelled. Also check the
-   **Minimum order** value there.
-2. **Pengaturan, Bot**: **Nama bot** and **Sapaan pertama** (the first greeting).
-3. **Katalog, the real catalog.** The client's workbook only held customer-specific quotes, so there is no
-   generic price list yet.
-   - If you loaded the demo catalog: `cd api && npm run catalog:demo -- --purge` deletes only the `(CONTOH)`
-     products. The banner flags "Katalog berisi data contoh" until they are gone.
-   - Import the client's generic price list: **Katalog, Import Excel, Unduh template-katalog.xlsx**, fill it
-     (one row per price tier), upload it.
-   - Upload both brand price-list PDFs under "Daftar harga untuk dikirim bot" (Kertas Supreme and Imperial Indopack, PDF, max 20 MB each).
-   - On each product add up to 3 reference photos ("Foto referensi desain", JPG/PNG, max 5 MB). The bot sends
-     them to customers who have no design yet.
-   - Until a real catalog exists the bot hands every price question to the team.
-4. **Admin**: create the staff accounts. Each staff member opens the dashboard on their own phone/PC and turns
-   on browser notifications (button "Aktifkan notifikasi"; it then reads "Notifikasi aktif"). On iPhone it
-   needs iOS 16.4+ and the site added to the Home Screen.
-5. Check Pengaturan once more: the go-live banner is empty, WhatsApp reads **Terhubung**.
-
-## 7. What to test first, from a personal phone
+The switch is global and the dashboard has no per-contact AI switch, so from that moment the bot answers every
+customer who writes to the number, not only your test phone: this test runs on live traffic. Do it at a quiet time
+(outside business hours) and turn the AI OFF again if a step goes wrong. Or run sections 5 to 7 first with a
+separate test WhatsApp number, and connect the real number only once the test has passed.
 
 Use a phone that is not the business number, and note down the result of each step. Test numbers like
 `0812-0000-00NN` are only for the local tests in section 0; here use your own.
@@ -247,7 +283,7 @@ Use a phone that is not the business number, and note down the result of each st
 - **Only staff replies**: Pengaturan, **Balasan otomatis AI** off. The bot stops answering; staff reply from the dashboard.
 - **One product misbehaves**: Katalog, deactivate the product (the bot stops offering it).
 - **Reset a test chat**: send `/new` from a number listed in `RESET_COMMAND_NUMBERS` (restart the API after editing it).
-- **Nothing arrives**: check Pengaturan, WhatsApp first; then the Cloudflare rules (4A), the webhook URL and
-  `CHAKRA_WEBHOOK_SECRET` (4C), the Phone Number ID (4D), and the API log for `No phone number configured`.
+- **Nothing arrives**: check Pengaturan, WhatsApp first; then the Cloudflare rules (5A), the webhook URL and
+  `CHAKRA_WEBHOOK_SECRET` (5C), the Phone Number ID (5D), and the API log for `No phone number configured`.
 - **Stuck on a bad prompt edit**: Pengaturan, Instruksi bot, or run `reseed-prompt-defaults.ts --force` to
   put the shipped prompt back (this replaces staff edits).
