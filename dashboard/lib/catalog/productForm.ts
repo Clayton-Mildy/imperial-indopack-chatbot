@@ -181,14 +181,15 @@ function compareGsm(a: string, b: string): number {
 
 /**
  * The form's rows grouped by gramasi, in the order the API lists them, each group with its row indexes in
- * sizes[]. A no-gramasi product is one group with gsm '' (also when it has no rows yet).
+ * sizes[]. A group's gsm is the normalised gramasi ("350" typed heads its section as "350 gsm", as it is
+ * saved). A no-gramasi product is one group with gsm '' (also when it has no rows yet).
  */
 export function gramasiGroups(f: ProductFormState): { gsm: string; indexes: number[] }[] {
   const groups: { gsm: string; indexes: number[] }[] = [];
   f.sizes.forEach((s, i) => {
     const g = groups.find((x) => sameGsm(x.gsm, s.gsm));
     if (g) g.indexes.push(i);
-    else groups.push({ gsm: normalizeGsm(s.gsm) ? s.gsm.trim() : "", indexes: [i] });
+    else groups.push({ gsm: normalizeGsm(s.gsm), indexes: [i] });
   });
   if (groups.length === 0) return [{ gsm: "", indexes: [] }];
   return groups.sort((a, b) => compareGsm(a.gsm, b.gsm));

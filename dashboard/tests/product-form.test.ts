@@ -434,6 +434,19 @@ describe("gramasiGroups", () => {
     expect(gramasiGroups(gsmForm()).map((g) => g.gsm)).toEqual(["300 gsm", "350 gsm"]);
   });
 
+  // Final review M-d (V2): a gramasi typed as "350" heads its section as "350 gsm", as it is saved.
+  it("the group heading is the normalised gramasi, not the raw typed text", () => {
+    const f = base([
+      { size: "A", gsm: "350", tiers: [] },
+      { size: "B", gsm: "350 gsm", tiers: [] },
+      { size: "A", gsm: " 300GSM ", tiers: [] },
+    ]);
+    expect(gramasiGroups(f)).toEqual([
+      { gsm: "300 gsm", indexes: [2] },
+      { gsm: "350 gsm", indexes: [0, 1] },
+    ]);
+  });
+
   it("a no-gramasi form is one group with gsm ''", () => {
     expect(gramasiGroups(emptyForm("kertas_supreme"))).toEqual([{ gsm: "", indexes: [0] }]);
     expect(gramasiGroups({ ...emptyForm("kertas_supreme"), sizes: [] })).toEqual([{ gsm: "", indexes: [] }]);

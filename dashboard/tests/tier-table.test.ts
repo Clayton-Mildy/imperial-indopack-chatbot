@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellFor, deliveryLabel, tierColumns } from "@/lib/catalog/tierTable";
+import { cellFor, deliveryLabel, distinctSizeCount, sizeRowLabel, tierColumns } from "@/lib/catalog/tierTable";
 import type { CatalogProduct, PriceTier } from "@/types/api";
 
 type Size = CatalogProduct["sizes"][number];
@@ -45,5 +45,22 @@ describe("tier table", () => {
     // Same threshold in another unit is another column, never a match.
     expect(cellFor(sizes[0]!, { minQty: 5, qtyUnit: "rim" })).toBeNull();
     expect(deliveryLabel(sizes[0]!)).toBe("excluded");
+  });
+});
+
+// Final review I6: three "20 x 20 x 7,5 cm" rows under different gramasi read as one size at three prices.
+describe("the card's size rows under several gramasi", () => {
+  const G = (size: string, gsm: string | null): Size => ({ ...S(size, []), gsm });
+
+  it("each row names its gramasi; a no-gramasi row is just the size", () => {
+    expect(sizeRowLabel(G("20 x 20 x 7,5 cm", "270 gsm"))).toBe("20 x 20 x 7,5 cm · 270 gsm");
+    expect(sizeRowLabel(G("21 x 7 x 5 cm", null))).toBe("21 x 7 x 5 cm");
+  });
+
+  it("the inactive card counts distinct sizes, not rows", () => {
+    const rows = [G("20 x 20 x 7,5 cm", "270 gsm"), G("20 x 20 x 7,5 cm", "310 gsm"), G("20x20x7,5", "350 gsm"), G("25 x 25 x 7 cm", "310 gsm")];
+    expect(distinctSizeCount(rows)).toBe(2);
+    expect(distinctSizeCount(SIZES)).toBe(2);
+    expect(distinctSizeCount([])).toBe(0);
   });
 });

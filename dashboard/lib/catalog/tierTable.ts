@@ -38,3 +38,17 @@ export function deliveryLabel(size: Size): "included" | "excluded" | "mixed" {
   if (included === 0) return "excluded";
   return included === size.tiers.length ? "included" : "mixed";
 }
+
+/** The size cell of a card row: the size, then its gramasi when the product has gramasi ("20 x 20 x 7,5 cm · 270 gsm"). */
+export function sizeRowLabel(size: Pick<Size, "size" | "gsm">): string {
+  return size.gsm ? `${size.size} · ${size.gsm}` : size.size;
+}
+
+/** The API's normalizeSize: "20 x 20 x 7,5 cm" and "20x20x7.5" are one size. */
+const sizeKey = (s: string): string =>
+  s.toLowerCase().replace(/[×*]/g, "x").replace(/cm/g, "").replace(/,/g, ".").replace(/\s+/g, "");
+
+/** How many sizes a product has - one size under several gramasi counts once. */
+export function distinctSizeCount(sizes: Pick<Size, "size">[]): number {
+  return new Set(sizes.map((s) => sizeKey(s.size))).size;
+}

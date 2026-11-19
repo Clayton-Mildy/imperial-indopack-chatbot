@@ -5,7 +5,7 @@ import { BrandTags } from "@/components/BrandTag";
 import { BRAND_TAG } from "@/lib/brands";
 import { apiFileUrl } from "@/lib/format";
 import { gramasiSummary } from "@/lib/catalog/productForm";
-import { cellFor, deliveryLabel, tierColumns, type TierColumn } from "@/lib/catalog/tierTable";
+import { cellFor, deliveryLabel, distinctSizeCount, sizeRowLabel, tierColumns, type TierColumn } from "@/lib/catalog/tierTable";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import { formatNumber, formatRupiah, type TFn } from "@/lib/i18n/core";
 import type { CatalogProduct } from "@/types/api";
@@ -99,7 +99,7 @@ export function ProductCard({ product: p, canEdit, onDelete }: Props) {
         )}
         <span style={{ flex: "1 1 260px" }}>
           <b style={{ color: "#1F2421" }}>{p.name}</b> · {t(BRAND_TAG[p.brand].labelKey)} ·{" "}
-          {t("catalog.card.sizes", { n: p.sizes.length })}
+          {t("catalog.card.sizes", { n: distinctSizeCount(p.sizes) })}
         </span>
         <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#F1F5F1", color: "#5F6B5A" }}>
           {t("catalog.card.inactive")}
@@ -209,7 +209,7 @@ export function ProductCard({ product: p, canEdit, onDelete }: Props) {
               const includedAt = columns.filter((c) => cellFor(s, c)?.includesDelivery).map(colLabel);
               return (
                 <tr key={s.id}>
-                  <td style={{ ...td, paddingLeft: 16, fontWeight: 600 }}>{s.size}</td>
+                  <td style={{ ...td, paddingLeft: 16, fontWeight: 600 }}>{sizeRowLabel(s)}</td>
                   {columns.map((c) => {
                     const tier = cellFor(s, c);
                     return tier ? (
