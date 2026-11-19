@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { PoFormSetting, PromptSection } from "@/types/api";
+import type { PoFormSetting, PoFormsSetting, PromptSection } from "@/types/api";
 
 export async function getPromptDefaults(): Promise<PromptSection[]> {
   try {
@@ -52,10 +52,17 @@ export async function patchPromptDefaults(sections: PromptSection[]): Promise<vo
   });
 }
 
-/** The PO form link, whether it is still the placeholder, and the exact message a send would carry. */
-export async function getPoFormSetting(): Promise<PoFormSetting> {
-  const envelope = await apiFetch<PoFormSetting>("/settings/po-form-url");
-  const d = envelope.data;
-  if (!d || typeof d.url !== "string" || typeof d.message !== "string") throw new Error("Malformed po-form-url response");
+/** One form of the po-forms response; a malformed one throws. Anything but an explicit false is the placeholder. */
+function poFormOf(raw: unknown): PoFormSetting {
+  const d = raw as Partial<PoFormSetting> | null | undefined;
+  if (!d || typeof d.url !== "string" || typeof d.message !== "string") throw new Error("Malformed po-forms response");
   return { url: d.url, isPlaceholder: d.isPlaceholder !== false, message: d.message };
+}
+
+/** Both PO forms (cetak, plano): each link, whether it is still the placeholder, and the exact message a send would carry. */
+export async function getPoFormsSetting(): Promise<PoFormsSetting> {
+  const envelope = await apiFetch<PoFormsSetting>("/settings/po-forms");
+  const d = envelope.data;
+  if (!d || typeof d.both?.message !== "string") throw new Error("Malformed po-forms response");
+  return { cetak: poFormOf(d.cetak), plano: poFormOf(d.plano), both: { message: d.both.message } };
 }

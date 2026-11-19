@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { patchConversation, quickSend, saveTeamNotes } from "@/lib/api/conversations";
 import { listCatalogProducts } from "@/lib/api/catalog";
-import { getPoFormSetting } from "@/lib/api/settings";
+import { getPoFormsSetting } from "@/lib/api/settings";
+import { isPoFormChoice } from "@/lib/conversations/poForms";
 import { createLog } from "@/lib/api/activityLogs";
 import { ApiError } from "@/lib/api/client";
 import { isBrandSlug, type BrandSlug } from "@/lib/brands";
 import { isReadOnly, sessionStaff } from "@/lib/session";
-import type { PhotoProduct, PoFormSetting, QuickSendAction, QuickSendError, QuickSendItem, TeamNotes } from "@/types/api";
+import type { PhotoProduct, PoFormsSetting, QuickSendAction, QuickSendError, QuickSendItem, TeamNotes } from "@/types/api";
 
 export async function resolveConversation(id: string) {
   if (await isReadOnly()) throw new Error("FORBIDDEN");
@@ -68,8 +69,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** The action as the browser sent it, rebuilt from known fields only: a server action is a public POST endpoint. */
 function cleanAction(a: unknown): QuickSendAction | null {
   if (typeof a !== "object" || a === null) return null;
-  const { kind, brand, productId } = a as { kind?: unknown; brand?: unknown; productId?: unknown };
-  if (kind === "po_form") return { kind };
+  const { kind, brand, productId, form } = a as { kind?: unknown; brand?: unknown; productId?: unknown; form?: unknown };
+  if (kind === "po_form") {
+    if (form === undefined) return { kind };
+    return isPoFormChoice(form) ? { kind, form } : null;
+  }
   if (kind === "reference_photos") return typeof productId === "string" && UUID_RE.test(productId) ? { kind, productId } : null;
   if (kind === "price_list") {
     if (brand === undefined) return { kind };
@@ -122,10 +126,10 @@ export async function saveTeamNotesAction(conversationId: string, text: string):
   }
 }
 
-/** What "Kirim form PO" would send, read when the confirm dialog opens. */
-export async function poFormPreviewAction(): Promise<{ ok: true; setting: PoFormSetting } | { ok: false }> {
+/** What "Kirim form PO" would send - both forms and the both-forms message - read when the confirm dialog opens. */
+export async function poFormPreviewAction(): Promise<{ ok: true; setting: PoFormsSetting } | { ok: false }> {
   try {
-    return { ok: true, setting: await getPoFormSetting() };
+    return { ok: true, setting: await getPoFormsSetting() };
   } catch {
     return { ok: false };
   }

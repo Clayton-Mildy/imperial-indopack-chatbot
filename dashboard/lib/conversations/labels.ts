@@ -7,6 +7,7 @@ import type {
   ConversationStatus,
   HandoffCategory,
   NearestMatch,
+  PoFormChoice,
   PriceTier,
   PriceToolCall,
   QuickSendAction,
@@ -95,7 +96,13 @@ export function quickSendErrorKey(e: QuickSendError | "FAILED"): TKey {
   return QUICK_SEND_ERROR_KEY[e] ?? QUICK_SEND_ERROR_KEY.FAILED;
 }
 
-/** One line per item sent: 'Daftar harga Kertas Supreme terkirim', 'Foto 2 gagal terkirim', 'Form PO terkirim'. */
+const PO_FORM_ITEM_KEY: Record<PoFormChoice, TKey> = {
+  cetak: "conversations.quick.item.poForm.cetak",
+  plano: "conversations.quick.item.poForm.plano",
+  both: "conversations.quick.item.poForm.both",
+};
+
+/** One line per item sent: 'Daftar harga Kertas Supreme terkirim', 'Foto 2 gagal terkirim', 'Form PO cetak terkirim'. */
 export function quickSendLines(action: QuickSendAction, sent: QuickSendItem[], lang: Lang): string[] {
   return sent.map((item, i) => {
     const label =
@@ -105,7 +112,7 @@ export function quickSendLines(action: QuickSendAction, sent: QuickSendItem[], l
           }).trim()
         : action.kind === "reference_photos"
           ? translate(lang, "conversations.quick.item.photo", { n: i + 1 })
-          : translate(lang, "conversations.quick.item.poForm");
+          : translate(lang, action.form ? PO_FORM_ITEM_KEY[action.form] : "conversations.quick.item.poForm");
     return translate(lang, item.status === "sent" ? "conversations.quick.itemSent" : "conversations.quick.itemFailed", { item: label });
   });
 }

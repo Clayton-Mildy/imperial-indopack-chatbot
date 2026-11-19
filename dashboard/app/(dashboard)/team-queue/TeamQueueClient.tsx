@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { BrandTags } from "@/components/BrandTag";
 import { ReconnectingNote } from "@/components/conversations/ReconnectingNote";
 import { useLastGood } from "@/lib/conversations/lastGood";
 import { formatWait } from "@/lib/format";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import { CATEGORY_COPY, detailsBadge, visibleGroups } from "@/lib/teamQueue";
+import { useVisiblePoll } from "@/lib/visiblePoll";
 import type { TeamQueue, TeamQueueItem } from "@/types/api";
 
 const MINUTE_MS = 60_000;
@@ -20,7 +21,8 @@ function waitMinutes(iso: string, now: number): number {
 
 /**
  * Perlu Tim: the summary line, the tabs (Semua tim / Ditangani saya) and the groups. The queue
- * re-runs its server page every 5 seconds; a failed poll (queue null) keeps what is shown.
+ * re-runs its server page every 5 seconds while the tab is visible (once more when it is shown
+ * again); a failed poll (queue null) keeps what is shown.
  */
 export function TeamQueueClient({ queue, mine }: { queue: TeamQueue | null; mine: boolean }) {
   const router = useRouter();
@@ -29,13 +31,10 @@ export function TeamQueueClient({ queue, mine }: { queue: TeamQueue | null; mine
   const shown = useLastGood(queue, mine ? "mine" : "all");
   const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      router.refresh();
-      setNow(Date.now());
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [router]);
+  useVisiblePoll(() => {
+    router.refresh();
+    setNow(Date.now());
+  }, 5000);
 
   const groups = shown ? visibleGroups(shown) : [];
   const filled = groups.filter((g) => g.items.length > 0);

@@ -352,13 +352,20 @@ export interface OrderPanel {
   /** Newest first. */
   files: CustomerFile[];
   teamNotes: TeamNotes;
+  /** The PO form(s) the bot would send for this order (api/src/domain/poForms.ts poFormsForOrder). */
+  suggestedPoForms: PoFormKind[];
 }
+
+/** The client's two PO forms (api/src/domain/poForms.ts): cetak with a design, plano without. */
+export type PoFormKind = "cetak" | "plano";
+/** The po_form quick-send's `form`: one form, or both in one message. Absent, the order's design facts decide. */
+export type PoFormChoice = PoFormKind | "both";
 
 /** POST /conversations/:id/quick-send (api/src/services/quickSend.ts). */
 export type QuickSendAction =
   | { kind: "price_list"; brand?: BrandSlug }
   | { kind: "reference_photos"; productId: string }
-  | { kind: "po_form" };
+  | { kind: "po_form"; form?: PoFormChoice };
 export type QuickSendError = "NOT_FOUND" | "BRAND_UNKNOWN" | "NO_PRICE_LIST" | "NO_REFERENCE_PHOTOS" | "PO_FORM_PLACEHOLDER";
 /** One stored row per item, in send order; `saved` = the provider refused it. */
 export interface QuickSendItem {
@@ -375,11 +382,18 @@ export interface PhotoProduct {
   photos: number;
 }
 
-/** GET /settings/po-form-url: the link, whether it is still the placeholder, and the message the customer gets. */
+/** One form in GET /settings/po-forms: the link, whether it is still the placeholder, and the message that form alone sends. */
 export interface PoFormSetting {
   url: string;
   isPlaceholder: boolean;
   message: string;
+}
+
+/** GET|PATCH /settings/po-forms (api/src/routes/dashboard/settings.ts): both forms, and the one message that sends both. */
+export interface PoFormsSetting {
+  cetak: PoFormSetting;
+  plano: PoFormSetting;
+  both: { message: string };
 }
 
 /** A brand's price-list PDF, the file the bot sends (api/src/repositories/products.ts). */

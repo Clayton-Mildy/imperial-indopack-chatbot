@@ -5,8 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { photoProductsAction, poFormPreviewAction, quickSendAction } from "@/actions/conversationActions";
 import { BRAND_SLUGS, BRAND_TAG, type BrandSlug } from "@/lib/brands";
 import { quickSendAllFailed, quickSendErrorKey, quickSendLines } from "@/lib/conversations/labels";
+import { PO_FORM_CHOICES, defaultPoFormChoice, poFormPreview } from "@/lib/conversations/poForms";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
-import type { PhotoProduct, PoFormSetting, QuickSendAction, QuickSendItem } from "@/types/api";
+import type { PhotoProduct, PoFormChoice, PoFormKind, PoFormsSetting, QuickSendAction, QuickSendItem } from "@/types/api";
 
 const pill: React.CSSProperties = {
   font: "inherit",
@@ -47,18 +48,22 @@ type Panel = "brand" | "photos" | "po" | null;
 /**
  * Kirim daftar harga / foto referensi / form PO. Each send goes as the session's staff member, who
  * then holds the chat. While one send is out every button is disabled (a double click must not send
- * twice); afterwards each item says whether WhatsApp took it.
+ * twice); afterwards each item says whether WhatsApp took it. The PO dialog offers Form cetak (has a
+ * design), Form plano (no design) or Keduanya, preselected from the order's design facts.
  */
 export function QuickSendBar({
   conversationId,
   brands,
   nearestProductId,
+  suggestedPoForms,
 }: {
   conversationId: string;
   /** The brands in the customer's profile: exactly one sends that brand's list straight away. */
   brands: BrandSlug[];
   /** The photo picker's default: the first nearest catalog match. */
   nearestProductId: string | null;
+  /** The PO form(s) the bot would send for this order (order panel): the PO dialog's default. */
+  suggestedPoForms: PoFormKind[];
 }) {
   const router = useRouter();
   const t = useT();
@@ -72,8 +77,10 @@ export function QuickSendBar({
   const [productsFailed, setProductsFailed] = useState(false);
   const [productId, setProductId] = useState<string>(nearestProductId ?? "");
 
-  const [po, setPo] = useState<PoFormSetting | null>(null);
+  const [po, setPo] = useState<PoFormsSetting | null>(null);
   const [poFailed, setPoFailed] = useState(false);
+  const [poChoice, setPoChoice] = useState<PoFormChoice>("both");
+  const suggestedChoice = defaultPoFormChoice(suggestedPoForms);
 
   useEffect(() => {
     if (panel !== "po") return;
@@ -144,6 +151,7 @@ export function QuickSendBar({
     setPanel("po");
     setPo(null);
     setPoFailed(false);
+    setPoChoice(suggestedChoice);
     const res = await poFormPreviewAction().catch(() => ({ ok: false as const }));
     if (res.ok) setPo(res.setting);
     else setPoFailed(true);
@@ -152,6 +160,7 @@ export function QuickSendBar({
   // The picker lists the active catalog by brand; the nearest match is kept even if it is not in the list.
   const byBrand = BRAND_SLUGS.map((b) => ({ brand: b, items: (products ?? []).filter((p) => p.brand === b) })).filter((g) => g.items.length > 0);
   const tone = result ? RESULT_TONE[result.tone] : null;
+  const poPreview = po ? poFormPreview(po, poChoice) : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -279,29 +288,66 @@ export function QuickSendBar({
             <span id="qs-po-title" style={{ fontSize: 16, fontWeight: 700 }}>
               {t("conversations.quick.poTitle")}
             </span>
+            <div role="radiogroup" aria-label={t("conversations.quick.poChoice")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={{ fontSize: 11.5, color: "#5F6B5A" }}>{t("conversations.quick.poChoice")}</span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {PO_FORM_CHOICES.map((c) => {
+                  const on = poChoice === c;
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      disabled={sending}
+                      onClick={() => setPoChoice(c)}
+                      style={{
+                        font: "inherit",
+                        flex: "1 1 120px",
+                        minWidth: 0,
+                        textAlign: "left",
+                        padding: "8px 10px",
+                        borderRadius: 8,
+                        border: on ? "1.5px solid #586B34" : "1px solid #D5DECF",
+                        background: on ? "#F5F8F2" : "#ffffff",
+                        color: "#1F2421",
+                        cursor: sending ? "default" : "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 2,
+                      }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{t(`conversations.quick.poChoice.${c}`)}</span>
+                      <span style={{ fontSize: 11.5, color: "#5F6B5A" }}>{t(`conversations.quick.poHint.${c}`)}</span>
+                      {c === suggestedChoice && <span style={{ fontSize: 11, fontWeight: 600, color: "#586B34" }}>{t("conversations.quick.poSuggested")}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             {poFailed ? (
               <span style={{ fontSize: 13, color: "#B91C1C" }}>{t("conversations.quick.loadFailed")}</span>
             ) : !po ? (
               <span style={{ fontSize: 13, color: "#5F6B5A" }}>{t("conversations.quick.loading")}</span>
-            ) : po.isPlaceholder ? (
+            ) : poPreview && !poPreview.ok ? (
               // The placeholder link never goes to a customer (the API refuses it too), so there is nothing to confirm.
               <span style={{ fontSize: 13, color: "#92400E", background: "#FFFBEB", border: "1px solid #F3DC94", borderRadius: 8, padding: "10px 12px", lineHeight: 1.5 }}>
-                {t("conversations.quick.poPlaceholder")}
+                {poPreview.unset.length === 1 ? t(`conversations.quick.poUnset.${poPreview.unset[0]}`) : t("conversations.quick.poPlaceholder")}
               </span>
-            ) : (
+            ) : poPreview ? (
               <>
                 <span style={{ fontSize: 13, color: "#3B4540" }}>{t("conversations.quick.poBody")}</span>
                 <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere", background: "#F5F8F2", border: "1px solid #E1E7DC", borderRadius: 8, padding: "10px 12px" }}>
-                  {po.message}
+                  {poPreview.message}
                 </div>
               </>
-            )}
+            ) : null}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
               <button type="button" style={smallBtn} disabled={sending} onClick={() => setPanel(null)}>
-                {po && !po.isPlaceholder ? t("common.cancel") : t("conversations.quick.close")}
+                {poPreview?.ok ? t("common.cancel") : t("conversations.quick.close")}
               </button>
-              {po && !po.isPlaceholder && (
-                <button type="button" style={{ ...primaryBtn, opacity: sending ? 0.6 : 1 }} disabled={sending} onClick={() => run([{ kind: "po_form" }])}>
+              {poPreview?.ok && (
+                <button type="button" style={{ ...primaryBtn, opacity: sending ? 0.6 : 1 }} disabled={sending} onClick={() => run([{ kind: "po_form", form: poChoice }])}>
                   {sending ? t("conversations.quick.sending") : t("conversations.quick.send")}
                 </button>
               )}

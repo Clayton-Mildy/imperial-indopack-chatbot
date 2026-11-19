@@ -12,7 +12,7 @@ function ITEM(over: Partial<TeamQueueItem> = {}): TeamQueueItem {
     conversationId: "c1",
     customerName: "Contoh Andi",
     businessName: "Katering Contoh",
-    waId: "628120000070 01",
+    waId: "6281200007001",
     brands: ["kertas_supreme"],
     itemsSummary: "Supreme 64 gsm",
     detailsFilled: 6,

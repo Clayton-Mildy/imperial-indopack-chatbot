@@ -10,7 +10,7 @@ import type { BrandSlug } from "@/lib/brands";
 import { chatActions, chatStatus, phoneLocal, priceCallsOf, sourceLabel, stampTime, toolLine, type StatusTone } from "@/lib/conversations/labels";
 import { apiFileUrl } from "@/lib/format";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
-import type { ConversationWithMessages, Message } from "@/types/api";
+import type { ConversationWithMessages, Message, PoFormKind } from "@/types/api";
 import { QuickSendBar } from "./QuickSendBar";
 
 const ACCEPTED_TYPES = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".jpg", ".jpeg", ".png", ".webp"];
@@ -203,6 +203,7 @@ export function ChatPane({
   staffName,
   brands,
   nearestProductId,
+  suggestedPoForms,
 }: {
   conversation: ConversationWithMessages;
   name: string;
@@ -212,6 +213,8 @@ export function ChatPane({
   staffName: string;
   brands: BrandSlug[];
   nearestProductId: string | null;
+  /** The PO form(s) the bot would send for this order: the quick-send PO dialog's default. */
+  suggestedPoForms: PoFormKind[];
 }) {
   const router = useRouter();
   const t = useT();
@@ -386,7 +389,7 @@ export function ChatPane({
         </div>
       ) : (
         <div style={{ background: "#ffffff", borderTop: "1px solid #E1E7DC", padding: "12px 18px", display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}>
-          <QuickSendBar conversationId={conv.id} brands={brands} nearestProductId={nearestProductId} />
+          <QuickSendBar conversationId={conv.id} brands={brands} nearestProductId={nearestProductId} suggestedPoForms={suggestedPoForms} />
 
           {actions.takeoverHint && <div style={{ fontSize: 11.5, color: "#5F6B5A" }}>{t("conversations.reply.aiHint")}</div>}
 

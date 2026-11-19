@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 import { ChatPane } from "@/components/conversations/ChatPane";
 import { InboxList, type InboxQuery } from "@/components/conversations/InboxList";
 import { OrderPanel } from "@/components/conversations/OrderPanel";
@@ -10,6 +9,7 @@ import { EMPTY_INBOX_META } from "@/lib/conversations/inboxQuery";
 import { phoneLocal } from "@/lib/conversations/labels";
 import { useLastGood } from "@/lib/conversations/lastGood";
 import { useT } from "@/lib/i18n/LangProvider";
+import { useVisiblePoll } from "@/lib/visiblePoll";
 import type {
   ConversationListMeta,
   ConversationListRow,
@@ -18,10 +18,11 @@ import type {
 } from "@/types/api";
 
 /**
- * /conversations/[id]: list, chat and order panel. Polls the whole page every 3 seconds, so new
- * messages, the panel's details and the list's rows all stay current. A piece whose fetch failed in
- * this poll arrives as null: the last good one of the same conversation stays on screen (so the reply
- * draft and unsaved team notes survive), with a "reconnecting" line over the columns.
+ * /conversations/[id]: list, chat and order panel. Polls the whole page every 3 seconds while the tab
+ * is visible (once more when it is shown again), so new messages, the panel's details and the list's
+ * rows all stay current. A piece whose fetch failed in this poll arrives as null: the last good one of
+ * the same conversation stays on screen (so the reply draft and unsaved team notes survive), with a
+ * "reconnecting" line over the columns.
  */
 export function ConversationDetailClient({
   conversationId,
@@ -41,10 +42,7 @@ export function ConversationDetailClient({
   const router = useRouter();
   const t = useT();
 
-  useEffect(() => {
-    const interval = setInterval(() => router.refresh(), 3000);
-    return () => clearInterval(interval);
-  }, [router]);
+  useVisiblePoll(() => router.refresh(), 3000);
 
   const shownConversation = useLastGood(conversation, conversationId);
   const shownPanel = useLastGood(panel, conversationId);
@@ -74,6 +72,7 @@ export function ConversationDetailClient({
               staffName={staffName}
               brands={shownPanel?.brands ?? []}
               nearestProductId={shownPanel?.nearest[0]?.productId ?? null}
+              suggestedPoForms={shownPanel?.suggestedPoForms ?? ["cetak", "plano"]}
             />
             <OrderPanel conversationId={conversationId} panel={shownPanel} />
           </>
