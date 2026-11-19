@@ -470,6 +470,8 @@ export interface LeadInsightsPassOptions {
   since?: Date;
   /** Only these conversations (one chat re-read by hand; tests on a shared DB). */
   conversationIds?: string[];
+  /** How long a chat must be quiet before it is read (default QUIET_MS); 0 in the QA harness. */
+  quietMs?: number;
   /** Leave leads staff touched (human_updated_at, kind_set_by 'staff') alone: no model call, no write. */
   skipStaff?: boolean;
   /**
@@ -535,7 +537,7 @@ async function readConversation(conv: DueConversation, opts: LeadInsightsPassOpt
 
 /** One sweep: the conversations due, newest first. Returns how many were read. */
 export async function runLeadInsightsPass(batchSize: number, opts: LeadInsightsPassOptions = {}): Promise<number> {
-  const due = await listConversationsDueForInsights(new Date(Date.now() - QUIET_MS), batchSize, {
+  const due = await listConversationsDueForInsights(new Date(Date.now() - (opts.quietMs ?? QUIET_MS)), batchSize, {
     ignoreWatermark: opts.ignoreWatermark,
     since: opts.since,
     conversationIds: opts.conversationIds,
