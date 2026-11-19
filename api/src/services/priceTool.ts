@@ -25,7 +25,7 @@ import { getCatalogProducts } from './ragQuery.js';
 export const PRICE_TOOL_NAME = 'hitung_harga';
 
 export const PRICE_TOOL_DESC =
-  'Calculate the price of one catalog item for the quantity the customer wants. You MUST call this before stating any price for a quantity, any total, or which tier applies, and repeat its figures exactly as returned - never do price arithmetic yourself. One call per item (product + size); for several items make several calls in the same turn. The result starts with HARGA: (the tier used, unit price, total, delivery, and the next tier to mention), DI_BAWAH_MINIMUM: (below the minimum order: explain the minimum, quote nothing), DI_ATAS_TINGKAT_TERATAS: (quote nothing: the team calculates it) or TIDAK_ADA_DI_KATALOG: (quote nothing; the result says why and what to offer instead).';
+  'Calculate the price of one catalog item for the quantity the customer wants. You MUST call this before stating any price for a quantity, any total, or which tier applies, and repeat its figures exactly as returned - never do price arithmetic yourself. One call per item (product + size); for several items make several calls in the same turn. gramasi is optional: pass it once the customer has chosen one; left out for a size sold in several gramasi, the result has one line per gramasi (each with its own price and total). The result starts with HARGA: (the tier used, unit price, total, delivery, and the next tier to mention), DI_BAWAH_MINIMUM: (below the minimum order: explain the minimum, quote nothing), DI_ATAS_TINGKAT_TERATAS: (quote nothing: the team calculates it) or TIDAK_ADA_DI_KATALOG: (quote nothing; the result says why and what to offer instead).';
 
 const PRICE_FIELD_DESC = {
   product: 'The product name as written after "Produk:" in the catalog block (the part before " — ").',
@@ -40,7 +40,8 @@ export const PriceToolInput = z.object({
   size: z.string().describe(PRICE_FIELD_DESC.size),
   qty: z.number().describe(PRICE_FIELD_DESC.qty),
   unit: z.enum(['rim', 'pcs']).describe(PRICE_FIELD_DESC.unit),
-  gramasi: z.string().optional().describe(PRICE_FIELD_DESC.gramasi),
+  // nullish: a model that sends "gramasi": null has not chosen one. The JSON schema stays an optional string.
+  gramasi: z.string().nullish().describe(PRICE_FIELD_DESC.gramasi),
 });
 export type PriceToolInputType = z.infer<typeof PriceToolInput>;
 
@@ -261,11 +262,12 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
     const ready = readySizes(active);
     return notInCatalog(`${product.name} ukuran "${input.size}" tidak ada di katalog.${ready.length ? ` Ukuran yang ada: ${ready.join(', ')}.` : ''} Ukuran ini pesanan custom, harganya dihitung tim: jangan sebut harga apa pun, set confidence "low" dengan escalation_reason berisi barang, ukuran, dan jumlahnya.`, product);
   }
-  const chosen = input.gramasi?.trim() ? input.gramasi : undefined;
+  // A size with no gramasi rows ignores the gramasi, as before gramasi were options: an old-style
+  // product carries it in its name (Ruling 15).
+  const chosen = input.gramasi?.trim() && sameSize.some((v) => v.gsm) ? input.gramasi : undefined;
   const sizes = chosen === undefined ? sameSize : sameSize.filter((v) => sameGsm(v.gsm, chosen));
   if (sizes.length === 0) {
-    const have = gramasiOfSize(product, input.size);
-    return notInCatalog(`${product.name} ukuran ${sameSize[0]!.name} tidak ada gramasi ${normalizeGsm(chosen) ?? chosen}.${have.length ? ` Gramasi yang ada: ${formatGsmList(have)}.` : ' Produk ini tidak punya pilihan gramasi.'}`, product);
+    return notInCatalog(`${product.name} ukuran ${sameSize[0]!.name} tidak ada gramasi ${normalizeGsm(chosen) ?? chosen}. Gramasi yang ada: ${formatGsmList(gramasiOfSize(product, input.size))}.`, product);
   }
   const groups = groupByGsm(sizes);
   const twin = groups.find((g) => g.rows.length > 1);
@@ -276,8 +278,10 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
   }
   if (groups.length > 1) return perGramasi(input, product, groups.map((g) => g.rows[0]!));
   const variant: ProductVariant = sizes[0]!;
-  // Only a size with several gramasi names the one quoted; a single-gramasi product reads as before.
-  const item = `${product.name} ukuran ${variant.name}${chosen !== undefined && gramasiOfSize(product, input.size).length > 1 ? ` gramasi ${variant.gsm}` : ''}`;
+  // A product sold in several gramasi names the one quoted - also for a size only one of them has; a
+  // single-gramasi or no-gramasi product reads as before.
+  const productGramasi = new Set(active.flatMap((v) => (v.gsm ? [normalizeGsm(v.gsm)!.toLowerCase()] : [])));
+  const item = `${product.name} ukuran ${variant.name}${productGramasi.size > 1 ? ` gramasi ${variant.gsm}` : ''}`;
 
   // Out of stock: the catalog block prints no price for it, so neither does this. Every other
   // status (price_rise / price_drop included) has its tiers in the block and is quoted from them.

@@ -107,6 +107,16 @@ describe('API path', () => {
     expect(result.priceCalls?.map((c) => c.gsm)).toEqual(['270 gsm', '300 gsm']);
   });
 
+  // Final review I4: "gramasi": null on the Messages API path is a call without a gramasi, not a bad input.
+  it('a call with gramasi null is priced like one without it', async () => {
+    mockCreate
+      .mockResolvedValueOnce(toolTurn(priceCall('t1', { ...BOX_GRAMASI_INPUT, gramasi: null })))
+      .mockResolvedValueOnce(respondTurn());
+    const result = await callAIWithHistory(HISTORY, 'box makan ivory 20x20x7 8 rim berapa?');
+    expect(toolResults(mockCreate.mock.calls[1]![0])[0]!.content).toMatch(/^HARGA: .*per gramasi:/);
+    expect(result.toolFigures).toEqual([2000, 8_000_000, 2500, 10_000_000]);
+  });
+
   it('offers the tools in the cached order: web_search, resolve_link, hitung_harga, respond_to_customer', async () => {
     mockCreate.mockResolvedValueOnce(respondTurn());
     await callAIWithHistory(HISTORY, 'halo');

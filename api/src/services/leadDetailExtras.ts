@@ -23,6 +23,9 @@ export interface LeadDetailExtras {
 
 const iso = (v: Date | string): string => new Date(v).toISOString();
 
+/** A price call as stored in a message's metadata: one stored before gramasi were options has no gsm field. */
+type StoredPriceCall = Omit<PriceToolCall, 'gsm'> & { gsm?: string | null };
+
 export async function getLeadDetailExtras(lead: Lead): Promise<LeadDetailExtras> {
   const began = lead.firstContactAt ?? lead.submittedAt;
   const closingMinutes =
@@ -30,7 +33,7 @@ export async function getLeadDetailExtras(lead: Lead): Promise<LeadDetailExtras>
 
   let source: LeadDetailExtras['source'] = { kind: 'direct', headline: null };
   let poFormSentAt: string | null = null;
-  let calls: { at: string; call: PriceToolCall }[] = [];
+  let calls: { at: string; call: StoredPriceCall }[] = [];
 
   if (lead.contactId) {
     const db = getDb();
@@ -71,7 +74,8 @@ export async function getLeadDetailExtras(lead: Lead): Promise<LeadDetailExtras>
       const hit = calls.find(
         ({ call }) =>
           call.outcome === 'quote' && call.productName === m.productName && call.variantName === m.variantName &&
-          sameGsm(call.gsm ?? null, m.gsm) && call.quote?.kind === 'quote'
+          // An old call (no gsm field) was made when the product had one gramasi: it matches any.
+          (call.gsm === undefined || sameGsm(call.gsm, m.gsm)) && call.quote?.kind === 'quote'
       );
       if (!hit || hit.call.quote?.kind !== 'quote') return null;
       const q = hit.call.quote;

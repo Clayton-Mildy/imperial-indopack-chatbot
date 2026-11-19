@@ -16,7 +16,7 @@ vi.mock('../src/services/ragQuery.js', async (importOriginal) => ({
   getCatalogProducts: mockGetCatalogProducts,
 }));
 
-import { normalizeSize, runPriceTool, PriceToolInput, PRICE_TOOL, PRICE_TOOL_NAME } from '../src/services/priceTool.js';
+import { normalizeSize, runPriceTool, PriceToolInput, PRICE_TOOL, PRICE_TOOL_DESC, PRICE_TOOL_NAME } from '../src/services/priceTool.js';
 import { parseTemplateRows, TEMPLATE_COLUMNS } from '../src/services/catalogTemplate.js';
 import { formatProducts } from '../src/services/ragQuery.js';
 import { BOX_GRAMASI, BOX_GRAMASI_INPUT, CATALOG, IVORY_BOX, IVORY_INPUT, SUPREME, SUPREME_2, SUPREME_INPUT } from './price-fixtures.js';
@@ -351,6 +351,41 @@ describe('runPriceTool - gramasi', () => {
     expect(PRICE_TOOL.input_schema.properties!['gramasi']).toMatchObject({ type: 'string' });
     expect(PRICE_TOOL.input_schema.required).not.toContain('gramasi');
   });
+
+  // Final review I4: a model that sends "gramasi": null has not chosen one - accepted, never a validation error.
+  it('gramasi null is accepted and lists every gramasi, as when it is left out', async () => {
+    const parsed = PriceToolInput.safeParse({ ...BOX_GRAMASI_INPUT, gramasi: null });
+    expect(parsed.success).toBe(true);
+    const r = await runPriceTool(parsed.data!, [BOX_GRAMASI]);
+    expect(r.text).toBe((await runPriceTool(BOX_GRAMASI_INPUT, [BOX_GRAMASI])).text);
+    // The JSON schema the Messages API sees stays a plain optional string.
+    expect(PRICE_TOOL.input_schema.properties!['gramasi']).toEqual({ type: 'string', description: expect.any(String) });
+  });
+
+  // Final review I2: a size sold under one gramasi of a product with several still names it.
+  it('a size only one gramasi of a multi-gramasi product sells names that gramasi', async () => {
+    const catalog = withRows((rows) => [...rows, { ...rows.find(byGsm('270 gsm'))!, id: 'v-ii2-16', name: '16x16x6' }]);
+    const input = { ...BOX_GRAMASI_INPUT, size: '16x16x6' };
+    const r = await runPriceTool(input, catalog);
+    expect(r.text).toMatch(/^HARGA: Box Makan Ivory \(CONTOH\) ukuran 16x16x6 gramasi 270 gsm, 8 rim/);
+    expect(r.calls[0]).toMatchObject({ gsm: '270 gsm', outcome: 'quote' });
+    // Choosing it reads the same; the other outcomes name it too.
+    expect((await runPriceTool({ ...input, gramasi: '270' }, catalog)).text).toBe(r.text);
+    expect((await runPriceTool({ ...input, qty: 2 }, catalog)).text).toMatch(/^DI_BAWAH_MINIMUM: Minimal pemesanan Box Makan Ivory \(CONTOH\) ukuran 16x16x6 gramasi 270 gsm adalah/);
+  });
+
+  // Final review I3 (Ruling 15 reverses Ruling 11): a product with no gramasi rows ignores the gramasi,
+  // as before this branch - the old-style name already carries it.
+  it('a gramasi passed for a product with no gramasi rows is ignored: the normal quote', async () => {
+    const plain = await runPriceTool(SUPREME_INPUT, CATALOG);
+    for (const g of ['64 gsm', '300']) {
+      const r = await runPriceTool({ ...SUPREME_INPUT, gramasi: g }, CATALOG);
+      expect(r.text).toBe(plain.text);
+      expect(r.text).toMatch(/^HARGA: Kertas Supreme 64 gsm cetak 1 warna ukuran 30 x 30 cm, 12 rim/);
+      expect(r.figures).toEqual(plain.figures);
+      expect(r.calls[0]).toMatchObject({ outcome: 'quote', gsm: null });
+    }
+  });
 });
 
 describe('runPriceTool - the catalog source', () => {
@@ -391,6 +426,13 @@ describe('the tool contract', () => {
     expect(PRICE_TOOL.name).toBe(PRICE_TOOL_NAME);
     expect(PRICE_TOOL_NAME).toBe('hitung_harga');
     expect(PRICE_TOOL.input_schema.required).toEqual(Object.keys(PriceToolInput.shape).filter((k) => k !== 'gramasi'));
+  });
+
+  // Final review M-c: the description says what the optional field does and what comes back without it.
+  it('the description names the optional gramasi and the per-gramasi result', () => {
+    expect(PRICE_TOOL.description).toBe(PRICE_TOOL_DESC);
+    expect(PRICE_TOOL_DESC).toMatch(/gramasi[^.]*optional|optional[^.]*gramasi/i);
+    expect(PRICE_TOOL_DESC).toMatch(/one line per gramasi/i);
   });
 });
 

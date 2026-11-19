@@ -95,6 +95,15 @@ describe('lead detail extras', () => {
       { role: 'user', at: '2020-04-05T09:00:00', body: 'halo' },
       { role: 'assistant', at: '2020-04-05T09:02:00', body: 'harga', metadata: { priceCalls: [gcall('300 gsm', 150_000), gcall('350 gsm', 170_000)] } },
     ]);
+    // Final review M-b: a price call stored before gramasi were options has no gsm field at all. It still
+    // prices the item, whatever gramasi the item now names - the lead keeps the price it was quoted.
+    await mk('OLDCALL', {
+      status: 'quoted', submittedAt: wib('2020-04-06T09:00:00'),
+      items: [{ product: 'Box Gramasi Contoh', size: '20x20x7', gsm: '300 gsm', qty: 10, qty_unit: 'rim' }],
+    }, [
+      { role: 'user', at: '2020-04-06T09:00:00', body: 'halo' },
+      { role: 'assistant', at: '2020-04-06T09:02:00', body: 'harga', metadata: { priceCalls: [{ ...call('20x20x7', 'quote', 140_000), productId: 'p-gr', productName: 'Box Gramasi Contoh' }] } },
+    ]);
     await mk('DIRECT', { status: 'new', submittedAt: wib('2020-04-02T09:00:00') }, [
       { role: 'user', at: '2020-04-02T09:00:00', body: 'halo' },
       { role: 'assistant', at: '2020-04-02T09:01:00', body: CANNED_PO_FORM_FROM_TEAM, metadata: { source: 'po_form' }, status: 'sent' },
@@ -132,6 +141,11 @@ describe('lead detail extras', () => {
     expect(x.quotedPrices[2]).toBeNull();
     // A gramasi the product does not sell is never given another gramasi's price.
     expect(x.quotedPrices[3]).toBeNull();
+  });
+
+  it('a price call stored without a gsm field (before gramasi were options) matches any gramasi', async () => {
+    const x = await get('OLDCALL');
+    expect(x.quotedPrices[0]).toMatchObject({ unitPriceIdr: 140_000, priceUnit: 'rim', totalIdr: 1_400_000 });
   });
 
   it('direct source without a referral, and the placeholder PO line is not a form sent', async () => {
