@@ -2,7 +2,7 @@ import { BRAND_TAG } from "@/lib/brands";
 import { PCS_PER_RIM } from "@/lib/format";
 import { formatNumber, type Lang, type TFn, type TKey } from "@/lib/i18n/core";
 import { id } from "@/lib/i18n/id";
-import type { GoLiveIssue } from "@/types/api";
+import type { GoLiveIssue, PoFormSetting } from "@/types/api";
 
 // Client-safe helpers for Pengaturan: the PO link check, the minimum-order hint, the prompt section
 // labels and the go-live banner lines.
@@ -24,6 +24,14 @@ export function validatePoUrl(url: string): "ok" | "not_https" | "invalid" {
   }
   if (!host) return "invalid";
   return scheme === "https" ? "ok" : "not_https";
+}
+
+/**
+ * What a PO form's input starts with: the stored link, or empty while it is still the placeholder (the
+ * placeholder then shows only as the input's hint text), so Simpan can never save the placeholder back.
+ */
+export function poInputValue(form: PoFormSetting): string {
+  return form.isPlaceholder ? "" : form.url;
 }
 
 /** The unit beside the minimum-order input: 2500 -> 'pcs (5 rim)'; 1200 -> 'pcs' (rims only when whole). */

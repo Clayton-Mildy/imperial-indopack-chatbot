@@ -6,6 +6,7 @@ import { createLog } from "@/lib/api/activityLogs";
 import type { BotSettings, PoFormKind, PoFormsSetting, PromptSection, ChakraSyncStatus } from "@/types/api";
 import { sessionRole, sessionStaff } from "@/lib/session";
 import { patchBotSettings, setLeadReopenMonths, setLeadSilenceDays, setPoFormUrl } from "@/lib/api/settings";
+import { getNumbers, patchNumber } from "@/lib/api/numbers";
 import { validatePoUrl } from "@/lib/settings";
 
 // Every write here is admin only, re-checked on the server: a "use server" action is a POST endpoint
@@ -19,9 +20,9 @@ async function isAdmin(): Promise<boolean> {
 }
 
 /** Fire-and-forget activity log line in the admin's name. */
-async function logSetting(message: (name: string) => string, entityId: string): Promise<void> {
+async function logSetting(message: (name: string) => string, entityId: string, entityType = "settings"): Promise<void> {
   const { staffName } = await sessionStaff();
-  createLog({ message: message(staffName), performedBy: staffName, entityType: "settings", entityId }).catch(() => {});
+  createLog({ message: message(staffName), performedBy: staffName, entityType, entityId }).catch(() => {});
 }
 
 const isWhole = (n: unknown, min: number, max: number): n is number => Number.isInteger(n) && (n as number) >= min && (n as number) <= max;
@@ -119,6 +120,27 @@ export async function saveLeadSilenceDays(days: number): Promise<{ ok: true; day
   revalidatePath("/settings");
   await logSetting((n) => `${n} mengubah batas lead tanpa respon menjadi ${saved} hari`, "lead_silence_lost_days");
   return { ok: true, days: saved };
+}
+
+/**
+ * Puts a number that has its own instruction sections on the shared ones (Instruksi bot): its own
+ * sections are deleted for good - the page shows them read-only and asks first. Only a registered
+ * number; the log names it.
+ */
+export async function replaceNumberPromptAction(numberId: string): Promise<{ ok: true } | { ok: false; error: SaveError }> {
+  if (!(await isAdmin())) return { ok: false, error: "forbidden" };
+  let label: string;
+  try {
+    const num = (await getNumbers()).find((n) => n.id === numberId);
+    if (!num) return { ok: false, error: "invalid" };
+    label = num.label ? `${num.label} (${num.number})` : num.number;
+    await patchNumber(num.id, { promptSections: null });
+  } catch (err) {
+    return { ok: false, error: err instanceof ApiError && (err.status === 400 || err.status === 404) ? "invalid" : "failed" };
+  }
+  revalidatePath("/settings");
+  await logSetting((n) => `${n} mengganti instruksi sendiri nomor ${label} dengan instruksi bersama (instruksi sendiri dihapus)`, numberId, "phoneNumber");
+  return { ok: true };
 }
 
 /** Global auto-reply switch. Falls back to on if the API is unreachable. */

@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { PromptSection, PhoneNumber } from "@/types/api";
 import { useT } from "@/lib/i18n/LangProvider";
 import { sectionLabel } from "@/lib/settings";
-import { savePromptDefaults } from "@/actions/settingsActions";
-import { updatePromptSections } from "@/actions/numberActions";
+import { replaceNumberPromptAction, savePromptDefaults } from "@/actions/settingsActions";
 import { SaveStatus, primaryButtonStyle } from "./settingsUi";
 
 const ghostButton: React.CSSProperties = {
@@ -29,42 +28,123 @@ function hasOwnSections(n: PhoneNumber): boolean {
   return Array.isArray(n.promptSections) && n.promptSections.length > 0;
 }
 
-/** Numbers still on their own instructions: say so, and let staff put them on the shared ones. */
-function OverrideNotice({ numbers, canEdit }: { numbers: PhoneNumber[]; canEdit: boolean }) {
+const numberName = (n: PhoneNumber): string => (n.label ? `${n.label} (${n.number})` : n.number);
+
+/**
+ * The confirmed step before a number's own sections are deleted: says plainly they are replaced by the
+ * shared ones and cannot be restored, and "Hapus dan ganti" stays off until that is acknowledged.
+ */
+function ReplaceDialog({ number, onClose, onReplaced }: { number: PhoneNumber; onClose: () => void; onReplaced: () => void }) {
   const t = useT();
-  const [overridden, setOverridden] = useState(() => numbers.filter(hasOwnSections));
+  const [ack, setAck] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function putOnShared(id: string) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !pending) onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [pending, onClose]);
+
+  function confirm() {
     setError(null);
     startTransition(async () => {
-      try {
-        await updatePromptSections(id, null);
-        setOverridden((list) => list.filter((n) => n.id !== id));
-      } catch {
-        setError(t("settings.prompt.overrideFailed"));
-      }
+      const res = await replaceNumberPromptAction(number.id).catch(() => ({ ok: false as const, error: "failed" as const }));
+      if (res.ok) onReplaced();
+      else setError(res.error === "forbidden" ? t("settings.err.forbidden") : t("settings.prompt.overrideFailed"));
     });
   }
+
+  const canConfirm = ack && !pending;
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(31, 36, 33, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !pending) onClose();
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="st-replace-title"
+        aria-describedby="st-replace-desc"
+        style={{ width: "100%", maxWidth: 520, background: "#ffffff", borderRadius: 12, boxShadow: "0 12px 32px rgba(31, 36, 33, 0.18)", padding: "20px 22px", display: "flex", flexDirection: "column", gap: 14, color: "#1F2421" }}
+      >
+        <span id="st-replace-title" style={{ fontSize: 16, fontWeight: 700, overflowWrap: "anywhere" }}>
+          {t("settings.prompt.replaceTitle", { number: numberName(number) })}
+        </span>
+        <span id="st-replace-desc" style={{ fontSize: 13, color: "#3B4540", lineHeight: 1.55 }}>
+          {t("settings.prompt.replaceDesc", { n: number.promptSections?.length ?? 0 })}
+        </span>
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13, lineHeight: 1.45, cursor: pending ? "default" : "pointer" }}>
+          <input type="checkbox" checked={ack} disabled={pending} onChange={(e) => setAck(e.target.checked)} style={{ width: 16, height: 16, marginTop: 1, accentColor: "#B91C1C", flexShrink: 0 }} />
+          <span>{t("settings.prompt.replaceAck")}</span>
+        </label>
+        {error && <span role="status" style={{ fontSize: 12, color: "#B91C1C" }}>{error}</span>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" onClick={onClose} disabled={pending} style={ghostButton}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={confirm}
+            disabled={!canConfirm}
+            style={{ ...ghostButton, border: 0, fontWeight: 600, background: canConfirm ? "#B91C1C" : "#F1F5F9", color: canConfirm ? "#ffffff" : "#94A3B8", cursor: canConfirm ? "pointer" : "not-allowed" }}
+          >
+            {pending ? t("settings.prompt.replacing") : t("settings.prompt.replaceConfirm")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Numbers still on their own instructions: say so, show those sections read-only (one expandable row
+ * each, so the text can still be read and copied), and - admins only - replace them with the shared
+ * ones after a confirmation (ReplaceDialog; logged by the action).
+ */
+function OverrideNotice({ numbers, canEdit }: { numbers: PhoneNumber[]; canEdit: boolean }) {
+  const t = useT();
+  const [overridden, setOverridden] = useState(() => numbers.filter(hasOwnSections));
+  const [confirming, setConfirming] = useState<PhoneNumber | null>(null);
 
   if (overridden.length === 0) return null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {overridden.map((n) => (
-        <div
-          key={n.id}
-          style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: "#FFFBEB", border: "1px solid #F3DC94", fontSize: 13, color: "#78350F" }}
-        >
-          <span>{t("settings.prompt.override", { number: n.label ? `${n.label} (${n.number})` : n.number })}</span>
-          {canEdit && (
-            <button type="button" disabled={pending} onClick={() => putOnShared(n.id)} style={{ ...ghostButton, height: 32 }}>
-              {t("settings.prompt.useShared")}
-            </button>
-          )}
+        <div key={n.id} style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 12px", borderRadius: 8, background: "#FFFBEB", border: "1px solid #F3DC94", fontSize: 13, color: "#78350F" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <span>{t("settings.prompt.override", { number: numberName(n) })}</span>
+            {canEdit && (
+              <button type="button" onClick={() => setConfirming(n)} style={{ ...ghostButton, height: 32 }}>
+                {t("settings.prompt.replace")}
+              </button>
+            )}
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>{t("settings.prompt.ownSections", { n: n.promptSections?.length ?? 0 })}</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {(n.promptSections ?? []).map((s, i) => (
+              <details key={`${i}-${s.name}`} style={{ background: "#ffffff", border: "1px solid #F3DC94", borderRadius: 6, color: "#1F2421" }}>
+                <summary style={{ padding: "6px 10px", cursor: "pointer", fontSize: 12.5 }}>{sectionLabel(s.name, t)}</summary>
+                <div style={{ padding: "0 10px 10px", fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: "#3B4540" }}>{s.content}</div>
+              </details>
+            ))}
+          </div>
         </div>
       ))}
-      {error && <span role="status" style={{ fontSize: 12, color: "#B91C1C" }}>{error}</span>}
+      {confirming && (
+        <ReplaceDialog
+          number={confirming}
+          onClose={() => setConfirming(null)}
+          onReplaced={() => {
+            setOverridden((list) => list.filter((x) => x.id !== confirming.id));
+            setConfirming(null);
+          }}
+        />
+      )}
     </div>
   );
 }

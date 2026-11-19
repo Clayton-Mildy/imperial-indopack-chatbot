@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { goLiveIssueLine, minOrderHint, sectionLabelKey, validatePoUrl } from "@/lib/settings";
+import { goLiveIssueLine, minOrderHint, poInputValue, sectionLabelKey, validatePoUrl } from "@/lib/settings";
 import { id } from "@/lib/i18n/id";
 import { en } from "@/lib/i18n/en";
 import { makeT } from "@/lib/i18n/core";
@@ -24,6 +24,14 @@ describe("validatePoUrl", () => {
       expect(validatePoUrl(bad)).toBe("invalid");
     }
     expect(validatePoUrl("HTTP://forms.gle/abc")).toBe("not_https");
+  });
+});
+
+describe("poInputValue", () => {
+  it("a form still on the placeholder starts empty, so Simpan cannot save the placeholder back", () => {
+    const placeholder = { url: "https://forms.gle/REPLACE-ME", isPlaceholder: true, message: "…" };
+    expect(poInputValue(placeholder)).toBe("");
+    expect(poInputValue({ url: "https://forms.gle/mybbNDzzfEETKP9h9", isPlaceholder: false, message: "…" })).toBe("https://forms.gle/mybbNDzzfEETKP9h9");
   });
 });
 

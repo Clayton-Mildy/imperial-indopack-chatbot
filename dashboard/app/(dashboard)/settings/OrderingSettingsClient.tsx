@@ -7,7 +7,7 @@ import { BRAND_SLUGS, BRAND_TAG } from "@/lib/brands";
 import { parseQty } from "@/lib/catalog/productForm";
 import { formatNumber, type TFn } from "@/lib/i18n/core";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
-import { minOrderHint, validatePoUrl } from "@/lib/settings";
+import { minOrderHint, poInputValue, validatePoUrl } from "@/lib/settings";
 import type { BrandPriceList, PoFormKind, PoFormsSetting } from "@/types/api";
 import { SaveStatus, hintStyle, inputStyle, labelStyle, primaryButtonStyle, warnHintStyle } from "./settingsUi";
 
@@ -36,11 +36,13 @@ function PoFormField({
 }) {
   const t = useT();
   const form = forms[kind];
-  // A form still on the placeholder shows that link, outlined amber, as designed.
-  const [value, setValue] = useState(form.url);
+  // A form still on the placeholder starts empty, outlined amber, with the placeholder link as hint
+  // text only - so Simpan can never save the placeholder back.
+  const [value, setValue] = useState(() => poInputValue(form));
   const [status, setStatus] = useState<Status>(null);
   const [pending, startTransition] = useTransition();
   const id = `st-po-${kind}`;
+  const empty = value.trim() === "";
 
   function handleSave() {
     const check = validatePoUrl(value);
@@ -50,7 +52,7 @@ function PoFormField({
       const res = await savePoFormUrlAction(kind, value).catch(() => ({ ok: false as const, error: "failed" as const }));
       if (res.ok) {
         onSaved(res.forms);
-        setValue(res.forms[kind].url);
+        setValue(poInputValue(res.forms[kind]));
         setStatus({ ok: true, text: t("settings.saved") });
       } else {
         setStatus({ ok: false, text: poErrorText(res.error, t) });
@@ -70,6 +72,7 @@ function PoFormField({
           type="url"
           inputMode="url"
           value={value}
+          placeholder={form.isPlaceholder ? form.url : undefined}
           disabled={pending || !canEdit}
           aria-describedby={`${id}-hint`}
           onChange={(e) => {
@@ -83,7 +86,12 @@ function PoFormField({
           }}
         />
         {canEdit && (
-          <button type="button" onClick={handleSave} disabled={pending} style={{ ...primaryButtonStyle(pending), height: 38 }}>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={pending || empty}
+            style={{ ...primaryButtonStyle(pending), height: 38, ...(empty && !pending ? { background: "#E1E7DC", color: "#5F6B5A", cursor: "not-allowed" } : {}) }}
+          >
             {pending ? t("settings.saving") : t("settings.save")}
           </button>
         )}
