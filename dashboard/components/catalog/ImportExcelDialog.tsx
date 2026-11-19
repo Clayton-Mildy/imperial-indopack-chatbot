@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { BASE_PATH } from "@/lib/basePath";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import { formatNumber, type TFn } from "@/lib/i18n/core";
-// Same cap as the API's import route; checked here too so a huge file is refused before it is sent.
 import { XLSX_MAX_BYTES } from "@/lib/uploadLimit";
 import type { ImportPreview } from "@/types/api";
 
@@ -108,6 +107,7 @@ export function ImportExcelDialog({ onClose, onApplied }: Props) {
     setPreview(null);
     setError(null);
     if (!picked.name.toLowerCase().endsWith(".xlsx")) return setError(t("catalog.import.err.notXlsx"));
+    // Same cap as the API's import route, so a huge file is refused before it is sent.
     if (picked.size > XLSX_MAX_BYTES) return setError(t("catalog.import.err.tooLarge"));
     setPhase("checking");
     const data = await post(picked, "dryRun=1");

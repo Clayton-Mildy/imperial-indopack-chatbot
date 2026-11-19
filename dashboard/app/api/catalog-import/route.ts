@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sessionRole, sessionStaff } from '@/lib/session';
-import { XLSX_MAX_BYTES, uploadRefusal } from '@/lib/uploadLimit';
+import { XLSX_MAX_BYTES, readCappedFormData } from '@/lib/uploadLimit';
 
 // Route handler = server-side; prefer the container-to-container URL over the browser's view.
 // A proxy rather than a direct browser->API call because API_SECRET_KEY must never reach the
@@ -22,11 +22,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data: null, error: 'FORBIDDEN' }, { status: 403 });
   }
 
-  // Judged on the header before the body is buffered: an oversized file is never read here.
-  const refusal = uploadRefusal(request.headers.get('content-length'), XLSX_MAX_BYTES);
-  if (refusal) return NextResponse.json({ data: null, error: refusal.error }, { status: refusal.status });
-
-  const formData = await request.formData();
+  // Over the cap it is refused by Content-Length unread, or (chunked, no header) as soon as the
+  // bytes read pass it; never buffered whole.
+  const upload = await readCappedFormData(request, XLSX_MAX_BYTES);
+  if (!upload.ok) return NextResponse.json({ data: null, error: upload.error }, { status: upload.status });
+  const formData = upload.formData;
   const file = formData.get('file');
   const dryRun = ['1', 'true'].includes(request.nextUrl.searchParams.get('dryRun') ?? '');
   const qs = new URLSearchParams();

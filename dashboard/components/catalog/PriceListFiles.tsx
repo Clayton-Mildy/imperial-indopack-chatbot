@@ -8,11 +8,8 @@ import { BRAND_SLUGS, BRAND_TAG, type BrandSlug } from "@/lib/brands";
 import { apiFileUrl } from "@/lib/format";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import { formatDate } from "@/lib/i18n/core";
-// Same cap as the API (routes/dashboard/brandPriceLists.ts); checked here too so a huge file is
-// refused before it is sent.
 import { PDF_MAX_BYTES } from "@/lib/uploadLimit";
 import type { BrandPriceList } from "@/types/api";
-
 
 const linkBtn: React.CSSProperties = {
   font: "inherit",
@@ -62,6 +59,7 @@ export function PriceListFiles({ priceLists, canEdit }: { priceLists: BrandPrice
     if (!file) return;
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
     if (!isPdf) return setError(t("catalog.priceLists.notPdf"));
+    // Same cap as the API (routes/dashboard/brandPriceLists.ts), so a huge file is refused before it is sent.
     if (file.size > PDF_MAX_BYTES) return setError(t("catalog.priceLists.tooLarge"));
     const form = new FormData();
     form.append("file", file, file.name);
