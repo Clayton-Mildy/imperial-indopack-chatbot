@@ -217,4 +217,8 @@ describe('tool and field text', () => {
     expect(RESPOND_FIELD_DESC.profile_update).toMatch(/same product and size/i);
     expect(RESPOND_FIELD_DESC.fit_basis).toMatch(/Kegunaan/);
   });
+
+  it('a thank-you for a price list the customer still has to decide on is no_reply, not a closing line', () => {
+    expect(all).toMatch(/Ucapan terima kasih atas daftar harga[^\n]*no_reply/);
+  });
 });
