@@ -283,8 +283,11 @@ export const SCENARIOS: Scenario[] = [
     title: 'A complaint goes to the team with an apology',
     async run(c) {
       const r = await c.say('Kak kertas yang saya terima kemarin sobek semua, saya kecewa');
+      await c.leadPass();
+      const lead = await c.lead();
       const conv = await c.conversation();
       return [
+        check('lead kind stays lead (a complaining customer is a buyer)', lead?.kind === 'lead', lead?.kind),
         check('escalated', conv.status === 'escalated', conv.status),
         check('category komplain', conv.handoffCategory === 'komplain', String(conv.handoffCategory)),
         check('the reply apologises (maaf)', anyText(r, /maaf/i)),
