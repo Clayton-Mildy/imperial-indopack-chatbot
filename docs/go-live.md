@@ -41,6 +41,12 @@ Do this before touching the real WhatsApp number. Needs Node 24 and Postgres 17 
 `WHATSAPP_TRANSPORT=capture` is for local testing only. The API refuses to send with it (error "for local testing only") when
 `NODE_ENV=production`.
 
+**Never run the test suite (`npm test`, `npx vitest`) or the QA harness (`npm run qa:*`) on the live host or
+against the live database.** The tests switch off every product, write fake PO links and load and purge demo
+products, and put things back only at the end. The test setup refuses to start unless `WHATSAPP_TRANSPORT=capture`
+and the database is `imperial_indopack` or a name ending in `_qa` or `_test`; do not rely on that, keep tests on
+a development machine.
+
 ## 1. What runs
 
 | Part | How | Port |
