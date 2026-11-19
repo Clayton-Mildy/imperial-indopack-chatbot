@@ -8,6 +8,7 @@ import { isPoFormChoice } from "@/lib/conversations/poForms";
 import { createLog } from "@/lib/api/activityLogs";
 import { ApiError } from "@/lib/api/client";
 import { isBrandSlug, type BrandSlug } from "@/lib/brands";
+import { UUID_RE } from "@/lib/ids";
 import { isReadOnly, sessionStaff } from "@/lib/session";
 import type { PhotoProduct, PoFormsSetting, QuickSendAction, QuickSendError, QuickSendItem, TeamNotes } from "@/types/api";
 
@@ -64,7 +65,6 @@ export async function returnToAi(id: string) {
 }
 
 const QUICK_SEND_ERRORS: readonly QuickSendError[] = ["NOT_FOUND", "BRAND_UNKNOWN", "NO_PRICE_LIST", "NO_REFERENCE_PHOTOS", "PO_FORM_PLACEHOLDER"];
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The action as the browser sent it, rebuilt from known fields only: a server action is a public POST endpoint. */
 function cleanAction(a: unknown): QuickSendAction | null {

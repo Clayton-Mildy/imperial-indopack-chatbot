@@ -3,11 +3,10 @@ import { getConversation, getConversations, getOrderPanel } from "@/lib/api/conv
 import { Header } from "@/components/layout/Header";
 import { getT } from "@/lib/i18n";
 import { inboxQueryOf, INBOX_PAGE_SIZE, type InboxSearchParams } from "@/lib/conversations/inboxQuery";
+import { UUID_RE } from "@/lib/ids";
 import { sessionStaff } from "@/lib/session";
 import { ConversationDetailClient } from "./ConversationDetailClient";
 import type { ConversationListMeta, ConversationListRow, ConversationWithMessages, OrderPanel } from "@/types/api";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * /conversations/[id]: the inbox list, the chat and the order panel. Re-run every 3 seconds by the

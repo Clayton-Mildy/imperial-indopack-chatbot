@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, pathId } from "./client";
 import type { BrandSlug } from "@/lib/brands";
 import type {
   BrandPriceList,
@@ -39,7 +39,7 @@ export async function listCatalogProducts(filters: {
 }
 
 export async function setCatalogProductActive(id: string, isActive: boolean, actor: StaffActor): Promise<CatalogProduct> {
-  const envelope = await apiFetch<CatalogProduct>(`/catalog/products/${encodeURIComponent(id)}/active`, {
+  const envelope = await apiFetch<CatalogProduct>(`/catalog/products/${pathId(id)}/active`, {
     method: "PATCH",
     body: JSON.stringify({ isActive, ...actor }),
   });
@@ -51,7 +51,7 @@ export async function deleteCatalogProduct(id: string, actor: StaffActor): Promi
   const qs = new URLSearchParams({ staffName: actor.staffName });
   if (actor.staffId) qs.set("staffId", actor.staffId);
   const envelope = await apiFetch<{ sizes: number; tiers: number }>(
-    `/catalog/products/${encodeURIComponent(id)}?${qs.toString()}`,
+    `/catalog/products/${pathId(id)}?${qs.toString()}`,
     { method: "DELETE" }
   );
   return envelope.data ?? { sizes: 0, tiers: 0 };
@@ -75,7 +75,7 @@ export async function getBrandPriceLists(): Promise<BrandPriceList[]> {
 
 /** The product with its history (newest first) and how chats use it. A 404 throws ApiError(404). */
 export async function getCatalogProductDetail(id: string): Promise<CatalogProductDetail> {
-  const envelope = await apiFetch<CatalogProductDetail>(`/catalog/products/${encodeURIComponent(id)}`);
+  const envelope = await apiFetch<CatalogProductDetail>(`/catalog/products/${pathId(id)}`);
   if (!envelope.data) throw new Error("PRODUCT_DETAIL_EMPTY");
   return envelope.data;
 }
@@ -85,7 +85,7 @@ export async function getCatalogProductDetail(id: string): Promise<CatalogProduc
  * ApiError(400, VALIDATION_ERROR) with the per-field errors in `details`; a taken name ApiError(409, NAME_TAKEN).
  */
 export async function saveCatalogProduct(id: string | null, draft: ProductDraft, actor: StaffActor): Promise<CatalogProduct> {
-  const envelope = await apiFetch<CatalogProduct>(id ? `/catalog/products/${encodeURIComponent(id)}` : "/catalog/products", {
+  const envelope = await apiFetch<CatalogProduct>(id ? `/catalog/products/${pathId(id)}` : "/catalog/products", {
     method: id ? "PUT" : "POST",
     body: JSON.stringify({ draft, ...actor }),
   });
@@ -105,5 +105,5 @@ export async function previewCatalogProduct(productId: string | null, draft: Pro
 
 /** One design-reference photo (Plan 1's route; 204, or 404 when it is already gone). */
 export async function deleteReferenceImage(id: string): Promise<void> {
-  await apiFetch<null>(`/reference-images/${encodeURIComponent(id)}`, { method: "DELETE" });
+  await apiFetch<null>(`/reference-images/${pathId(id)}`, { method: "DELETE" });
 }

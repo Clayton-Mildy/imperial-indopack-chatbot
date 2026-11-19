@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isJpgOrPng } from '@/lib/catalog/productForm';
+import { isUuid } from '@/lib/ids';
 import { sessionRole } from '@/lib/session';
 import { IMAGE_MAX_BYTES, readCappedFormData } from '@/lib/uploadLimit';
 
@@ -9,8 +10,6 @@ import { IMAGE_MAX_BYTES, readCappedFormData } from '@/lib/uploadLimit';
 const API_URL =
   process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:50070';
 const API_KEY = process.env.API_SECRET_KEY ?? '';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Ctx = { params: Promise<{ productId: string }> };
 
@@ -24,7 +23,7 @@ const refuse = (status: number, error: string) => NextResponse.json({ data: null
 export async function POST(request: NextRequest, { params }: Ctx) {
   const { productId } = await params;
   if ((await sessionRole()) !== 'admin') return refuse(403, 'FORBIDDEN');
-  if (!UUID_RE.test(productId)) return refuse(404, 'NOT_FOUND');
+  if (!isUuid(productId)) return refuse(404, 'NOT_FOUND');
   // Over the cap it is refused by Content-Length unread, or (chunked, no header) as soon as the
   // bytes read pass it; never buffered whole.
   const upload = await readCappedFormData(request, IMAGE_MAX_BYTES);
@@ -40,7 +39,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   const typed = file.type ? file : new File([file], file.name, { type: /\.png$/i.test(file.name) ? 'image/png' : 'image/jpeg' });
   const form = new FormData();
   form.append('file', typed, file.name);
-  const res = await fetch(`${API_URL}/api/v1/products/${productId}/reference-images`, {
+  const res = await fetch(`${API_URL}/api/v1/products/${encodeURIComponent(productId)}/reference-images`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${API_KEY}` },
     body: form,

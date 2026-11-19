@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, pathId } from "./client";
 import type { PhoneNumber, PromptSection } from "@/types/api";
 
 export async function getNumbers(): Promise<PhoneNumber[]> {
@@ -25,7 +25,7 @@ export async function patchNumber(
   id: string,
   data: { label?: string; customSystemPrompt?: string | null; promptSections?: PromptSection[] | null }
 ): Promise<PhoneNumber> {
-  const envelope = await apiFetch<PhoneNumber>(`/numbers/${id}`, {
+  const envelope = await apiFetch<PhoneNumber>(`/numbers/${pathId(id)}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
@@ -34,5 +34,5 @@ export async function patchNumber(
 }
 
 export async function deleteNumber(id: string): Promise<void> {
-  await apiFetch(`/numbers/${id}`, { method: "DELETE" });
+  await apiFetch(`/numbers/${pathId(id)}`, { method: "DELETE" });
 }

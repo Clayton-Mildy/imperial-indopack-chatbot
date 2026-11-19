@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, pathId } from "./client";
 import type { BrandSlug } from "@/lib/brands";
 import type {
   BrandPerformance,
@@ -95,11 +95,11 @@ export async function patchLead(
     staffId?: string;
   }
 ): Promise<void> {
-  await apiFetch(`/leads/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
+  await apiFetch(`/leads/${pathId(id)}`, { method: "PATCH", body: JSON.stringify(updates) });
 }
 
 export async function getLeadDetail(id: string): Promise<LeadDetail> {
-  const envelope = await apiFetch<LeadDetail>(`/leads/${id}`);
+  const envelope = await apiFetch<LeadDetail>(`/leads/${pathId(id)}`);
   return envelope.data as LeadDetail;
 }
 

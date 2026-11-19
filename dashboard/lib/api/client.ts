@@ -4,6 +4,8 @@
  * API_SECRET_KEY must never be exposed to the browser.
  */
 
+import { isUuid } from "@/lib/ids";
+
 // Server-side, so prefer the container-to-container URL. NEXT_PUBLIC_API_URL is the browser's
 // view of the API and is not necessarily reachable from inside this container.
 const API_URL =
@@ -34,6 +36,17 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/**
+ * An id the dashboard puts into an API path, checked and encoded. Ids reach these helpers from route
+ * params (which Next decodes: "..%2Fnumbers" arrives as "../numbers"), query strings and server-action
+ * arguments a browser can call with anything - unchecked, "../catalog/import?" walks the path to another,
+ * possibly admin-only, API endpoint. Anything but a uuid throws ApiError(404) and nothing is sent.
+ */
+export function pathId(id: unknown): string {
+  if (!isUuid(id)) throw new ApiError(404, "NOT_FOUND", "Invalid id");
+  return encodeURIComponent(id);
 }
 
 export async function apiFetch<T>(

@@ -1,12 +1,11 @@
 import { auth } from "@/lib/auth";
+import { UUID_RE } from "@/lib/ids";
 
 /** The signed-in user's role, or null when there is no session. */
 export async function sessionRole(): Promise<string | null> {
   const session = await auth();
   return (session?.user as { role?: string })?.role ?? null;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The signed-in staff member as the API's catalog routes record them (staffId uuid, staffName 1-100

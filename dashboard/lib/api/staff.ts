@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, pathId } from "./client";
 import type { StaffPublic } from "@/types/api";
 
 export async function listStaff(): Promise<StaffPublic[]> {
@@ -30,7 +30,7 @@ export async function patchStaff(
     newPassword?: string;
   }
 ): Promise<StaffPublic> {
-  const envelope = await apiFetch<StaffPublic>(`/staff/${id}`, {
+  const envelope = await apiFetch<StaffPublic>(`/staff/${pathId(id)}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
@@ -39,5 +39,5 @@ export async function patchStaff(
 }
 
 export async function deleteStaff(id: string): Promise<void> {
-  await apiFetch(`/staff/${id}`, { method: "DELETE" });
+  await apiFetch(`/staff/${pathId(id)}`, { method: "DELETE" });
 }

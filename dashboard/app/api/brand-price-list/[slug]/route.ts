@@ -36,7 +36,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   const upload = await readCappedFormData(request, PDF_MAX_BYTES);
   if (!upload.ok) return NextResponse.json({ data: null, error: upload.error }, { status: upload.status });
 
-  const res = await fetch(`${API_URL}/api/v1/brands/${slug}/price-list`, {
+  const res = await fetch(`${API_URL}/api/v1/brands/${encodeURIComponent(slug)}/price-list`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${API_KEY}` },
     body: upload.formData,
@@ -50,7 +50,7 @@ export async function DELETE(_request: NextRequest, { params }: Ctx) {
   const refused = await guard(slug);
   if (refused) return refused;
 
-  const res = await fetch(`${API_URL}/api/v1/brands/${slug}/price-list`, {
+  const res = await fetch(`${API_URL}/api/v1/brands/${encodeURIComponent(slug)}/price-list`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${API_KEY}` },
   });

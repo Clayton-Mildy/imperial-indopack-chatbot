@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, pathId } from "./client";
 import type {
   Conversation,
   ConversationCounts,
@@ -44,7 +44,7 @@ export async function getConversations(params: {
 }
 
 export async function getConversation(id: string): Promise<ConversationWithMessages> {
-  const envelope = await apiFetch<ConversationWithMessages>(`/conversations/${encodeURIComponent(id)}`);
+  const envelope = await apiFetch<ConversationWithMessages>(`/conversations/${pathId(id)}`);
   if (!envelope.data) {
     throw new Error("Conversation not found");
   }
@@ -55,7 +55,7 @@ export async function patchConversation(
   id: string,
   data: { status?: string; assignedAgent?: string }
 ): Promise<Conversation> {
-  const envelope = await apiFetch<Conversation>(`/conversations/${encodeURIComponent(id)}`, {
+  const envelope = await apiFetch<Conversation>(`/conversations/${pathId(id)}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
@@ -67,14 +67,14 @@ export async function patchConversation(
 
 /** The order panel: six details, nearest catalog items, customer files, team notes. A 404 throws ApiError(404). */
 export async function getOrderPanel(conversationId: string): Promise<OrderPanel> {
-  const envelope = await apiFetch<OrderPanel>(`/conversations/${encodeURIComponent(conversationId)}/order-panel`);
+  const envelope = await apiFetch<OrderPanel>(`/conversations/${pathId(conversationId)}/order-panel`);
   if (!envelope.data) throw new Error("ORDER_PANEL_EMPTY");
   return envelope.data;
 }
 
 /** Catatan tim (at most 2000 characters), written by the session's staff member. */
 export async function saveTeamNotes(conversationId: string, text: string, staffName: string): Promise<TeamNotes> {
-  const envelope = await apiFetch<TeamNotes>(`/conversations/${encodeURIComponent(conversationId)}/team-notes`, {
+  const envelope = await apiFetch<TeamNotes>(`/conversations/${pathId(conversationId)}/team-notes`, {
     method: "PATCH",
     body: JSON.stringify({ text, staffName }),
   });
@@ -87,7 +87,7 @@ export async function saveTeamNotes(conversationId: string, text: string, staffN
  * item ('saved' = the provider refused it). A 404 or 409 throws ApiError with the QuickSendError as its message.
  */
 export async function quickSend(conversationId: string, action: QuickSendAction, staffName: string): Promise<QuickSendItem[]> {
-  const envelope = await apiFetch<{ sent: QuickSendItem[] }>(`/conversations/${encodeURIComponent(conversationId)}/quick-send`, {
+  const envelope = await apiFetch<{ sent: QuickSendItem[] }>(`/conversations/${pathId(conversationId)}/quick-send`, {
     method: "POST",
     body: JSON.stringify({ action, staffName }),
   });
