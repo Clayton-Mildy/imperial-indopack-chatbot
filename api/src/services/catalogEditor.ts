@@ -403,8 +403,9 @@ export async function loadOne(db: DbOrTx, id: string): Promise<CatalogProduct | 
 }
 
 /**
- * The Katalog list. `counts` are per brand tab: they follow the search and status filters but not the
- * brand filter, so every tab shows what it would list.
+ * The Katalog list. The search matches the name, the use text (Kegunaan) or a size. `counts` are per
+ * brand tab: they follow the search and status filters but not the brand filter, so every tab shows
+ * what it would list.
  */
 export async function listCatalogProducts(f: {
   brand?: BrandSlug;
@@ -417,6 +418,7 @@ export async function listCatalogProducts(f: {
     (p) =>
       (!q ||
         p.name.toLowerCase().includes(q) ||
+        p.use.toLowerCase().includes(q) ||
         p.sizes.some((s) => s.size.toLowerCase().includes(q) || (qSize !== '' && normalizeSize(s.size).includes(qSize)))) &&
       (!f.status || p.isActive === (f.status === 'active'))
   );

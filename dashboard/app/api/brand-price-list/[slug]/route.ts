@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isBrandSlug } from '@/lib/brands';
 import { sessionRole } from '@/lib/session';
+import { PDF_MAX_BYTES, uploadRefusal } from '@/lib/uploadLimit';
 
 // Route handler = server-side; prefer the container-to-container URL over the browser's view.
 // A proxy rather than a direct browser->API call because API_SECRET_KEY must never reach the
@@ -30,6 +31,9 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   const { slug } = await params;
   const refused = await guard(slug);
   if (refused) return refused;
+  // Judged on the header before the body is buffered: an oversized file is never read here.
+  const refusal = uploadRefusal(request.headers.get('content-length'), PDF_MAX_BYTES);
+  if (refusal) return NextResponse.json({ data: null, error: refusal.error }, { status: refusal.status });
 
   const formData = await request.formData();
   const res = await fetch(`${API_URL}/api/v1/brands/${slug}/price-list`, {

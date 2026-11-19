@@ -160,7 +160,7 @@ export function ProductCard({ product: p, canEdit, onDelete }: Props) {
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 15, fontWeight: 700, color: "#1F2421" }}>{p.name}</span>
             <BrandTags brands={[p.brand]} />
-            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#DCFCE7", color: "#15803D" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#586B34", color: "#ffffff" }}>
               {t("catalog.card.active")}
             </span>
           </div>
@@ -222,7 +222,7 @@ export function ProductCard({ product: p, canEdit, onDelete }: Props) {
                     );
                   })}
                   {delivery === "included" ? (
-                    <td style={{ ...td, color: "#15803D", fontWeight: 600 }}>{t("catalog.card.deliveryIncluded")}</td>
+                    <td style={{ ...td, color: "#586B34", fontWeight: 600 }}>{t("catalog.card.deliveryIncluded")}</td>
                   ) : delivery === "excluded" ? (
                     <td style={{ ...td, color: "#5F6B5A" }}>{t("catalog.card.deliveryExcluded")}</td>
                   ) : (

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { BASE_PATH } from "@/lib/basePath";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import { formatNumber, type TFn } from "@/lib/i18n/core";
+// Same cap as the API's import route; checked here too so a huge file is refused before it is sent.
+import { XLSX_MAX_BYTES } from "@/lib/uploadLimit";
 import type { ImportPreview } from "@/types/api";
 
 // The template's header row (api/src/services/catalogTemplate.ts TEMPLATE_COLUMNS). Excel headers
@@ -12,8 +14,6 @@ const TEMPLATE_COLUMNS = [
   "Merek", "Produk", "Ukuran", "Gramasi", "Cetak", "Finishing", "Kegunaan",
   "Min Qty", "Satuan Qty", "Harga", "Satuan Harga", "Termasuk Ongkir", "Catatan",
 ];
-// Same cap as the API's import route; checked here too so a huge file is refused before it is sent.
-const XLSX_MAX_BYTES = 5 * 1024 * 1024;
 
 const step: React.CSSProperties = {
   width: 24,
@@ -321,9 +321,10 @@ export function ImportExcelDialog({ onClose, onApplied }: Props) {
                 )}
                 {preview && (
                   <>
+                    {/* Brand olive and deep gold for the counts; red only for the bad rows, which are errors. */}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, fontVariantNumeric: "tabular-nums" }}>
-                      <Count value={preview.newProducts} label={t("catalog.import.newProducts")} color="#15803D" lang={lang} />
-                      <Count value={preview.changedPrices} label={t("catalog.import.changedPrices")} color="#0369A1" lang={lang} />
+                      <Count value={preview.newProducts} label={t("catalog.import.newProducts")} color="#586B34" lang={lang} />
+                      <Count value={preview.changedPrices} label={t("catalog.import.changedPrices")} color="#8A6A2A" lang={lang} />
                       <Count value={badRows} label={t("catalog.import.badRows")} color="#B91C1C" border="#F1C9C9" lang={lang} />
                     </div>
                     {preview.newSizes > 0 && (

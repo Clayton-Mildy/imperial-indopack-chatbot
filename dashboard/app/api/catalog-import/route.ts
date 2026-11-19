@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sessionRole, sessionStaff } from '@/lib/session';
+import { XLSX_MAX_BYTES, uploadRefusal } from '@/lib/uploadLimit';
 
 // Route handler = server-side; prefer the container-to-container URL over the browser's view.
 // A proxy rather than a direct browser->API call because API_SECRET_KEY must never reach the
@@ -20,6 +21,10 @@ export async function POST(request: NextRequest) {
   if ((await sessionRole()) !== 'admin') {
     return NextResponse.json({ data: null, error: 'FORBIDDEN' }, { status: 403 });
   }
+
+  // Judged on the header before the body is buffered: an oversized file is never read here.
+  const refusal = uploadRefusal(request.headers.get('content-length'), XLSX_MAX_BYTES);
+  if (refusal) return NextResponse.json({ data: null, error: refusal.error }, { status: refusal.status });
 
   const formData = await request.formData();
   const file = formData.get('file');

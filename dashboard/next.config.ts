@@ -12,6 +12,14 @@ const nextConfig: NextConfig = {
   // every link and asset URL Next generates would be root-absolute and 404 behind the prefix.
   // Kept in an env var because the service-worker registration needs the identical value.
   basePath: process.env.NEXT_PUBLIC_BASE_PATH ?? "/app",
+  experimental: {
+    // proxy.ts runs on every /api route, and with a proxy configured Next 16 clones each request
+    // body up to this limit (default 10 MB) and silently TRUNCATES the rest before the route
+    // handler reads it - a 15 MB price-list PDF would arrive cut short. 21 MB covers the 20 MB
+    // PDF plus its multipart framing (lib/uploadLimit.ts refuses anything larger by
+    // Content-Length first, so a body this size is never cut).
+    proxyClientMaxBodySize: "21mb",
+  },
   // basePath means the bare root serves nothing, so `npm run dev` prints a URL that 404s and
   // every existing bookmark breaks. `basePath: false` is what makes this rule match the real
   // root rather than being rewritten to /app/ - without it the redirect points at itself.

@@ -153,6 +153,14 @@ describe('product editor routes', () => {
     expect(detail.usage).toEqual({ quotedLast30Days: 0, wonLeads: 0 });
   });
 
+  it('a search on a Kegunaan word finds the product, and counts it', async () => {
+    // "kebab" is only in the product's use text, not in its name or a size.
+    const found = await list('search=Kebab');
+    expect(found.data.map((p) => p.id)).toContain(id);
+    expect(found.meta.counts.kertas_supreme).toBeGreaterThan(0);
+    expect((await list('search=qa_editor__no_such_use_word')).data.map((p) => p.id)).not.toContain(id);
+  });
+
   it('400 VALIDATION_ERROR with tier_order details', async () => {
     const res = await post({ draft: draft({ name: `${P}Urutan`, sizes: [{ size: '30x30', tiers: [tier(10, 165000), tier(5, 185000)] }] }), ...ACTOR });
     expect(res.statusCode).toBe(400);

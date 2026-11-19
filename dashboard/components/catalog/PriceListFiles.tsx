@@ -8,11 +8,11 @@ import { BRAND_SLUGS, BRAND_TAG, type BrandSlug } from "@/lib/brands";
 import { apiFileUrl } from "@/lib/format";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import { formatDate } from "@/lib/i18n/core";
-import type { BrandPriceList } from "@/types/api";
-
 // Same cap as the API (routes/dashboard/brandPriceLists.ts); checked here too so a huge file is
 // refused before it is sent.
-const PDF_MAX_BYTES = 20 * 1024 * 1024;
+import { PDF_MAX_BYTES } from "@/lib/uploadLimit";
+import type { BrandPriceList } from "@/types/api";
+
 
 const linkBtn: React.CSSProperties = {
   font: "inherit",

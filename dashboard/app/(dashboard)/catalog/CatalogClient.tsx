@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DeleteProductDialog } from "@/components/catalog/DeleteProductDialog";
@@ -83,8 +83,25 @@ export function CatalogClient({
   const [deleting, setDeleting] = useState<CatalogProduct | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // The brand and status last asked for. A search timer set before a tab or status change fires
+  // after it, with the props of its own render; reading this instead keeps it from undoing the
+  // change while the navigation is still under way. Re-synced whenever the URL's values land.
+  const paramsRef = useRef<{ brand: string; status: string }>({ brand: activeBrand, status: activeStatus });
+  useEffect(() => {
+    paramsRef.current = { brand: activeBrand, status: activeStatus };
+  }, [activeBrand, activeStatus]);
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    },
+    []
+  );
+
   function navigate(patch: Partial<Record<"brand" | "search" | "status", string>>) {
-    const current = { brand: activeBrand, search: searchInput.trim(), status: activeStatus, ...patch };
+    // Any navigation carries the current search text, so a pending search push is redundant.
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const current = { ...paramsRef.current, search: searchInput.trim(), ...patch };
+    paramsRef.current = { brand: current.brand, status: current.status };
     const qs = new URLSearchParams();
     for (const [key, value] of Object.entries(current)) if (value) qs.set(key, value);
     router.push(`/catalog${qs.toString() ? `?${qs.toString()}` : ""}`);
