@@ -194,11 +194,15 @@ describe('the facts each section must state', () => {
     expect(c).toMatch(/JANGAN[^\n]*link/i);
   });
 
-  // Spec 5.6: several gramasi and none chosen -> ask first, no send_po_form; set it on the turn they pick.
-  it('PO Form: asks the gramasi before the form, sends it on the turn the customer picks, recap names it', () => {
+  // Spec 5.6: several gramasi and none chosen -> ask first, no send_po_form; set it on the turn they pick,
+  // but only for a customer who already agreed (final review C1: a pick is not agreement).
+  it('PO Form: asks the gramasi before the form, sends it on the pick only after agreement, recap names it', () => {
     const c = section('PO Form');
     expect(c).toMatch(/beberapa gramasi[^\n]*belum dipilih[^\n]*JANGAN set send_po_form[^\n]*Tanyakan dulu[^\n]*gramasi/);
-    expect(c).toMatch(/pelanggan memilih[^\n]*send_po_form: true di giliran itu/);
+    expect(c).toMatch(/Memilih gramasi BUKAN persetujuan membeli[^\n]*send_po_form: true di giliran dia memilih HANYA kalau dia sudah jelas setuju membeli sebelumnya/);
+    expect(c).toMatch(/Kalau belum pernah setuju, sebutkan harga gramasi itu dan tunggu persetujuannya/);
+    // The old wording stated the agreement as a fact.
+    expect(c).not.toMatch(/dia sudah setuju, jadi jangan tanya/);
     expect(c).toMatch(/ulangi singkat pesanannya \([^)]*gramasi/);
   });
 
@@ -241,6 +245,9 @@ describe('tool and field text', () => {
     expect(fields).not.toMatch(/legacy|reseller|end-user|project fields|DATA KATALOG RESMI|Kategori \(petunjuk pencarian\)|Playbook|Scope line/i);
     expect(RESPOND_FIELD_DESC.profile_update).toMatch(/business_name/);
     expect(RESPOND_FIELD_DESC.profile_update).toMatch(/same product and size/i);
+    // Final review I5: an item is product + size (itemKey); a gramasi pick or switch resends that item.
+    expect(RESPOND_FIELD_DESC.profile_update).toMatch(/One item = one product \+ size: when the customer picks or switches gramasi, resend that item with the same product and size and the new gsm/);
+    expect(RESPOND_FIELD_DESC.profile_update).not.toMatch(/different item/);
     expect(RESPOND_FIELD_DESC.fit_basis).toMatch(/Kegunaan/);
   });
 

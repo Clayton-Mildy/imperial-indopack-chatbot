@@ -6,7 +6,7 @@ import type { CapturedMessage } from '../../src/services/captureClient.js';
 import { poFormMessage } from '../../src/domain/constants.js';
 import { writesEnglish } from '../../src/services/aiLayer.js';
 import { getLeadDetailExtras } from '../../src/services/leadDetailExtras.js';
-import { PRICE_RE, type Check } from './lib.js';
+import { PRICE_RE, isPoFormLine, type Check } from './lib.js';
 import { PO_FORM_QA_URLS } from './env.js';
 
 export interface ScenarioCtx {
@@ -34,6 +34,8 @@ const anyIncludes = (msgs: CapturedMessage[], s: string): boolean => texts(msgs)
 const noPrice = (msgs: CapturedMessage[]): Check => check('no rupiah figure in any reply', !anyText(msgs, PRICE_RE), texts(msgs).find((t) => PRICE_RE.test(t)));
 const none = (msgs: CapturedMessage[], re: RegExp, name: string): Check => check(name, !anyText(msgs, re), texts(msgs).find((t) => re.test(t)));
 const got = (msgs: CapturedMessage[]): Check => check('the bot answered', texts(msgs).length > 0);
+// A price inquiry, however detailed, is not agreement: no PO form, no promise of it, no gramasi question (final review C1).
+const noPoForm = (msgs: CapturedMessage[]): Check => check('no PO form text on a price inquiry', !texts(msgs).some(isPoFormLine), texts(msgs).find(isPoFormLine));
 
 async function referenceUrls(): Promise<string[]> {
   const { rows } = await getDb().execute<{ image_url: string }>(sql`
@@ -89,6 +91,7 @@ export const SCENARIOS: Scenario[] = [
         check('mentions Rp 165.000', anyIncludes(r, 'Rp 165.000')),
         check('mentions Rp 1.980.000', anyIncludes(r, 'Rp 1.980.000')),
         check('mentions Rp 160.000', anyIncludes(r, 'Rp 160.000')),
+        noPoForm(r),
         check('priceCalls[0].outcome is quote', calls?.[0]?.outcome === 'quote', JSON.stringify(calls?.map((x) => x.outcome))),
         check('lead brands include kertas_supreme', !!lead?.brands.includes('kertas_supreme'), JSON.stringify(lead?.brands)),
         check('an item has qty 12 rim', !!lead?.items.some((i) => i.qty === 12 && i.qty_unit === 'rim'), JSON.stringify(lead?.items)),
@@ -112,7 +115,7 @@ export const SCENARIOS: Scenario[] = [
     title: 'Box between tiers',
     async run(c) {
       const r = await c.say('mau box ivory 310 gsm 20x20x7,5 cm 8 rim');
-      return [got(r), check('mentions Rp 2.000', anyIncludes(r, 'Rp 2.000')), check('mentions Rp 8.000.000', anyIncludes(r, 'Rp 8.000.000')), check('mentions Rp 1.800', anyIncludes(r, 'Rp 1.800'))];
+      return [got(r), check('mentions Rp 2.000', anyIncludes(r, 'Rp 2.000')), check('mentions Rp 8.000.000', anyIncludes(r, 'Rp 8.000.000')), check('mentions Rp 1.800', anyIncludes(r, 'Rp 1.800')), noPoForm(r)];
     },
   },
   {

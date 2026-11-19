@@ -1,4 +1,5 @@
 import { readCaptured, type CapturedMessage } from '../../src/services/captureClient.js';
+import { CANNED_PO_FORM_FROM_TEAM, gramasiBeforePoLine, poFormMessage } from '../../src/domain/constants.js';
 
 /** A Meta Cloud API webhook body for one customer message. */
 export function inboundPayload(m: {
@@ -60,5 +61,18 @@ export async function waitForTurn(o: { logPath: string; to: string; afterId: str
 }
 
 export const PRICE_RE = /Rp\s?\d{1,3}(\.\d{3})+/;
+
+// The fixed openings of the lines a send_po_form turn adds after the reply.
+const PO_FORM_OPENING = poFormMessage('').split(' berikut')[0]!; // 'Untuk pemesanannya, silakan isi form PO'
+const GRAMASI_QUESTION_OPENING = gramasiBeforePoLine([]).split(',')[0]!; // 'Sebelum form PO-nya saya kirim'
+
+/**
+ * A line that belongs only to a send_po_form turn: the PO form(s), the team's promise of it, or the
+ * gramasi question that holds it back - or a form link the model wrote itself. A price inquiry gets none.
+ */
+export function isPoFormLine(text: string): boolean {
+  return text.startsWith(PO_FORM_OPENING) || text === CANNED_PO_FORM_FROM_TEAM
+    || text.startsWith(GRAMASI_QUESTION_OPENING) || /forms\.gle\//.test(text);
+}
 
 export interface Check { name: string; ok: boolean; detail?: string }

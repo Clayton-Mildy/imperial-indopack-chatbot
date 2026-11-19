@@ -24,7 +24,7 @@ import { syncContactChat } from './chakraSync.js';
 import type { BaileysInboundPayload } from '../domain/schemas.js';
 import type { AIResponse, PhoneNumber, PromptSections } from '../domain/types.js';
 import { notifyStaff } from './staffNotify.js';
-import { mergeOrderFacts, orderDetailsSummary, sanitizeItem, type OrderItem } from '../domain/orderProfile.js';
+import { itemKey, mergeOrderFacts, orderDetailsSummary, sanitizeItem, type OrderItem } from '../domain/orderProfile.js';
 import { sameGsm } from '../domain/gramasi.js';
 import { PO_FORM_KINDS, poFormsForOrder, updateSaysHasDesign, type PoFormKind } from '../domain/poForms.js';
 import { claudeTokensExhausted } from './claude.js';
@@ -288,9 +288,10 @@ interface TeamFollowUp {
   design?: boolean;
   /**
    * Not the team's: the question that holds the PO form back until a gramasi is chosen
-   * (gramasiQuestionBeforePo). It goes where the form would have gone; needsTeam ignores it.
+   * (gramasiQuestionBeforePo), and the itemKey of the item it asks about. It goes where the form
+   * would have gone; needsTeam ignores it.
    */
-  gramasiQuestion?: string | null;
+  gramasiQuestion?: GramasiQuestion | null;
 }
 
 function teamFollowUp(r: AIResponse, customerText: string, po?: { teamReason: string | null } | null): TeamFollowUp {
@@ -1025,22 +1026,26 @@ async function poFormToSend(contactId: string, r: AIResponse): Promise<PoFormLin
   }
 }
 
+/** The question that holds the PO form back, and the itemKey of the item it asks about. */
+interface GramasiQuestion { body: string; itemKey: string }
+
 /**
  * The PO form waits for a gramasi (spec 5.6), a net under the prompt rule and never a gate. An order
- * item of this turn's facts whose size two or more gramasi offer, with none chosen (gramasiChoice
- * 'ask'), holds the form back: the customer is asked which, for the first such item, and the next
- * turn's rules send the form once one is recorded. Asked once per order (gramasiAlreadyAsked). A size
- * only one gramasi offers has that gramasi written into the saved profile first, matched by product
- * and size, so the hand-off summary and the lead name it. An unreadable profile or catalog lets the
- * form through, and so does a failed fill.
+ * item whose size two or more gramasi offer, with none chosen (gramasiChoice 'ask'), holds the form
+ * back: the customer is asked which, for the first such item, and the next turn's rules send the form
+ * once one is recorded. The items checked are this turn's: the ones its profile_update sends, read from
+ * the merged facts by itemKey - an older item the customer moved on from (facts keep every item) holds
+ * nothing. A turn that sends no item checks them all. Each item is asked once per order
+ * (askedItemKeys). A size only one gramasi offers has that gramasi written into the saved profile
+ * first, matched by product and size, so the hand-off summary and the lead name it. An unreadable
+ * profile or catalog lets the form through, and so does a failed fill.
  */
-async function gramasiQuestionBeforePo(conv: { id: string; contactId: string }, r: AIResponse): Promise<string | null> {
+async function gramasiQuestionBeforePo(conv: { id: string; contactId: string }, r: AIResponse): Promise<GramasiQuestion | null> {
   let choices: { item: OrderItem; choice: GramasiChoice }[];
   try {
     const facts = await turnOrderFacts(conv.contactId, r);
     const catalog = await getCatalogProducts();
-    choices = (Array.isArray(facts.items) ? facts.items : []).filter(isRecord).map(sanitizeItem)
-      .map((item) => ({ item, choice: gramasiChoice(item, catalog) }));
+    choices = itemsOf(facts).map((item) => ({ item, choice: gramasiChoice(item, catalog) }));
   } catch (err) {
     console.warn('[messageRouter] gramasi check skipped - the PO form goes:', err instanceof Error ? err.message : err);
     return null;
@@ -1051,29 +1056,40 @@ async function gramasiQuestionBeforePo(conv: { id: string; contactId: string }, 
     await upsertContactProfile(conv.contactId, { profilePatch: { items: fills } })
       .catch((err) => console.warn('[messageRouter] only gramasi not saved to the profile - the PO form still goes:', err instanceof Error ? err.message : err));
   }
-  const ask = choices.map((c) => c.choice).find((c): c is Extract<GramasiChoice, { kind: 'ask' }> => c.kind === 'ask');
-  if (!ask) return null;
-  if (await gramasiAlreadyAsked(conv.id)) {
+  const thisTurn = new Set(itemsOf(r.profileUpdate ?? {}).map(itemKey).filter((k) => k !== '|'));
+  const asks = choices
+    .filter(({ item }) => thisTurn.size === 0 || thisTurn.has(itemKey(item)))
+    .flatMap(({ item, choice }) => (choice.kind === 'ask' ? [{ key: itemKey(item), options: choice.options }] : []));
+  if (asks.length === 0) return null;
+  const asked = await askedItemKeys(conv.id);
+  const ask = asks.find((a) => !asked.has(a.key));
+  if (!ask) {
     console.warn('[messageRouter] gramasi already asked for this order - the PO form goes without one');
     return null;
   }
-  return gramasiBeforePoLine(ask.options);
+  return { body: gramasiBeforePoLine(ask.options), itemKey: ask.key };
 }
 
+/** The well-typed order items of a facts object or a profile_update. */
+const itemsOf = (facts: Record<string, unknown>): OrderItem[] =>
+  (Array.isArray(facts.items) ? facts.items : []).filter(isRecord).map(sanitizeItem);
+
 /**
- * The gramasi question is asked once per order: a recent bot row is the question, with no PO form row
- * after it. A second send_po_form turn that still finds no gramasi - the pick was not recorded, or the
- * item is one the customer moved on from - sends the form rather than asking forever. A failed read
- * counts as not asked.
+ * The items the gramasi question was asked about in this order: each recent bot question row that
+ * reached the customer (status 'sent', as PO_FORM_LINK_ROW_SQL counts the form) adds the itemKey in its
+ * metadata, and a PO form row after them ends that order. A second send_po_form turn that still finds
+ * no gramasi for an asked item - the pick was not recorded, or the customer moved on - sends the form
+ * rather than asking forever. A failed read counts as nothing asked.
  */
-async function gramasiAlreadyAsked(conversationId: string): Promise<boolean> {
+async function askedItemKeys(conversationId: string): Promise<Set<string>> {
   const recent = await getLastNMessages(conversationId, MAX_CONTEXT_MESSAGES).catch(() => []);
-  let asked = false;
+  const asked = new Set<string>();
   // Oldest first: a PO form sent after the question ends that order.
   for (const m of recent) {
     if (m.role !== 'assistant') continue;
-    if (m.metadata?.source === MESSAGE_SOURCE.gramasiQuestion) asked = true;
-    else if (m.metadata?.source === MESSAGE_SOURCE.poForm) asked = false;
+    const key = m.metadata?.itemKey;
+    if (m.metadata?.source === MESSAGE_SOURCE.gramasiQuestion && m.status === 'sent' && typeof key === 'string') asked.add(key);
+    else if (m.metadata?.source === MESSAGE_SOURCE.poForm) asked.clear();
   }
   return asked;
 }
@@ -1083,12 +1099,12 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 /** 'form PO cetak', 'form PO cetak dan plano' - for the team's hand-off reason. */
 const formsNamed = (kinds: PoFormKind[]): string => `form PO ${kinds.join(' dan ')}`;
 
-interface FixedLineSent { body: string; source: string; wamid: string | null }
+interface FixedLineSent { body: string; source: string; wamid: string | null; extra?: Record<string, unknown> }
 
 /** What goes where the PO form goes: the form (or the team's promise), or the gramasi question holding it back. */
 async function sendPoLine(poForm: PoFormLine | null, f: TeamFollowUp, send: (text: string) => Promise<string | null>): Promise<FixedLineSent | null> {
   if (poForm) return sendFixedLine(poForm.body, MESSAGE_SOURCE.poForm, send);
-  if (f.gramasiQuestion) return sendFixedLine(f.gramasiQuestion, MESSAGE_SOURCE.gramasiQuestion, send);
+  if (f.gramasiQuestion) return { ...await sendFixedLine(f.gramasiQuestion.body, MESSAGE_SOURCE.gramasiQuestion, send), extra: { itemKey: f.gramasiQuestion.itemKey } };
   return null;
 }
 
@@ -1129,7 +1145,7 @@ async function recordAfterReply(
     await insertMessage({
       conversationId, role: 'assistant', body: line.body,
       waMessageId: line.wamid || undefined, status: line.wamid ? 'sent' : 'saved',
-      metadata: { source: line.source } as Record<string, unknown>,
+      metadata: { source: line.source, ...line.extra } as Record<string, unknown>,
     });
   }
 }

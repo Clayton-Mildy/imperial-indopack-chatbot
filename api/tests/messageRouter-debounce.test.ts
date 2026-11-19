@@ -7,7 +7,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { BOX_GRAMASI } from './price-fixtures.js';
+import { BOX_GRAMASI, SUPREME } from './price-fixtures.js';
+import { itemKey } from '../src/domain/orderProfile.js';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ const mockDetectHumanRequest = vi.fn();
 const mockClassifyIntent = vi.fn();
 const mockPickCannedGreeting = vi.fn();
 const mockResetConversationToActive = vi.fn();
-type HistoryRow = { role: string; body: string; metadata?: Record<string, unknown> | null };
+type HistoryRow = { role: string; body: string; status?: string; metadata?: Record<string, unknown> | null };
 const mockGetLastNMessages = vi.fn(async (): Promise<HistoryRow[]> => []);
 const mockMergeMessageMetadata = vi.fn(async () => {});
 const mockUpdateConversationStatus = vi.fn();
@@ -2169,6 +2170,9 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   describe('the PO form waits for a gramasi', () => {
     // 'Box Makan Ivory (CONTOH)': 20x20x7 in 270 and 300 gsm, 25x25x7 in 300 gsm only.
     const BOX = { ...BOX_GRAMASI, variants: [...BOX_GRAMASI.variants!, { ...BOX_GRAMASI.variants![0]!, id: 'v-ii2-25-300', name: '25x25x7' }] };
+    // BOX plus 22x22x7 in 250 and 310 gsm: a second size with its own two gramasi.
+    const BOX_TWO_SIZES = { ...BOX, variants: [...BOX.variants, { ...BOX.variants[0]!, id: 'v-ii2-22-250', name: '22x22x7', gsm: '250 gsm' }, { ...BOX.variants[0]!, id: 'v-ii2-22-310', name: '22x22x7', gsm: '310 gsm' }] };
+    const BOX_20 = itemKey({ product: 'Box Makan Ivory', size: '20x20x7' });
     const poTurn = (profileUpdate?: Record<string, unknown>) =>
       mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true, ...(profileUpdate && { profileUpdate }) });
     const profile = (item: Record<string, unknown>) => mockGetContactProfile.mockResolvedValue({
@@ -2224,7 +2228,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       const question = gramasiBeforePoLine(['270 gsm', '300 gsm']);
       mockGetLastNMessages.mockResolvedValue([
         { role: 'assistant', body: 'AI reply' },
-        { role: 'assistant', body: question, metadata: { source: 'gramasi_question' } },
+        { role: 'assistant', body: question, status: 'sent', metadata: { source: 'gramasi_question', itemKey: BOX_20 } },
         { role: 'user', body: 'oke kak' },
       ]);
       profile({ size: '20x20x7' });
@@ -2240,8 +2244,8 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       const { gramasiBeforePoLine, poFormMessage } = await import('../src/domain/constants.js');
       const question = gramasiBeforePoLine(['270 gsm', '300 gsm']);
       mockGetLastNMessages.mockResolvedValue([
-        { role: 'assistant', body: question, metadata: { source: 'gramasi_question' } },
-        { role: 'assistant', body: poFormMessage(PO_URL), metadata: { source: 'po_form' } },
+        { role: 'assistant', body: question, status: 'sent', metadata: { source: 'gramasi_question', itemKey: BOX_20 } },
+        { role: 'assistant', body: poFormMessage(PO_URL), status: 'sent', metadata: { source: 'po_form' } },
         { role: 'user', body: 'tambah satu lagi kak' },
       ]);
       profile({ size: '20x20x7' });
@@ -2250,6 +2254,75 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       await vi.runAllTimersAsync();
 
       expect(sentTexts()).toEqual(['AI reply', question]);
+    });
+
+    // Final review I1: the question row says which item it asked about, and "asked" is per item.
+    it('the question row names the item it asked about', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { gramasiBeforePoLine } = await import('../src/domain/constants.js');
+      profile({ size: '20x20x7' });
+
+      await routeInboundBaileysMessage(payload(false, 'wamid-GR11'));
+      await vi.runAllTimersAsync();
+
+      expect(rowFor(gramasiBeforePoLine(['270 gsm', '300 gsm'])).metadata).toEqual({ source: 'gramasi_question', itemKey: BOX_20 });
+    });
+
+    it('a question that never reached the customer (saved, not sent) is not "asked": it asks again', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { gramasiBeforePoLine } = await import('../src/domain/constants.js');
+      const question = gramasiBeforePoLine(['270 gsm', '300 gsm']);
+      mockGetLastNMessages.mockResolvedValue([
+        { role: 'assistant', body: question, status: 'saved', metadata: { source: 'gramasi_question', itemKey: BOX_20 } },
+        { role: 'user', body: 'oke kak' },
+      ]);
+      profile({ size: '20x20x7' });
+
+      await routeInboundBaileysMessage(payload(false, 'wamid-GR12'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', question]);
+    });
+
+    // Two multi-gramasi items: asking about the first does not count for the second.
+    it('a question asked about one item still asks about another item this turn orders', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { gramasiBeforePoLine } = await import('../src/domain/constants.js');
+      mockGetCatalogProducts.mockResolvedValue([BOX_TWO_SIZES]);
+      mockGetLastNMessages.mockResolvedValue([
+        { role: 'assistant', body: gramasiBeforePoLine(['270 gsm', '300 gsm']), status: 'sent', metadata: { source: 'gramasi_question', itemKey: BOX_20 } },
+        { role: 'user', body: 'yang 22x22 aja kak, ambil' },
+      ]);
+      mockGetContactProfile.mockResolvedValue({ customerType: null, profile: { name: 'Contoh', items: [
+        { product: 'Box Makan Ivory', size: '20x20x7', qty: 10, qty_unit: 'rim', has_design: true },
+        { product: 'Box Makan Ivory', size: '22x22x7', qty: 10, qty_unit: 'rim', has_design: true },
+      ] } });
+      poTurn({ items: [{ product: 'Box Makan Ivory', size: '22x22x7', qty: 10, qty_unit: 'rim' }] });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-GR13', 'yang 22x22 aja kak, ambil'));
+      await vi.runAllTimersAsync();
+
+      const question = gramasiBeforePoLine(['250 gsm', '310 gsm']);
+      expect(sentTexts()).toEqual(['AI reply', question]);
+      expect(rowFor(question).metadata).toEqual({ source: 'gramasi_question', itemKey: 'box makan ivory|22x22x7' });
+    });
+
+    // The final review's case: a box asked about earlier (two gramasi) must not hold the paper the
+    // customer agrees to now - only this turn's items are checked when the turn sends items.
+    it("checks only this turn's items: an earlier multi-gramasi box does not hold the paper form", async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      mockGetCatalogProducts.mockResolvedValue([BOX, SUPREME]);
+      mockGetContactProfile.mockResolvedValue({ customerType: null, profile: { name: 'Contoh', items: [
+        { product: 'Box Makan Ivory', size: '20x20x7', qty: 5, qty_unit: 'rim', has_design: true },
+        { product: 'Kertas Supreme 64 gsm cetak 1 warna', size: '30 x 30 cm', has_design: true },
+      ] } });
+      poTurn({ items: [{ product: 'Kertas Supreme 64 gsm cetak 1 warna', size: '30 x 30 cm', qty: 10, qty_unit: 'rim' }] });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-GR14', 'oke yang kertas supreme aja, ambil'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
     });
 
     it.each(paths)('sends the form when the item has a chosen gramasi (%s path)', async (_path, photo) => {

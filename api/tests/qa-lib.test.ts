@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { inboundPayload, settled, PRICE_RE } from '../scripts/qa/lib.js';
+import { inboundPayload, settled, PRICE_RE, isPoFormLine } from '../scripts/qa/lib.js';
+import { poFormMessage, poFormsMessage, CANNED_PO_FORM_FROM_TEAM, gramasiBeforePoLine } from '../src/domain/constants.js';
 
 describe('QA harness lib', () => {
   it('builds a Meta text payload the webhook maps', () => {
@@ -27,5 +28,16 @@ describe('QA harness lib', () => {
   it('PRICE_RE finds rupiah figures only', () => {
     expect(PRICE_RE.test('Rp 165.000/rim')).toBe(true);
     expect(PRICE_RE.test('minimal 5 rim')).toBe(false);
+  });
+  // Final review C1: the "no PO form text on a price inquiry" check reads every line a send_po_form
+  // turn can add - the form(s), the team's promise of it, the gramasi question - and a link the model wrote.
+  it('isPoFormLine finds every PO form line and nothing in a plain quote', () => {
+    const urls = { cetak: 'https://forms.gle/qa-imperial-cetak', plano: 'https://forms.gle/qa-imperial-plano' };
+    expect(isPoFormLine(poFormMessage(urls.cetak))).toBe(true);
+    expect(isPoFormLine(poFormsMessage(['cetak', 'plano'], urls))).toBe(true);
+    expect(isPoFormLine(CANNED_PO_FORM_FROM_TEAM)).toBe(true);
+    expect(isPoFormLine(gramasiBeforePoLine(['270 gsm', '310 gsm']))).toBe(true);
+    expect(isPoFormLine('Silakan isi di sini kak: https://forms.gle/abc')).toBe(true);
+    expect(isPoFormLine('Box 20x20 310 gsm 2.500 pcs: Rp 2.300/pcs, total Rp 5.750.000. Mau ambil yang mana kak?')).toBe(false);
   });
 });
