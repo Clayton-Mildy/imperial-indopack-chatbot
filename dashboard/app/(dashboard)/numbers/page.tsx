@@ -3,6 +3,8 @@ import { getT } from "@/lib/i18n";
 import { Header } from "@/components/layout/Header";
 import { NumbersClient } from "./NumbersClient";
 
+export const dynamic = "force-dynamic";
+
 export default async function NumbersPage() {
   let numbers: import("@/types/api").PhoneNumber[] = [];
   try {

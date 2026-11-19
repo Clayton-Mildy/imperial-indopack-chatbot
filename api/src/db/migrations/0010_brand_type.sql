@@ -1,5 +1,5 @@
 -- Replace product-level is_shind flag with a brand-level brand_type classification.
--- brand_type values: 'own' (Legacy's own brands) | 'distributed' (third-party brands).
+-- brand_type values: 'own' (the company's own brands) | 'distributed' (third-party brands).
 -- New distributed brands just need an entry in the brands table — no schema change required.
 
 ALTER TABLE brands

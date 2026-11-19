@@ -4,6 +4,8 @@ import { getNumbers } from "@/lib/api/numbers";
 import { TestPromptClient } from "./TestPromptClient";
 import type { PhoneNumber } from "@/types/api";
 
+export const dynamic = "force-dynamic";
+
 export default async function TestPromptPage() {
   let numbers: PhoneNumber[] = [];
   try {
