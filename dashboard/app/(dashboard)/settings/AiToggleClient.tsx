@@ -5,7 +5,8 @@ import { Toggle } from "@/components/Toggle";
 import { useT } from "@/lib/i18n/LangProvider";
 import { setAiDefault } from "@/actions/settingsActions";
 
-export function AiToggleClient({ initialAiEnabled }: { initialAiEnabled: boolean }) {
+/** Bot section's first row: the global auto-reply switch. Saves on toggle; a failed save flips it back. */
+export function AiToggleClient({ initialAiEnabled, canEdit }: { initialAiEnabled: boolean; canEdit: boolean }) {
   const t = useT();
   const [aiEnabled, setAiEnabled] = useState(initialAiEnabled);
   const [pending, startTransition] = useTransition();
@@ -16,31 +17,24 @@ export function AiToggleClient({ initialAiEnabled }: { initialAiEnabled: boolean
     setAiEnabled(next); // optimistic — reverted below if the call fails
     setError(null);
     startTransition(async () => {
-      const result = await setAiDefault(next).catch(() => ({ ok: false, error: t("settings.ai.saveFailed") }));
+      const result = await setAiDefault(next).catch(() => ({ ok: false as const, error: "failed" as const }));
       if (!result.ok) {
         setAiEnabled(!next);
-        setError(result.error ?? t("settings.ai.saveFailed"));
+        setError(result.error === "forbidden" ? t("settings.err.forbidden") : t("settings.ai.saveFailed"));
       }
     });
   }
 
   return (
-    <div style={{ background: "white", border: "1px solid #E2E8F0", borderRadius: 6, padding: "20px 24px" }}>
-      <h3 style={{ fontSize: 15, fontWeight: 600, color: "#0A0A0A", margin: 0, paddingBottom: 14, borderBottom: "1px solid #F1F5F9" }}>
-        {t("settings.ai.title")}
-      </h3>
-      <div style={{ paddingTop: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 500, color: "#1F1F1F" }}>
-            {aiEnabled ? t("settings.ai.on") : t("settings.ai.off")}
-          </div>
-          <div style={{ fontSize: 12, color: "#64748B", marginTop: 4, lineHeight: 1.5 }}>
-            {t("settings.ai.hintPre")}<strong>{t("settings.ai.hintStrong")}</strong>{t("settings.ai.hintPost")}
-          </div>
-        </div>
-        <Toggle on={aiEnabled} onChange={handleToggle} disabled={pending} />
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "12px 14px", borderRadius: 8, background: "#F5F8F2" }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <b style={{ fontSize: 13.5 }}>{t("settings.ai.title")}</b>
+          <span style={{ fontSize: 12.5, color: "#3B4540" }}>{t("settings.ai.hint")}</span>
+        </span>
+        <Toggle on={aiEnabled} onChange={handleToggle} disabled={pending || !canEdit} label={t("settings.ai.title")} />
       </div>
-      {error && <div style={{ marginTop: 10, fontSize: 12, color: "#DC2626" }}>{error}</div>}
+      {error && <span role="status" style={{ fontSize: 12, color: "#B91C1C" }}>{error}</span>}
     </div>
   );
 }

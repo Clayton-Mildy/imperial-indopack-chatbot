@@ -1,18 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 import { InboxList, type InboxQuery } from "@/components/conversations/InboxList";
 import { ReconnectingNote } from "@/components/conversations/ReconnectingNote";
 import { EMPTY_INBOX_META } from "@/lib/conversations/inboxQuery";
 import { useLastGood } from "@/lib/conversations/lastGood";
 import { useT } from "@/lib/i18n/LangProvider";
+import { useVisiblePoll } from "@/lib/visiblePoll";
 import type { ConversationListMeta, ConversationListRow } from "@/types/api";
 
 /**
  * /conversations: the inbox list beside an empty chat column ("Pilih percakapan"). The list polls
- * every 5 seconds; an open conversation (/conversations/[id]) polls itself instead. A failed poll
- * (list null) keeps the rows already shown.
+ * every 5 seconds while the tab is visible (once more when it is shown again); an open conversation
+ * (/conversations/[id]) polls itself instead. A failed poll (list null) keeps the rows already shown.
  */
 export function ConversationsClient({
   list,
@@ -25,10 +25,7 @@ export function ConversationsClient({
   const t = useT();
   const shownList = useLastGood(list, "list");
 
-  useEffect(() => {
-    const interval = setInterval(() => router.refresh(), 5000);
-    return () => clearInterval(interval);
-  }, [router]);
+  useVisiblePoll(() => router.refresh(), 5000);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>

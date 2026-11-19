@@ -2101,6 +2101,21 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       expect(sentTexts()).toEqual(['AI reply', poFormMessage(PLANO_URL)]);
     });
 
+    it('the saved profile cannot be read: the design is unknown -> both forms, labelled, even if this turn says one', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormsMessage } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue(PO_URLS);
+      mockGetContactProfile.mockRejectedValue(new Error('profile read failed'));
+      // This turn alone says "has a design" - but an earlier item the profile holds may not have one.
+      poTurn({ items: [{ product: 'Box Nasi', size: '10x10x5', has_design: true }] });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-PF8', 'logonya sudah ada, saya ambil kak'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormsMessage(['cetak', 'plano'], PO_URLS)]);
+      expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: poFormsMessage(['cetak', 'plano'], PO_URLS), metadata: expect.objectContaining({ source: 'po_form' }) }));
+    });
+
     it('a chosen form still on the placeholder: the team line and a hand-off (lainnya), no link at all', async () => {
       const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
       const { CANNED_PO_FORM_FROM_TEAM, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');

@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { PoFormSetting, PoFormsSetting, PromptSection } from "@/types/api";
+import type { BotSettings, GoLiveIssue, PoFormKind, PoFormSetting, PoFormsSetting, PromptSection, WhatsAppStatus } from "@/types/api";
 
 export async function getPromptDefaults(): Promise<PromptSection[]> {
   try {
@@ -15,19 +15,20 @@ export async function getPromptDefaults(): Promise<PromptSection[]> {
   }
 }
 
-export async function getLeadReopenDays(): Promise<number> {
-  const envelope = await apiFetch<{ days: number }>("/settings/lead-reopen-days");
-  const days = envelope.data?.days;
-  if (typeof days !== "number" || !Number.isInteger(days)) throw new Error("Malformed lead-reopen-days response");
-  return days;
+/** The lost-lead return window in months (the API stores days, x 30). */
+export async function getLeadReopenMonths(): Promise<number> {
+  const envelope = await apiFetch<{ months: number }>("/settings/lead-reopen-months");
+  const months = envelope.data?.months;
+  if (typeof months !== "number" || !Number.isInteger(months)) throw new Error("Malformed lead-reopen-months response");
+  return months;
 }
 
-export async function setLeadReopenDays(days: number): Promise<number> {
-  const envelope = await apiFetch<{ days: number }>("/settings/lead-reopen-days", {
+export async function setLeadReopenMonths(months: number): Promise<number> {
+  const envelope = await apiFetch<{ months: number }>("/settings/lead-reopen-months", {
     method: "PATCH",
-    body: JSON.stringify({ days }),
+    body: JSON.stringify({ months }),
   });
-  return envelope.data?.days ?? days;
+  return envelope.data?.months ?? months;
 }
 
 export async function getLeadSilenceDays(): Promise<number> {
@@ -65,4 +66,46 @@ export async function getPoFormsSetting(): Promise<PoFormsSetting> {
   const d = envelope.data;
   if (!d || typeof d.both?.message !== "string") throw new Error("Malformed po-forms response");
   return { cetak: poFormOf(d.cetak), plano: poFormOf(d.plano), both: { message: d.both.message } };
+}
+
+/** Sets one form's link (https only - the API answers 400 otherwise) and returns both forms as now stored. */
+export async function setPoFormUrl(kind: PoFormKind, url: string): Promise<PoFormsSetting> {
+  const envelope = await apiFetch<PoFormsSetting>("/settings/po-forms", {
+    method: "PATCH",
+    body: JSON.stringify({ kind, url }),
+  });
+  const d = envelope.data;
+  if (!d || typeof d.both?.message !== "string") throw new Error("Malformed po-forms response");
+  return { cetak: poFormOf(d.cetak), plano: poFormOf(d.plano), both: { message: d.both.message } };
+}
+
+/** Bot name, signature, greeting, fallback minimum and the two intervals (api/src/domain/botSettings.ts). */
+export async function getBotSettings(): Promise<BotSettings> {
+  const envelope = await apiFetch<BotSettings>("/settings/bot");
+  if (!envelope.data) throw new Error("Malformed bot settings response");
+  return envelope.data;
+}
+
+/** Merges the given fields; the API answers 400 for a field out of range. Returns the stored settings. */
+export async function patchBotSettings(patch: Partial<BotSettings>): Promise<BotSettings> {
+  const envelope = await apiFetch<BotSettings>("/settings/bot", {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+  if (!envelope.data) throw new Error("Malformed bot settings response");
+  return envelope.data;
+}
+
+export async function getWhatsAppStatus(): Promise<WhatsAppStatus> {
+  const envelope = await apiFetch<WhatsAppStatus>("/settings/whatsapp-status");
+  if (!envelope.data) throw new Error("Malformed whatsapp-status response");
+  return envelope.data;
+}
+
+/** What still blocks go-live, in the API's order. */
+export async function getGoLiveIssues(): Promise<GoLiveIssue[]> {
+  const envelope = await apiFetch<{ issues: GoLiveIssue[] }>("/settings/go-live");
+  const issues = envelope.data?.issues;
+  if (!Array.isArray(issues)) throw new Error("Malformed go-live response");
+  return issues;
 }

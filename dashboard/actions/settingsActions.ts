@@ -1,56 +1,124 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { apiFetch } from "@/lib/api/client";
-import { auth } from "@/lib/auth";
+import { apiFetch, ApiError } from "@/lib/api/client";
 import { createLog } from "@/lib/api/activityLogs";
-import type { PromptSection, ChakraSyncStatus } from "@/types/api";
-import { sessionRole } from "@/lib/session";
-import { setLeadReopenDays, setLeadSilenceDays } from "@/lib/api/settings";
+import type { BotSettings, PoFormKind, PoFormsSetting, PromptSection, ChakraSyncStatus } from "@/types/api";
+import { sessionRole, sessionStaff } from "@/lib/session";
+import { patchBotSettings, setLeadReopenMonths, setLeadSilenceDays, setPoFormUrl } from "@/lib/api/settings";
+import { validatePoUrl } from "@/lib/settings";
 
-export type LeadReopenResult = { ok: true; days: number } | { ok: false; error: "forbidden" | "invalid" | "failed" };
+// Every write here is admin only, re-checked on the server: a "use server" action is a POST endpoint
+// any signed-in session can call, whatever the page shows. Who made the change comes from the
+// session, never the browser.
 
-/** Admin only, re-checked here: a "use server" action is callable by any session. */
-export async function saveLeadReopenDays(days: number): Promise<LeadReopenResult> {
-  if ((await sessionRole()) !== "admin") return { ok: false, error: "forbidden" };
-  if (!Number.isInteger(days) || days < 1 || days > 365) return { ok: false, error: "invalid" };
-  try {
-    const saved = await setLeadReopenDays(days);
-    revalidatePath("/settings");
-    return { ok: true, days: saved };
-  } catch {
-    return { ok: false, error: "failed" };
-  }
+export type SaveError = "forbidden" | "invalid" | "failed";
+
+async function isAdmin(): Promise<boolean> {
+  return (await sessionRole()) === "admin";
 }
 
-/** Admin only, like the reopen days. */
-export async function saveLeadSilenceDays(days: number): Promise<LeadReopenResult> {
-  if ((await sessionRole()) !== "admin") return { ok: false, error: "forbidden" };
-  if (!Number.isInteger(days) || days < 1 || days > 365) return { ok: false, error: "invalid" };
-  try {
-    const saved = await setLeadSilenceDays(days);
-    revalidatePath("/settings");
-    return { ok: true, days: saved };
-  } catch {
-    return { ok: false, error: "failed" };
-  }
+/** Fire-and-forget activity log line in the admin's name. */
+async function logSetting(message: (name: string) => string, entityId: string): Promise<void> {
+  const { staffName } = await sessionStaff();
+  createLog({ message: message(staffName), performedBy: staffName, entityType: "settings", entityId }).catch(() => {});
 }
 
-async function requireAdmin(): Promise<boolean> {
-  const session = await auth();
-  return (session?.user as { role?: string })?.role === "admin";
+const isWhole = (n: unknown, min: number, max: number): n is number => Number.isInteger(n) && (n as number) >= min && (n as number) <= max;
+
+/** The same ranges as api/src/domain/botSettings.ts BotSettingsPatchSchema, so a bad value never leaves the dashboard. */
+const BOT_FIELD_OK: { [K in keyof BotSettings]: (v: unknown) => boolean } = {
+  botName: (v) => typeof v === "string" && v.trim().length >= 1 && v.trim().length <= 40,
+  signAs: (v) => v === "brand_discussed" || v === "imperial_indopack",
+  greeting: (v) => typeof v === "string" && v.trim().length >= 1 && v.trim().length <= 500,
+  fallbackMinPcs: (v) => isWhole(v, 1, 1_000_000),
+  teamReminderMinutes: (v) => isWhole(v, 5, 1440),
+  whatsappSyncMinutes: (v) => isWhole(v, 0, 1440),
+};
+
+/** For the activity log: what each field is called on the page. */
+const BOT_FIELD_NAME: Record<keyof BotSettings, string> = {
+  botName: "nama bot",
+  signAs: "menyebut diri dari",
+  greeting: "sapaan pertama",
+  fallbackMinPcs: "minimum order",
+  teamReminderMinutes: "pengingat Perlu Tim",
+  whatsappSyncMinutes: "jadwal ambil balasan dari HP",
+};
+
+/** Saves some of the bot settings (Bot, minimum order, reminder, sync interval). Text fields are trimmed. */
+export async function saveBotSettingsAction(
+  patch: Partial<BotSettings>,
+): Promise<{ ok: true; settings: BotSettings } | { ok: false; error: SaveError }> {
+  if (!(await isAdmin())) return { ok: false, error: "forbidden" };
+  const fields = Object.keys(patch ?? {}) as (keyof BotSettings)[];
+  if (fields.length === 0 || fields.some((k) => !Object.hasOwn(BOT_FIELD_OK, k) || !BOT_FIELD_OK[k](patch[k]))) {
+    return { ok: false, error: "invalid" };
+  }
+  const clean = Object.fromEntries(fields.map((k) => [k, typeof patch[k] === "string" ? (patch[k] as string).trim() : patch[k]])) as Partial<BotSettings>;
+  let settings: BotSettings;
+  try {
+    settings = await patchBotSettings(clean);
+  } catch (err) {
+    return { ok: false, error: err instanceof ApiError && err.status === 400 ? "invalid" : "failed" };
+  }
+  revalidatePath("/settings");
+  await logSetting((n) => `${n} mengubah pengaturan bot: ${fields.map((k) => BOT_FIELD_NAME[k]).join(", ")}`, "bot_settings");
+  return { ok: true, settings };
 }
 
-export async function getPromptDefaults(): Promise<PromptSection[]> {
+/**
+ * Sets one PO form's link (cetak: the customer has a design; plano: no design). Checked with
+ * validatePoUrl before anything is sent; answers with both forms as now stored, so the page shows the
+ * message a send would carry.
+ */
+export async function savePoFormUrlAction(
+  kind: PoFormKind,
+  url: string,
+): Promise<{ ok: true; forms: PoFormsSetting } | { ok: false; error: "forbidden" | "not_https" | "invalid" | "failed" }> {
+  if (!(await isAdmin())) return { ok: false, error: "forbidden" };
+  if (kind !== "cetak" && kind !== "plano") return { ok: false, error: "invalid" };
+  const check = validatePoUrl(typeof url === "string" ? url : "");
+  if (check !== "ok") return { ok: false, error: check };
+  let forms: PoFormsSetting;
   try {
-    const envelope = await apiFetch<PromptSection[]>("/settings/prompt-defaults");
-    return envelope.data ?? [];
-  } catch (err: unknown) {
-    const status = (err as { status?: number }).status;
-    if (status === 501 || status === 404) return [];
-    console.warn("[settings] Failed to fetch prompt defaults:", err);
-    return [];
+    forms = await setPoFormUrl(kind, url.trim());
+  } catch (err) {
+    return { ok: false, error: err instanceof ApiError && err.status === 400 ? "invalid" : "failed" };
   }
+  revalidatePath("/settings");
+  await logSetting((n) => `${n} mengubah link form order ${kind}`, `po_form_url_${kind}`);
+  return { ok: true, forms };
+}
+
+/** How many months after a lead was lost the same lead is reopened (1-12). */
+export async function saveReopenMonthsAction(months: number): Promise<{ ok: true; months: number } | { ok: false; error: SaveError }> {
+  if (!(await isAdmin())) return { ok: false, error: "forbidden" };
+  if (!isWhole(months, 1, 12)) return { ok: false, error: "invalid" };
+  let saved: number;
+  try {
+    saved = await setLeadReopenMonths(months);
+  } catch (err) {
+    return { ok: false, error: err instanceof ApiError && err.status === 400 ? "invalid" : "failed" };
+  }
+  revalidatePath("/settings");
+  await logSetting((n) => `${n} mengubah batas lead kalah dibuka lagi menjadi ${saved} bulan`, "lead_reopen_after_days");
+  return { ok: true, months: saved };
+}
+
+/** How many days without a customer reply before a lead is closed as Lost (1-365). */
+export async function saveLeadSilenceDays(days: number): Promise<{ ok: true; days: number } | { ok: false; error: SaveError }> {
+  if (!(await isAdmin())) return { ok: false, error: "forbidden" };
+  if (!isWhole(days, 1, 365)) return { ok: false, error: "invalid" };
+  let saved: number;
+  try {
+    saved = await setLeadSilenceDays(days);
+  } catch (err) {
+    return { ok: false, error: err instanceof ApiError && err.status === 400 ? "invalid" : "failed" };
+  }
+  revalidatePath("/settings");
+  await logSetting((n) => `${n} mengubah batas lead tanpa respon menjadi ${saved} hari`, "lead_silence_lost_days");
+  return { ok: true, days: saved };
 }
 
 /** Global auto-reply switch. Falls back to on if the API is unreachable. */
@@ -64,28 +132,18 @@ export async function getAiDefault(): Promise<boolean> {
   }
 }
 
-export async function setAiDefault(aiEnabled: boolean): Promise<{ ok: boolean; error?: string }> {
-  if (!(await requireAdmin())) return { ok: false, error: "Anda tidak memiliki izin untuk melakukan perubahan ini." };
-  const session = await auth();
-  const adminName = session?.user?.name ?? "Admin";
-
+export async function setAiDefault(aiEnabled: boolean): Promise<{ ok: true } | { ok: false; error: "forbidden" | "failed" }> {
+  if (!(await isAdmin())) return { ok: false, error: "forbidden" };
   try {
     await apiFetch("/settings/ai-default", {
       method: "PATCH",
-      body: JSON.stringify({ aiEnabled }),
+      body: JSON.stringify({ aiEnabled: aiEnabled === true }),
     });
   } catch {
-    return { ok: false, error: "Gagal menyimpan. Silakan coba lagi." };
+    return { ok: false, error: "failed" };
   }
-
   revalidatePath("/settings");
-  createLog({
-    message: `${adminName} ${aiEnabled ? "mengaktifkan" : "menonaktifkan"} balasan otomatis AI untuk semua percakapan`,
-    performedBy: adminName,
-    entityType: "settings",
-    entityId: "ai_enabled_default",
-  }).catch(() => {});
-
+  await logSetting((n) => `${n} ${aiEnabled ? "mengaktifkan" : "menonaktifkan"} balasan otomatis AI untuk semua percakapan`, "ai_enabled_default");
   return { ok: true };
 }
 
@@ -105,9 +163,7 @@ export async function getChakraSyncStatus(): Promise<ChakraSyncStatus | null> {
  * long time — so this reports "started", not "finished"; the summary fills in on reload.
  */
 export async function runChakraSync(): Promise<{ ok: boolean; error?: string }> {
-  if (!(await requireAdmin())) return { ok: false, error: "Anda tidak memiliki izin untuk melakukan perubahan ini." };
-  const session = await auth();
-  const adminName = session?.user?.name ?? "Admin";
+  if (!(await isAdmin())) return { ok: false, error: "Anda tidak memiliki izin untuk melakukan perubahan ini." };
 
   let started: boolean;
   try {
@@ -124,33 +180,27 @@ export async function runChakraSync(): Promise<{ ok: boolean; error?: string }> 
   }
 
   revalidatePath("/settings");
-  if (started) {
-    createLog({
-      message: `${adminName} menjalankan sinkronisasi riwayat percakapan ChakraHQ`,
-      performedBy: adminName,
-      entityType: "settings",
-      entityId: "chakra_sync_state",
-    }).catch(() => {});
-  }
-
+  if (started) await logSetting((n) => `${n} menjalankan sinkronisasi riwayat percakapan ChakraHQ`, "chakra_sync_state");
   return { ok: true };
 }
 
-export async function savePromptDefaults(sections: PromptSection[]): Promise<{ ok: boolean; error?: string }> {
-  if (!(await requireAdmin())) return { ok: false, error: "Anda tidak memiliki izin untuk melakukan perubahan ini." };
+/** Replaces the bot's instruction sections (the API takes the whole list; every section needs content). */
+export async function savePromptDefaults(sections: PromptSection[]): Promise<{ ok: true } | { ok: false; error: SaveError }> {
+  if (!(await isAdmin())) return { ok: false, error: "forbidden" };
+  const valid =
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    sections.every((s) => typeof s?.name === "string" && s.name.trim() !== "" && typeof s.content === "string" && s.content.trim() !== "");
+  if (!valid) return { ok: false, error: "invalid" };
   try {
     await apiFetch("/settings/prompt-defaults", {
       method: "PATCH",
-      body: JSON.stringify({ sections }),
+      body: JSON.stringify({ sections: sections.map((s) => ({ name: s.name, content: s.content })) }),
     });
-    return { ok: true };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "";
-    let friendly = "Gagal menyimpan prompt. Silakan coba lagi.";
-    if (msg.includes("VALIDATION") || msg.includes("validation"))
-      friendly = "Data yang dimasukkan tidak valid. Mohon periksa kembali.";
-    else if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("fetch"))
-      friendly = "Tidak dapat terhubung ke server. Periksa koneksi internet Anda.";
-    return { ok: false, error: friendly };
+  } catch (err) {
+    return { ok: false, error: err instanceof ApiError && err.status === 400 ? "invalid" : "failed" };
   }
+  revalidatePath("/settings");
+  await logSetting((n) => `${n} mengubah instruksi bot`, "default_prompt_sections");
+  return { ok: true };
 }

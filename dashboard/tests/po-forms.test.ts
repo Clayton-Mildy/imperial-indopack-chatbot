@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { defaultPoFormChoice, isPoFormChoice, poFormChoiceKinds, poFormPreview } from "@/lib/conversations/poForms";
+import { defaultPoFormChoice, isPoFormChoice, poFormChoiceKinds, poFormPreview, poUnsetKey } from "@/lib/conversations/poForms";
+import { id } from "@/lib/i18n/id";
 import { quickSendLines } from "@/lib/conversations/labels";
 import type { PoFormsSetting } from "@/types/api";
 
@@ -49,6 +50,28 @@ describe("poFormPreview", () => {
     expect(poFormPreview(planoUnset, "cetak")).toEqual({ ok: true, message: SETTING.cetak.message });
     const noneSet = { ...SETTING, cetak: one(PLACEHOLDER, true), plano: one(PLACEHOLDER, true) };
     expect(poFormPreview(noneSet, "both")).toEqual({ ok: false, unset: ["cetak", "plano"] });
+  });
+});
+
+describe("poUnsetKey", () => {
+  const cetakUnset = { ...SETTING, cetak: one(PLACEHOLDER, true) };
+  const planoUnset = { ...SETTING, plano: one(PLACEHOLDER, true) };
+  const noneSet = { ...SETTING, cetak: one(PLACEHOLDER, true), plano: one(PLACEHOLDER, true) };
+
+  it("one chosen form unset while the other is set: name it and point at the other", () => {
+    expect(poUnsetKey(cetakUnset, ["cetak"])).toBe("conversations.quick.poUnset.cetak");
+    expect(poUnsetKey(planoUnset, ["plano"])).toBe("conversations.quick.poUnset.plano");
+    expect(id[poUnsetKey(cetakUnset, ["cetak"])]).toContain("atau pilih Form plano");
+  });
+
+  it("the other form is unset too: the generic copy, never 'atau pilih' a form that cannot go either", () => {
+    const preview = poFormPreview(noneSet, "cetak");
+    expect(preview).toEqual({ ok: false, unset: ["cetak"] });
+    const key = poUnsetKey(noneSet, preview.ok ? [] : preview.unset);
+    expect(key).toBe("conversations.quick.poPlaceholder");
+    expect(id[key]).not.toContain("atau pilih");
+    expect(poUnsetKey(noneSet, ["plano"])).toBe("conversations.quick.poPlaceholder");
+    expect(poUnsetKey(noneSet, ["cetak", "plano"])).toBe("conversations.quick.poPlaceholder");
   });
 });
 

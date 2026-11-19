@@ -1,126 +1,88 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { saveLeadReopenDays, saveLeadSilenceDays, type LeadReopenResult } from "@/actions/settingsActions";
+import { saveLeadSilenceDays, saveReopenMonthsAction, type SaveError } from "@/actions/settingsActions";
 import { useT } from "@/lib/i18n/LangProvider";
 import type { TKey } from "@/lib/i18n/core";
+import { SaveStatus, hintStyle, numberInputStyle, primaryButtonStyle, sentenceRowStyle } from "./settingsUi";
 
-/** One "N days" setting: number input, save button, result message, hint. */
-function DaysField({
-  id,
-  label,
-  hint,
-  initialDays,
-  save,
+/** A whole number from min to max, or null. */
+function wholeIn(text: string, min: number, max: number): number | null {
+  const v = text.trim();
+  if (!/^\d+$/.test(v)) return null;
+  const n = Number(v);
+  return n >= min && n <= max ? n : null;
+}
+
+const errorKey = (e: SaveError): TKey => (e === "forbidden" ? "settings.err.forbidden" : e === "invalid" ? "settings.err.invalid" : "settings.err.failed");
+
+/**
+ * Leads: how many months until a lost lead's customer counts as a new lead (1-12), and how many days of
+ * silence close a lead as Lost (1-365). One Simpan saves whichever changed; a value that failed to
+ * load stays empty and is only saved once staff type one.
+ */
+export function LeadSettingsClient({
+  initialMonths,
+  initialSilenceDays,
+  canEdit,
 }: {
-  id: string;
-  label: TKey;
-  hint: TKey;
-  initialDays: number | null;
-  save: (days: number) => Promise<LeadReopenResult>;
+  initialMonths: number | null;
+  initialSilenceDays: number | null;
+  canEdit: boolean;
 }) {
   const t = useT();
-  const [value, setValue] = useState(initialDays === null ? "" : String(initialDays));
-  const [pending, startTransition] = useTransition();
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(
-    initialDays === null ? { ok: false, text: t("settings.leads.loadFailed") } : null,
+  const [saved, setSaved] = useState({ months: initialMonths, days: initialSilenceDays });
+  const [months, setMonths] = useState(initialMonths === null ? "" : String(initialMonths));
+  const [days, setDays] = useState(initialSilenceDays === null ? "" : String(initialSilenceDays));
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(
+    initialMonths === null || initialSilenceDays === null ? { ok: false, text: t("settings.err.load") } : null,
   );
+  const [pending, startTransition] = useTransition();
+  const disabled = pending || !canEdit;
 
   function handleSave() {
-    const days = Number(value);
-    if (value.trim() === "" || !Number.isInteger(days) || days < 1 || days > 365) {
-      setMsg({ ok: false, text: t("settings.leads.invalid") });
-      return;
-    }
-    setMsg(null);
+    const monthsDirty = months.trim() !== (saved.months === null ? "" : String(saved.months));
+    const daysDirty = days.trim() !== (saved.days === null ? "" : String(saved.days));
+    const m = wholeIn(months, 1, 12);
+    const d = wholeIn(days, 1, 365);
+    if (monthsDirty && m === null) return setStatus({ ok: false, text: t("settings.leads.reopenInvalid") });
+    if (daysDirty && d === null) return setStatus({ ok: false, text: t("settings.leads.silenceInvalid") });
+    if (!monthsDirty && !daysDirty) return setStatus({ ok: true, text: t("settings.saved") });
+    setStatus(null);
     startTransition(async () => {
-      const result = await save(days).catch(() => ({ ok: false as const, error: "failed" as const }));
-      if (result.ok) {
-        setValue(String(result.days));
-        setMsg({ ok: true, text: t("settings.leads.saved") });
-      } else if (result.error === "invalid") {
-        setMsg({ ok: false, text: t("settings.leads.invalid") });
-      } else if (result.error === "forbidden") {
-        setMsg({ ok: false, text: t("settings.leads.forbidden") });
-      } else {
-        setMsg({ ok: false, text: t("settings.leads.error") });
-      }
+      const failed = (error: SaveError) => ({ ok: false as const, error });
+      const mRes = monthsDirty && m !== null ? await saveReopenMonthsAction(m).catch(() => failed("failed")) : null;
+      const dRes = daysDirty && d !== null ? await saveLeadSilenceDays(d).catch(() => failed("failed")) : null;
+      setSaved((s) => ({ months: mRes?.ok ? mRes.months : s.months, days: dRes?.ok ? dRes.days : s.days }));
+      if (mRes?.ok) setMonths(String(mRes.months));
+      if (dRes?.ok) setDays(String(dRes.days));
+      const error = (mRes && !mRes.ok ? mRes.error : null) ?? (dRes && !dRes.ok ? dRes.error : null);
+      setStatus(error ? { ok: false, text: t(errorKey(error)) } : { ok: true, text: t("settings.saved") });
     });
   }
 
   return (
-    <div style={{ paddingTop: 14 }}>
-      <label htmlFor={id} style={{ fontSize: 13, fontWeight: 500, color: "#1F1F1F" }}>
-        {t(label)}
-      </label>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        <input
-          id={id}
-          type="number"
-          min={1}
-          max={365}
-          step={1}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          style={{ width: 80, height: 32, padding: "0 8px", border: "1px solid #CBD5E1", borderRadius: 6, fontSize: 13 }}
-        />
-        <span style={{ fontSize: 13, color: "#64748B" }}>{t("settings.leads.unit")}</span>
-        <button
-          onClick={handleSave}
-          disabled={pending}
-          style={{
-            height: 32,
-            padding: "0 14px",
-            background: "#0A0A0A",
-            color: "white",
-            border: "none",
-            borderRadius: 6,
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: pending ? "default" : "pointer",
-            opacity: pending ? 0.6 : 1,
-          }}
-        >
-          {t("settings.leads.save")}
-        </button>
-        {msg && (
-          <span role="status" style={{ fontSize: 12, color: msg.ok ? "#15803D" : "#DC2626" }}>
-            {msg.text}
-          </span>
-        )}
+    <>
+      <div style={sentenceRowStyle}>
+        <label htmlFor="st-reopen">{t("settings.leads.reopenLabel")}</label>
+        <input id="st-reopen" type="text" inputMode="numeric" value={months} disabled={disabled} onChange={(e) => { setMonths(e.target.value); setStatus(null); }} style={numberInputStyle} />
+        <span>{t("settings.leads.months")}</span>
       </div>
-      <div style={{ fontSize: 12, color: "#64748B", marginTop: 8, lineHeight: 1.5 }}>{t(hint)}</div>
-    </div>
-  );
-}
-
-export function LeadSettingsClient({
-  initialDays,
-  initialSilenceDays,
-}: {
-  initialDays: number | null;
-  initialSilenceDays: number | null;
-}) {
-  const t = useT();
-  return (
-    <div style={{ background: "white", border: "1px solid #E2E8F0", borderRadius: 6, padding: "20px 24px" }}>
-      <h3 style={{ fontSize: 15, fontWeight: 600, color: "#0A0A0A", margin: 0, paddingBottom: 14, borderBottom: "1px solid #F1F5F9" }}>
-        {t("settings.leads.title")}
-      </h3>
-      <DaysField
-        id="lead-silence-days"
-        label="settings.leads.silenceLabel"
-        hint="settings.leads.silenceHint"
-        initialDays={initialSilenceDays}
-        save={saveLeadSilenceDays}
-      />
-      <DaysField
-        id="lead-reopen-days"
-        label="settings.leads.label"
-        hint="settings.leads.hint"
-        initialDays={initialDays}
-        save={saveLeadReopenDays}
-      />
-    </div>
+      <span style={{ ...hintStyle, fontSize: 12, marginTop: -8 }}>{t("settings.leads.reopenHint")}</span>
+      <div style={sentenceRowStyle}>
+        <label htmlFor="st-silence">{t("settings.leads.silenceLabel")}</label>
+        <input id="st-silence" type="text" inputMode="numeric" value={days} disabled={disabled} onChange={(e) => { setDays(e.target.value); setStatus(null); }} style={numberInputStyle} />
+        <span>{t("settings.leads.days")}</span>
+      </div>
+      <span style={{ ...hintStyle, fontSize: 12, marginTop: -8 }}>{t("settings.leads.silenceHint")}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        {canEdit && (
+          <button type="button" onClick={handleSave} disabled={pending} style={primaryButtonStyle(pending)}>
+            {pending ? t("settings.saving") : t("settings.save")}
+          </button>
+        )}
+        <SaveStatus status={status} />
+      </div>
+    </>
   );
 }

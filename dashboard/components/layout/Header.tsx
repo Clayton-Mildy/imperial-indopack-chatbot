@@ -9,9 +9,11 @@ interface HeaderProps {
   breadcrumbHref?: string;
   /** Shown right after the title, e.g. a product's Aktif / Nonaktif status. */
   badge?: React.ReactNode;
+  /** A short muted line on the right, before the user, e.g. Pengaturan's "Hanya admin yang bisa mengubah". */
+  note?: string;
 }
 
-export async function Header({ title, breadcrumb, breadcrumbHref, badge }: HeaderProps) {
+export async function Header({ title, breadcrumb, breadcrumbHref, badge, note }: HeaderProps) {
   const session = await auth();
   const t = await getT();
   const userName = session?.user?.name ?? session?.user?.email ?? t("header.defaultUser");
@@ -70,6 +72,7 @@ export async function Header({ title, breadcrumb, breadcrumbHref, badge }: Heade
 
       {/* Right: user */}
       <div className="flex items-center gap-2.5">
+        {note && <span style={{ fontSize: 12, color: "#5F6B5A", marginRight: 6 }}>{note}</span>}
         <LanguageSwitch />
         <div
           style={{

@@ -18,7 +18,8 @@ function formatWhen(iso: string | null, lang: Lang, t: TFn): string {
   });
 }
 
-export function ChakraSyncClient({ status }: { status: ChakraSyncStatus | null }) {
+/** WhatsApp section, ChakraHQ only: the last history sync and a button to run one now. */
+export function ChakraSyncClient({ status, canEdit }: { status: ChakraSyncStatus | null; canEdit: boolean }) {
   const t = useT();
   const lang = useLang();
   const [pending, startTransition] = useTransition();
@@ -40,16 +41,16 @@ export function ChakraSyncClient({ status }: { status: ChakraSyncStatus | null }
   const last = status?.lastResult;
 
   return (
-    <div style={{ background: "white", border: "1px solid #E2E8F0", borderRadius: 6, padding: "20px 24px" }}>
-      <h3 style={{ fontSize: 15, fontWeight: 600, color: "#0A0A0A", margin: 0, paddingBottom: 14, borderBottom: "1px solid #F1F5F9" }}>
+    <div style={{ borderTop: "1px solid #EEF2EA", paddingTop: 14 }}>
+      <h3 style={{ fontSize: 13.5, fontWeight: 600, color: "#1F2421", margin: 0 }}>
         {t("settings.chakra.title")}
       </h3>
-      <div style={{ paddingTop: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+      <div style={{ paddingTop: 8, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 500, color: "#1F1F1F" }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: "#1F2421" }}>
             {t("settings.chakra.lastSynced", { when: formatWhen(status?.lastRunAt ?? null, lang, t) })}
           </div>
-          <div style={{ fontSize: 12, color: "#64748B", marginTop: 4, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12, color: "#5F6B5A", marginTop: 4, lineHeight: 1.5 }}>
             {last
               ? t("settings.chakra.summary", { chats: last.chats, messages: last.messages }) +
                 (last.mediaFailed > 0 ? t("settings.chakra.expired", { n: last.mediaFailed }) : "") +
@@ -58,27 +59,30 @@ export function ChakraSyncClient({ status }: { status: ChakraSyncStatus | null }
             {" "}{t("settings.chakra.auto")}
           </div>
         </div>
-        <button
-          onClick={handleRun}
-          disabled={pending || status?.running === true}
-          style={{
-            flexShrink: 0,
-            padding: "8px 14px",
-            fontSize: 13,
-            fontWeight: 500,
-            color: "#0A0A0A",
-            background: "white",
-            border: "1px solid #E2E8F0",
-            borderRadius: 6,
-            cursor: pending || status?.running ? "default" : "pointer",
-            opacity: pending || status?.running ? 0.6 : 1,
-          }}
-        >
-          {status?.running ? t("settings.chakra.running") : pending ? t("settings.chakra.starting") : t("settings.chakra.run")}
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={pending || status?.running === true}
+            style={{
+              flexShrink: 0,
+              padding: "8px 14px",
+              fontSize: 13,
+              fontWeight: 500,
+              color: "#0A0A0A",
+              background: "white",
+              border: "1px solid #E2E8F0",
+              borderRadius: 6,
+              cursor: pending || status?.running ? "default" : "pointer",
+              opacity: pending || status?.running ? 0.6 : 1,
+            }}
+          >
+            {status?.running ? t("settings.chakra.running") : pending ? t("settings.chakra.starting") : t("settings.chakra.run")}
+          </button>
+        )}
       </div>
-      {notice && <div style={{ marginTop: 10, fontSize: 12, color: "#64748B" }}>{notice}</div>}
-      {error && <div style={{ marginTop: 10, fontSize: 12, color: "#DC2626" }}>{error}</div>}
+      {notice && <div role="status" style={{ marginTop: 10, fontSize: 12, color: "#5F6B5A" }}>{notice}</div>}
+      {error && <div role="status" style={{ marginTop: 10, fontSize: 12, color: "#B91C1C" }}>{error}</div>}
     </div>
   );
 }

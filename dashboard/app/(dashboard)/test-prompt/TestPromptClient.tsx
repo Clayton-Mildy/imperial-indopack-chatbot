@@ -18,6 +18,16 @@ type ConversationEntry =
   | { type: "bot"; content: string }
   | EscalationMessage;
 
+/**
+ * Customer messages to try, one per kind of question the bot gets: a price, an exact order, a
+ * recommendation. Never translated - they are what a customer types.
+ */
+const SAMPLE_MESSAGES = [
+  "berapa harga kertas supreme?",
+  "mau box ivory 20x20x7,5 5000 pcs",
+  "saya jualan nasi padang, cocoknya kemasan apa?",
+];
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function toHistoryMessages(entries: ConversationEntry[]): ChatMessage[] {
@@ -338,16 +348,39 @@ export function TestPromptClient({ initialNumbers }: TestPromptClientProps) {
                   style={{
                     flex: 1,
                     display: "flex",
+                    flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
+                    gap: 12,
                     fontSize: 13,
                     color: "#94A3B8",
-                    fontStyle: "italic",
                   }}
                 >
-                  {noNumbers
-                    ? t("testPrompt.emptyNoNumbers")
-                    : t("testPrompt.emptyStart")}
+                  <span style={{ fontStyle: "italic" }}>
+                    {noNumbers
+                      ? t("testPrompt.emptyNoNumbers")
+                      : t("testPrompt.emptyStart")}
+                  </span>
+                  {!noNumbers && (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 12, color: "#5F6B5A" }}>{t("testPrompt.samples")}</span>
+                      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6 }}>
+                        {SAMPLE_MESSAGES.map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => {
+                              setInput(m);
+                              inputRef.current?.focus();
+                            }}
+                            style={{ font: "inherit", fontSize: 12.5, padding: "6px 10px", borderRadius: 999, border: "1px solid #D5DECF", background: "#ffffff", color: "#1F2421", cursor: "pointer" }}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 conversation.map((entry, i) => {

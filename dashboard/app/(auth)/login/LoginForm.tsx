@@ -184,14 +184,14 @@ export function LoginForm() {
             style={{
               width: "100%",
               height: 44,
-              background: loading ? "#88B44E" : "#586B34",
+              // primary-600 while loading, at full opacity: white on a lighter green at 0.7 was unreadable.
+              background: loading ? "#6C9442" : "#586B34",
               color: "white",
               border: "none",
               borderRadius: 4,
               fontSize: 13,
               fontWeight: 600,
               cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.7 : 1,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",

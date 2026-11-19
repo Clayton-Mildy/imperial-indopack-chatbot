@@ -23,7 +23,7 @@ import type { BaileysInboundPayload } from '../domain/schemas.js';
 import type { AIResponse, PhoneNumber, PromptSections } from '../domain/types.js';
 import { notifyStaff } from './staffNotify.js';
 import { mergeOrderFacts, orderDetailsSummary } from '../domain/orderProfile.js';
-import { poFormsForOrder, type PoFormKind } from '../domain/poForms.js';
+import { PO_FORM_KINDS, poFormsForOrder, type PoFormKind } from '../domain/poForms.js';
 import { claudeTokensExhausted } from './claude.js';
 import { getConfig } from '../config.js';
 import { NO_SIGNALS, classifyHandoff, type HandoffCategory, type HandoffSignals } from '../domain/handoff.js';
@@ -968,15 +968,26 @@ const PO_FORM_NOT_SET_REASON = 'Form PO belum diatur di Pengaturan';
  * a link - spec 7.3). Which form - cetak with a design, plano without, both when the design is unknown
  * or mixed - is poFormsForOrder over this turn's order facts: the saved profile (saved just before)
  * with this turn's profile_update merged in, so a fact said in this very message counts even if the
- * save failed. While a chosen form is still the placeholder, or the links cannot be read, no link goes
- * out: the customer gets the team's promise instead and `teamReason` hands the chat to the team, who
- * send the form by hand.
+ * save failed. A profile that cannot be read leaves the design unknown - both forms, labelled - since
+ * an earlier item it holds may say otherwise than this turn. While a chosen form is still the
+ * placeholder, or the links cannot be read, no link goes out: the customer gets the team's promise
+ * instead and `teamReason` hands the chat to the team, who send the form by hand.
  */
 interface PoFormLine { body: string; teamReason: string | null }
 
+/** The form(s) for this order; [cetak, plano] when the saved profile cannot be read. */
+async function poFormKindsFor(contactId: string, r: AIResponse): Promise<PoFormKind[]> {
+  try {
+    const saved = await getContactProfile(contactId);
+    return poFormsForOrder(mergeOrderFacts(saved?.profile ?? {}, r.profileUpdate ?? {}));
+  } catch (err) {
+    console.warn('[messageRouter] profile unreadable for the PO form - sending both:', err instanceof Error ? err.message : err);
+    return [...PO_FORM_KINDS];
+  }
+}
+
 async function poFormToSend(contactId: string, r: AIResponse): Promise<PoFormLine> {
-  const saved = await getContactProfile(contactId).catch(() => null);
-  const kinds = poFormsForOrder(mergeOrderFacts(saved?.profile ?? {}, r.profileUpdate ?? {}));
+  const kinds = await poFormKindsFor(contactId, r);
   const fromTeam = (why: string) => ({ body: CANNED_PO_FORM_FROM_TEAM, teamReason: `${why} - pelanggan setuju harga, mohon kirimkan ${formsNamed(kinds)}` });
   try {
     const urls = await getPoFormUrls();

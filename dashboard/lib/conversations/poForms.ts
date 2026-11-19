@@ -32,3 +32,18 @@ export function poFormPreview(setting: PoFormsSetting, choice: PoFormChoice): { 
   if (unset.length > 0) return { ok: false, unset };
   return { ok: true, message: choice === "both" ? setting.both.message : setting[choice].message };
 }
+
+/**
+ * The dialog's copy for chosen forms that are still the placeholder. One chosen form unset while the
+ * other form is set: that form's line, which offers the other one. The other is unset too (or both were
+ * chosen): the generic "link belum diatur" line, never "atau pilih" a form that cannot go either.
+ */
+export function poUnsetKey(
+  setting: PoFormsSetting,
+  unset: readonly PoFormKind[],
+): "conversations.quick.poUnset.cetak" | "conversations.quick.poUnset.plano" | "conversations.quick.poPlaceholder" {
+  const only = unset.length === 1 ? unset[0] : undefined;
+  if (only === "cetak" && !setting.plano.isPlaceholder) return "conversations.quick.poUnset.cetak";
+  if (only === "plano" && !setting.cetak.isPlaceholder) return "conversations.quick.poUnset.plano";
+  return "conversations.quick.poPlaceholder";
+}

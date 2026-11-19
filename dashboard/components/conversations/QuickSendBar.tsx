@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { photoProductsAction, poFormPreviewAction, quickSendAction } from "@/actions/conversationActions";
 import { BRAND_SLUGS, BRAND_TAG, type BrandSlug } from "@/lib/brands";
 import { quickSendAllFailed, quickSendErrorKey, quickSendLines } from "@/lib/conversations/labels";
-import { PO_FORM_CHOICES, defaultPoFormChoice, poFormPreview } from "@/lib/conversations/poForms";
+import { PO_FORM_CHOICES, defaultPoFormChoice, poFormPreview, poUnsetKey } from "@/lib/conversations/poForms";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import type { PhotoProduct, PoFormChoice, PoFormKind, PoFormsSetting, QuickSendAction, QuickSendItem } from "@/types/api";
 
@@ -332,7 +332,7 @@ export function QuickSendBar({
             ) : poPreview && !poPreview.ok ? (
               // The placeholder link never goes to a customer (the API refuses it too), so there is nothing to confirm.
               <span style={{ fontSize: 13, color: "#92400E", background: "#FFFBEB", border: "1px solid #F3DC94", borderRadius: 8, padding: "10px 12px", lineHeight: 1.5 }}>
-                {poPreview.unset.length === 1 ? t(`conversations.quick.poUnset.${poPreview.unset[0]}`) : t("conversations.quick.poPlaceholder")}
+                {t(poUnsetKey(po, poPreview.unset))}
               </span>
             ) : poPreview ? (
               <>

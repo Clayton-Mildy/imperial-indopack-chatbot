@@ -39,26 +39,6 @@ export interface PhoneNumber {
   updatedAt: string;
 }
 
-export type ContactProfileFollowUpStatus = "none" | "needs_followup" | "done";
-// profile may contain: upsell_offered (boolean), upsell_accepted (boolean),
-// crosssell_offered (boolean), crosssell_accepted (boolean) — set by AI when relevant
-export interface ContactProfile {
-  id: string;
-  contactId: string;
-  profile: Record<string, unknown>;
-  followUpStatus: ContactProfileFollowUpStatus;
-  followUpNotes: string | null;
-  updatedAt: string;
-}
-
-/** A contact plus its extracted CRM profile — the /contacts list row. */
-export interface ContactWithProfile extends Contact {
-  conversationId: string | null;
-  profile: Record<string, unknown>;
-  followUpStatus: ContactProfileFollowUpStatus | null;
-  followUpNotes: string | null;
-}
-
 /** Why a chat was handed to the team (api/src/domain/handoff.ts HANDOFF_CATEGORIES). */
 export type HandoffCategory =
   | "harga_custom"
@@ -396,6 +376,40 @@ export interface PoFormsSetting {
   both: { message: string };
 }
 
+/** How the bot introduces itself (api/src/domain/botSettings.ts SignAs). */
+export type SignAs = "brand_discussed" | "imperial_indopack";
+
+/** GET|PATCH /settings/bot (api/src/domain/botSettings.ts BotSettings). */
+export interface BotSettings {
+  botName: string;
+  signAs: SignAs;
+  greeting: string;
+  fallbackMinPcs: number;
+  teamReminderMinutes: number;
+  /** 0 = the WhatsApp history sync schedule is off. */
+  whatsappSyncMinutes: number;
+}
+
+/** api/src/services/goLive.ts WhatsAppTransport. */
+export type WhatsAppTransport = "chakra" | "meta" | "capture";
+
+/** GET /settings/whatsapp-status (api/src/services/goLive.ts WhatsAppStatus). */
+export interface WhatsAppStatus {
+  transport: WhatsAppTransport;
+  credentialsSet: boolean;
+  numberCount: number;
+  connected: boolean;
+  lastInboundAt: string | null;
+}
+
+/** One entry of GET /settings/go-live `issues` (api/src/services/goLive.ts GoLiveIssue). */
+export type GoLiveIssue =
+  | { code: "po_form_placeholder"; form: PoFormKind }
+  | { code: "whatsapp_not_connected" }
+  | { code: "catalog_empty" }
+  | { code: "catalog_demo" }
+  | { code: "price_list_missing"; brand: BrandSlug };
+
 /** A brand's price-list PDF, the file the bot sends (api/src/repositories/products.ts). */
 export interface BrandPriceList {
   brand: BrandSlug;
@@ -413,16 +427,6 @@ export interface ImportPreview {
   validRows: number;
   totalRows: number;
   errors: { row: number; message: string }[];
-}
-
-export interface ApiKey {
-  id: string;
-  keyHash: string;
-  label: string;
-  createdBy: string | null;
-  lastUsedAt: string | null;
-  revokedAt: string | null;
-  createdAt: string;
 }
 
 export interface PaginatedResponse<T> {
