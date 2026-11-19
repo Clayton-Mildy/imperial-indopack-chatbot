@@ -615,7 +615,7 @@ export const id = {
   "catalog.check.invalid": "Isi produk, ukuran dan jumlah lebih dari 0.",
   "catalog.check.failed": "Harga tidak bisa dicek saat ini. Coba lagi.",
   "catalog.import.title": "Import katalog dari Excel",
-  "catalog.import.subtitle": "Satu baris = satu tingkat harga",
+  "catalog.import.subtitle": "Satu baris = satu tingkat harga. Gramasi diisi per baris: Produk yang sama dengan Gramasi lain tetap satu produk. Cetak, Finishing dan Kegunaan harus sama di semua baris satu produk. Satu produk punya gramasi di setiap ukuran, atau tidak sama sekali.",
   "catalog.import.close": "Tutup",
   "catalog.import.useTemplate": "Pakai template",
   "catalog.import.downloadTemplate": "Unduh template-katalog.xlsx",

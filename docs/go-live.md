@@ -165,6 +165,11 @@ From `api/`. Every `npx tsx scripts/X.ts` below becomes `node dist-scripts/X.js`
 7. Every later deploy of new code: `npx tsx scripts/reseed-prompt-defaults.ts` after the new code is in
    place. It updates prompt sections nobody edited and keeps the staff's edits (`--force` would replace them).
 
+   Deploy note, gramasi options (migration 0030): the migration moves "Gramasi: ..." out of each product's
+   description onto its size rows, so one product can hold several gramasi. A database that holds the demo
+   catalog: to refresh it, run `npm run catalog:demo -- --purge` before `npm run catalog:demo`. Otherwise the
+   old-named demo products (gramasi in the name) and the new-named ones both stay.
+
 ## 4. Set up the bot (before connecting WhatsApp)
 
 Do all of this before the number is connected (section 5), with **Balasan otomatis AI** still OFF (section 3,
@@ -183,7 +188,9 @@ step 6). Tick off every step below before the AI is switched on (section 7).
    - If you loaded the demo catalog: `cd api && npm run catalog:demo -- --purge` deletes only the `(CONTOH)`
      products. Until they are gone, customers would be quoted the demo prices.
    - Import the client's generic price list: **Katalog, Import Excel, Unduh template-katalog.xlsx**, fill it
-     (one row per price tier), upload it.
+     (one row per price tier), upload it. **Gramasi** is per row: the same **Produk** with a different
+     **Gramasi** is one product with several gramasi, not a second product. **Cetak**, **Finishing** and
+     **Kegunaan** must agree across all rows of a product. A product has a gramasi on every size or on none.
    - Upload both brand price-list PDFs under "Daftar harga untuk dikirim bot" (Kertas Supreme and Imperial Indopack, PDF, max 20 MB each).
    - On each product add up to 3 reference photos ("Foto referensi desain", JPG/PNG, max 5 MB). The bot sends
      them to customers who have no design yet.

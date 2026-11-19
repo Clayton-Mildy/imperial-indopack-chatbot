@@ -614,7 +614,7 @@ export const en: Record<keyof typeof id, string> = {
   "catalog.check.invalid": "Fill in a product, a size and a quantity above 0.",
   "catalog.check.failed": "The price could not be checked right now. Try again.",
   "catalog.import.title": "Import the catalog from Excel",
-  "catalog.import.subtitle": "One row = one price tier",
+  "catalog.import.subtitle": "One row = one price tier. Gramasi is per row: the same Produk with a different Gramasi is one product. Cetak, Finishing and Kegunaan must agree across a product's rows. A product has a gramasi on every size or on none.",
   "catalog.import.close": "Close",
   "catalog.import.useTemplate": "Use the template",
   "catalog.import.downloadTemplate": "Download template-katalog.xlsx",
