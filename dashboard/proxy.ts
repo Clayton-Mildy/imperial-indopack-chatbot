@@ -24,7 +24,8 @@ const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "/app";
 const PUBLIC_PATHS = ["/sw.js", "/manifest.webmanifest", "/favicon.ico"];
 
 function isPublic(pathname: string): boolean {
-  return PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/icon-");
+  // /brand/ holds the logo files, which the login page shows before anyone is signed in.
+  return PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/icon-") || pathname.startsWith("/brand/");
 }
 
 function stripBasePath(pathname: string): string {
@@ -59,6 +60,6 @@ export const proxy = auth((req) => {
 
 export const config = {
   matcher: [
-    "/((?!api/auth|_next/static|_next/image|favicon.ico|icon-|sw\\.js|manifest\\.webmanifest|login).*)",
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|icon-|brand/|sw\\.js|manifest\\.webmanifest|login).*)",
   ],
 };

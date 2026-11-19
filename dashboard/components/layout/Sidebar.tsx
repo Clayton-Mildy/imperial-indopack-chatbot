@@ -97,7 +97,7 @@ export function Sidebar({ role, userName }: { role: string; userName: string }) 
 
   return (
     <div className="flex flex-col h-full" style={{ width: 240, background: "#F8FAF6" }}>
-      {/* Brand: the Royale "S" mark beside the company name */}
+      {/* Brand: the IMPEPAC mark and name */}
       <div
         className="flex items-center flex-shrink-0"
         style={{ height: 56, padding: "0 20px", gap: 10, borderBottom: "1px solid #E1E7DC" }}

@@ -51,9 +51,9 @@ export function LoginForm() {
           padding: 32,
         }}
       >
-        {/* Brand: the same "S" mark and name as the sidebar header */}
-        <div className="flex items-center" style={{ marginBottom: 20, gap: 10 }}>
-          <BrandMark />
+        {/* Brand: the full IMPEPAC logo */}
+        <div className="flex justify-center" style={{ marginBottom: 20 }}>
+          <BrandMark variant="full" />
         </div>
 
         <h1
