@@ -1228,6 +1228,72 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     expect(mockEscalateConversation.mock.calls[0][6]).toBe('desain_masuk');
   });
 
+  // Plan 2 Task 10: the conversation panel lists the files the customer sent, so a document is kept
+  // on disk like a photo, under its own (sanitised) name.
+  describe('saving an inbound document', () => {
+    const docPayload = (wamid: string, filename: string | null, text: string | null = null) => ({
+      ...makeTextPayload(wamid, ''),
+      type: 'document' as const,
+      text: text as never,
+      media: { base64: Buffer.from('%PDF-1.4 contoh').toString('base64'), mimeType: 'application/pdf', filename },
+    });
+    const storedMeta = () => mockInsertMessageIfNew.mock.calls[0][0].metadata as Record<string, unknown>;
+
+    it('writes it to uploads/inbound/<ts>_<wamid>_<name> and points mediaUrl at it', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+
+      await routeInboundBaileysMessage(docPayload('wamid.DOC-3', 'Logo Contoh (final).pdf'));
+      await vi.runAllTimersAsync();
+
+      const [path, bytes] = mockWriteFile.mock.calls[0];
+      expect(path).toMatch(/\/uploads\/inbound\/\d+_wamid_DOC_3_Logo_Contoh__final_\.pdf$/);
+      expect(Buffer.from(bytes).toString()).toBe('%PDF-1.4 contoh');
+      expect(storedMeta()).toMatchObject({ attachmentType: 'document', filename: 'Logo Contoh (final).pdf' });
+      expect(storedMeta().mediaUrl).toMatch(/^\/uploads\/inbound\/\d+_wamid_DOC_3_Logo_Contoh__final_\.pdf$/);
+      // Still the C1 hand-off: an uncaptioned file is a design for the team.
+      expect(mockEscalateConversation.mock.calls[0][6]).toBe('desain_masuk');
+    });
+
+    it('keeps only the basename, at most 80 characters, with its extension', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+
+      await routeInboundBaileysMessage(docPayload('wamid-DOC4', `../../etc/${'desain-'.repeat(20)}akhir.pdf`, 'ini desainnya kak'));
+      await vi.runAllTimersAsync();
+
+      const name = String(storedMeta().mediaUrl).replace(/^\/uploads\/inbound\/\d+_wamid_DOC4_/, '');
+      expect(name).toHaveLength(80);
+      expect(name).toMatch(/^desain-desain-.*\.pdf$/);
+      expect(String(mockWriteFile.mock.calls[0][0])).not.toContain('..');
+    });
+
+    it('a file that cannot be written is logged; the row keeps its filename and the hand-off still happens', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockWriteFile.mockRejectedValueOnce(new Error('ENOSPC'));
+
+      await routeInboundBaileysMessage(docPayload('wamid-DOC5', 'logo-contoh.pdf'));
+      await vi.runAllTimersAsync();
+
+      expect(storedMeta()).toMatchObject({ attachmentType: 'document', filename: 'logo-contoh.pdf' });
+      expect(storedMeta()).not.toHaveProperty('mediaUrl');
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('inbound document'))).toBe(true);
+      expect(mockEscalateConversation.mock.calls[0][6]).toBe('desain_masuk');
+      warn.mockRestore();
+    });
+
+    it('a document whose download failed keeps the name WhatsApp sent', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+
+      await routeInboundBaileysMessage({ ...docPayload('wamid-DOC6', null), media: null as never, filename: 'logo-contoh.pdf' });
+      await vi.runAllTimersAsync();
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(storedMeta()).toMatchObject({ attachmentType: 'document', filename: 'logo-contoh.pdf' });
+      expect(storedMeta()).not.toHaveProperty('mediaUrl');
+      expect(mockEscalateConversation.mock.calls[0][1]).toContain('logo-contoh.pdf');
+    });
+  });
+
   it('still lets a captioned document reach the model', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
 

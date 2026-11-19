@@ -638,6 +638,40 @@ export async function updateConversationFollowUp(
     .where(eq(conversations.id, id));
 }
 
+export interface TeamNotes { text: string; updatedAt: string | null; updatedBy: string | null }
+
+/**
+ * The team's own notes on a chat (Catatan tim on the conversation panel), with who wrote them last.
+ * Their own columns: the bot writes follow_up_notes every turn and /new clears it, and neither may
+ * touch what a person wrote. updated_at is left alone - a note is not activity in the chat.
+ */
+export async function setTeamNotes(conversationId: string, text: string, by: string): Promise<TeamNotes | null> {
+  const [row] = await getDb()
+    .update(conversations)
+    .set({ teamNotes: text, teamNotesUpdatedAt: new Date(), teamNotesUpdatedBy: by })
+    .where(eq(conversations.id, conversationId))
+    .returning({ text: conversations.teamNotes, updatedAt: conversations.teamNotesUpdatedAt, updatedBy: conversations.teamNotesUpdatedBy });
+  return row ? teamNotesOf(row.text, row.updatedAt, row.updatedBy) : null;
+}
+
+export function teamNotesOf(text: string | null, updatedAt: Date | null, updatedBy: string | null): TeamNotes {
+  return { text: text ?? '', updatedAt: updatedAt ? updatedAt.toISOString() : null, updatedBy };
+}
+
+/** The customer's own files in a chat (inbound photos and documents), newest first. */
+export async function listCustomerFileMessages(conversationId: string): Promise<Message[]> {
+  const rows = await getDb()
+    .select()
+    .from(messages)
+    .where(and(
+      eq(messages.conversationId, conversationId),
+      eq(messages.role, 'user'),
+      sql`${messages.metadata}->>'attachmentType' IN ('image', 'document')`
+    ))
+    .orderBy(desc(messages.createdAt));
+  return rows.map(mapMessage);
+}
+
 export async function resetConversationToActive(id: string): Promise<Conversation | null> {
   const db = getDb();
   const [row] = await db

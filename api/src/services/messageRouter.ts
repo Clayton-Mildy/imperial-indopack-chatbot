@@ -1063,6 +1063,31 @@ export function isResetAllowed(waId: string): boolean {
     .includes(waId.replace(/\D/g, ''));
 }
 
+/** Writes an inbound file to uploads/inbound and returns its URL; null (logged) when it cannot be written. */
+async function saveInboundFile(filename: string, base64: string, what: 'image' | 'document'): Promise<string | null> {
+  try {
+    const inboundDir = join(process.cwd(), 'uploads', 'inbound');
+    await mkdir(inboundDir, { recursive: true });
+    await writeFile(join(inboundDir, filename), Buffer.from(base64, 'base64'));
+    return `/uploads/inbound/${filename}`;
+  } catch (err) {
+    console.warn(`[messageRouter] Failed to save inbound ${what}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * The name a customer's document is filed under: its basename (a name sent with a path keeps only
+ * the last part), anything outside [a-zA-Z0-9._-] as '_', at most 80 characters with the extension
+ * kept. No name at all is 'dokumen'.
+ */
+function storedDocumentName(name: string | null): string {
+  const base = (name ?? '').split(/[\\/]/).pop()!.replace(/[^a-zA-Z0-9._-]/g, '_') || 'dokumen';
+  if (base.length <= 80) return base;
+  const ext = /\.[a-zA-Z0-9]{1,10}$/.exec(base)?.[0] ?? '';
+  return base.slice(0, 80 - ext.length) + ext;
+}
+
 export async function routeInboundBaileysMessage(payload: BaileysInboundPayload): Promise<void> {
   // Use fromJid (full JID with @s.whatsapp.net or @lid) for sending replies,
   // and bare from (no suffix) as the stable contact identifier.
@@ -1123,18 +1148,19 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
     console.warn(`[messageRouter] ${payload.waMessageId} arrived ${Math.round(lateMs / 60_000)} min after it was sent - delivery to this host was delayed`);
   }
 
+  // The document's own name, even when its bytes never arrived (webhooks.ts keeps it then).
+  const documentName = isDocument ? (payload.media?.filename ?? payload.filename ?? null) : null;
+
+  // Photos and documents are kept on disk: the thread shows them, and the conversation panel lists
+  // them as the customer's files. A file that cannot be written is logged and the row is still
+  // stored (a document with its name), so the turn goes on.
+  const wamidPart = payload.waMessageId.replace(/[^a-zA-Z0-9]/g, '_');
   let inboundMediaUrl: string | null = null;
   if (isImage && payload.media?.base64) {
-    try {
-      const inboundDir = join(process.cwd(), 'uploads', 'inbound');
-      await mkdir(inboundDir, { recursive: true });
-      const ext = payload.media.mimeType === 'image/png' ? 'png' : payload.media.mimeType === 'image/webp' ? 'webp' : 'jpg';
-      const filename = `${Date.now()}_${payload.waMessageId.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
-      await writeFile(join(inboundDir, filename), Buffer.from(payload.media.base64, 'base64'));
-      inboundMediaUrl = `/uploads/inbound/${filename}`;
-    } catch (err) {
-      console.warn('[messageRouter] Failed to save inbound image:', err instanceof Error ? err.message : err);
-    }
+    const ext = payload.media.mimeType === 'image/png' ? 'png' : payload.media.mimeType === 'image/webp' ? 'webp' : 'jpg';
+    inboundMediaUrl = await saveInboundFile(`${Date.now()}_${wamidPart}.${ext}`, payload.media.base64, 'image');
+  } else if (isDocument && payload.media?.base64) {
+    inboundMediaUrl = await saveInboundFile(`${Date.now()}_${wamidPart}_${storedDocumentName(documentName)}`, payload.media.base64, 'document');
   }
 
   const inbound = {
@@ -1153,7 +1179,7 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
       ...(payload.quotedWaMessageId && { quotedWaMessageId: payload.quotedWaMessageId }),
       ...(lateMs > LATE_DELIVERY_MS && { deliveredLateMs: lateMs }),
       ...(isImage && { attachmentType: 'image', mimeType: payload.media?.mimeType ?? 'image/jpeg', ...(inboundMediaUrl && { mediaUrl: inboundMediaUrl }) }),
-      ...(isDocument && { attachmentType: 'document', filename: payload.media?.filename ?? null }),
+      ...(isDocument && { attachmentType: 'document', filename: documentName, ...(inboundMediaUrl && { mediaUrl: inboundMediaUrl }) }),
     } as Record<string, unknown>,
   };
   // A taken wamid is a duplicate delivery only if the webhook stored it. chakraSync can store the
@@ -1247,8 +1273,7 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
   // placeholder "[Pelanggan mengirim dokumen]", which answered some earlier question instead, or
   // told the customer to ask about products only (UAT F-22). Hand it to the team, no sales question.
   if (isDocument && !payload.text?.trim()) {
-    const name = payload.media?.filename;
-    const reason = `Pelanggan mengirim dokumen tanpa keterangan${name ? `: ${name}` : ''} - mohon dicek tim.`;
+    const reason = `Pelanggan mengirim dokumen tanpa keterangan${documentName ? `: ${documentName}` : ''} - mohon dicek tim.`;
     // Perlu Tim's Desain masuk: "Pelanggan mengirim logo atau file" (controller ruling, Plan 2 Task 3).
     await escalateConversation(conversation, reason, replyJid, false, phoneNumber, undefined, classifyHandoff({ ...NO_SIGNALS, designReceived: true }, reason));
     return;

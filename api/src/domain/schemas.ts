@@ -21,6 +21,9 @@ export const BaileysInboundPayloadSchema = z.object({
       filename: z.string().nullable(),
     })
     .nullable(),
+  // A document's own name as WhatsApp sent it, kept even when its bytes could not be downloaded
+  // (media is then null), so the stored row and the team hand-off still say which file it was.
+  filename: z.string().nullish(),
   pushName: z.string().nullable(),
   // The WABA number this message ARRIVED on (Meta/Chakra metadata.phone_number_id). Optional
   // because the Baileys payload shape has no equivalent; absent means "fall back to the first
@@ -81,6 +84,12 @@ export const ConversationStatusSchema = z.enum(['active', 'escalated', 'resolved
 export const PatchConversationBodySchema = z.object({
   status: ConversationStatusSchema.optional(),
   assignedAgent: z.string().optional(),
+});
+
+// Catatan tim on the conversation panel: the whole text (it replaces the last one) and who wrote it.
+export const TeamNotesBodySchema = z.object({
+  text: z.string().max(2000),
+  staffName: z.string().trim().min(1).max(200),
 });
 
 export const CreatePhoneNumberBodySchema = z.object({

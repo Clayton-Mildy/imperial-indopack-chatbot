@@ -74,6 +74,15 @@ export function buildApp() {
     root: join(process.cwd(), 'uploads'),
     prefix: '/uploads/',
     decorateReply: false,
+    // uploads/inbound holds what customers sent, under their own file names, on the dashboard's
+    // own hostname (the /app proxy below). A document named x.html or x.svg must never render as
+    // a page there - it would run the customer's script on the dashboard's origin. Photos still
+    // show inline; everything else downloads.
+    setHeaders: (res, path) => {
+      if (!/[\\/]inbound[\\/][^\\/]+$/.test(path)) return;
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (!/\.(jpe?g|png|webp|gif)$/i.test(path)) res.setHeader('Content-Disposition', 'attachment');
+    },
   });
 
   // ─── Dashboard, on the one public hostname we have ───────────────────────

@@ -161,3 +161,40 @@ describe('Meta webhook — photo media when Chakra has none', () => {
     expect(payload.media).toBeNull();
   });
 });
+
+// Plan 2 Task 10: a document whose bytes could not be downloaded still carries the name WhatsApp
+// sent, so the stored row and the team hand-off can say which file it was.
+describe('Meta webhook — document name without its media', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.SKIP_HMAC_IN_DEV = 'true';
+    mockRoute.mockResolvedValue(undefined);
+  });
+
+  async function postDocument() {
+    const app = await buildApp();
+    await app.inject({ method: 'POST', url: '/webhook', headers: { 'content-type': 'application/json' }, payload: JSON.stringify({
+      entry: [{ changes: [{ value: {
+        contacts: [{ profile: { name: 'Contoh' }, wa_id: '628120000051' }],
+        messages: [{ from: '628120000051', id: 'wamid.D1', timestamp: '1700000000', type: 'document',
+          document: { id: 'media-d1', mime_type: 'application/pdf', filename: 'logo-contoh.pdf' } }],
+      } }] }],
+    }) });
+    await vi.waitFor(() => expect(mockRoute).toHaveBeenCalledTimes(1));
+    await app.close();
+    return mockRoute.mock.calls[0][0];
+  }
+
+  it('a failed download: no media, the filename kept', async () => {
+    mockTransportDownload.mockRejectedValue(new Error('capture downloadMedia: no such file'));
+    const payload = await postDocument();
+    expect(payload).toMatchObject({ type: 'document', media: null, filename: 'logo-contoh.pdf' });
+  });
+
+  it('a downloaded document carries its name on the media too', async () => {
+    mockTransportDownload.mockResolvedValue({ base64: 'JVBER', mimeType: 'application/pdf' });
+    const payload = await postDocument();
+    expect(payload.media).toEqual({ base64: 'JVBER', mimeType: 'application/pdf', filename: 'logo-contoh.pdf' });
+    expect(payload.filename).toBe('logo-contoh.pdf');
+  });
+});

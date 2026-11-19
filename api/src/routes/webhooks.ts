@@ -127,6 +127,7 @@ async function toInboundPayload(msg: MetaMessage, value: MetaValue, log: Fastify
     // can only react to the picture.
     text: msg.text?.body ?? msg.image?.caption ?? msg.document?.caption ?? null,
     media,
+    filename: msg.document?.filename ?? null,
     pushName: value.contacts?.[0]?.profile?.name ?? null,
     toPhoneNumberId: value.metadata?.phone_number_id ?? null,
     quotedWaMessageId: msg.context?.id ?? null,

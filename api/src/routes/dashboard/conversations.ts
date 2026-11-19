@@ -6,14 +6,17 @@ import {
   updateConversationStatus,
   getConversationMessages,
   upsertConversationRead,
+  setTeamNotes,
 } from '../../repositories/conversations.js';
 import { getContactProfile, markFollowUpDone } from '../../repositories/contactProfiles.js';
 import {
   ConversationsQuerySchema,
   PatchConversationBodySchema,
   MarkReadBodySchema,
+  TeamNotesBodySchema,
 } from '../../domain/schemas.js';
 import { NO_SIGNALS, classifyHandoff } from '../../domain/handoff.js';
+import { getOrderPanel } from '../../services/orderPanel.js';
 
 export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/v1/conversations
@@ -115,6 +118,31 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       );
 
       return reply.send({ data: updated, error: null });
+    }
+  );
+
+  // GET /api/v1/conversations/:id/order-panel
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/conversations/:id/order-panel',
+    { preHandler: [apiKeyAuth] },
+    async (request, reply) => {
+      const panel = await getOrderPanel(request.params.id);
+      if (!panel) return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
+      return reply.send({ data: panel, error: null });
+    }
+  );
+
+  // PATCH /api/v1/conversations/:id/team-notes
+  app.patch<{ Params: { id: string } }>(
+    '/api/v1/conversations/:id/team-notes',
+    { preHandler: [apiKeyAuth] },
+    async (request, reply) => {
+      const body = TeamNotesBodySchema.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
+
+      const notes = await setTeamNotes(request.params.id, body.data.text, body.data.staffName);
+      if (!notes) return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
+      return reply.send({ data: notes, error: null });
     }
   );
 
