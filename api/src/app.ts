@@ -48,16 +48,18 @@ export function forwardOriginalHost(
 }
 
 /**
- * Headers for a file served from the uploads folder. Only what customers sent - anything under
- * <uploads>/inbound, at any depth, judged by the path inside the uploads folder so a deploy path that
- * contains an "inbound" folder changes nothing - gets them: nosniff, and a download for anything that
- * is not a plain photo (see the fastifyStatic registration below). Both separators, for Windows.
+ * Headers for a file served from the uploads folder, at any depth (judged by the path inside the
+ * uploads folder): nosniff, and a download for anything that is not a plain photo (see the
+ * fastifyStatic registration below). Customer files (inbound/) and staff attachments keep the
+ * sender's file name, and on the dashboard's hostname an x.html or x.svg must never render as a page.
+ * A download disposition does not stop Chakra/WhatsApp fetching a price-list PDF by its URL.
+ * Both separators, for Windows.
  */
-export function customerFileHeaders(uploadsRoot: string, filePath: string): Record<string, string> {
+export function uploadFileHeaders(uploadsRoot: string, filePath: string): Record<string, string> {
   const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
   const root = `${norm(uploadsRoot)}/`;
   const file = norm(filePath);
-  if (!file.startsWith(root) || !file.slice(root.length).startsWith('inbound/')) return {};
+  if (!file.startsWith(root)) return {};
   return /\.(jpe?g|png|webp|gif)$/i.test(file)
     ? { 'X-Content-Type-Options': 'nosniff' }
     : { 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'attachment' };
@@ -91,12 +93,12 @@ export function buildApp() {
     root: uploadsRoot,
     prefix: '/uploads/',
     decorateReply: false,
-    // uploads/inbound holds what customers sent, under their own file names, on the dashboard's
-    // own hostname (the /app proxy below). A document named x.html or x.svg must never render as
-    // a page there - it would run the customer's script on the dashboard's origin. Photos still
+    // uploads holds what customers and staff sent, some under their own file names, on the
+    // dashboard's own hostname (the /app proxy below). A document named x.html or x.svg must never
+    // render as a page there - it would run that script on the dashboard's origin. Photos still
     // show inline; everything else downloads.
     setHeaders: (res, path) => {
-      for (const [name, value] of Object.entries(customerFileHeaders(uploadsRoot, path))) res.setHeader(name, value);
+      for (const [name, value] of Object.entries(uploadFileHeaders(uploadsRoot, path))) res.setHeader(name, value);
     },
   });
 

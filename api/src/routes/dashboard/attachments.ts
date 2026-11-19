@@ -9,16 +9,28 @@ import { sendImageMessage, sendDocumentMessage } from '../../services/whatsappSe
 import { join } from 'path';
 import { writeFile, mkdir } from 'fs/promises';
 
-const SUPPORTED_MIME_TYPES = new Set([
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-]);
+// The allow-list, with the extension each type is stored under.
+const EXTENSION_BY_MIME: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'application/msword': '.doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/vnd.ms-excel': '.xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+};
+const SUPPORTED_MIME_TYPES = new Set(Object.keys(EXTENSION_BY_MIME));
+
+/**
+ * The name the file is stored (and served) under: a timestamp, the client's name without its extension
+ * (safe characters only), and the extension of its allow-listed MIME type. Never the client's own
+ * extension: an "x.html" sent as image/png would otherwise be served from /uploads as a page.
+ */
+export function storedAttachmentName(originalFilename: string, mimeType: string, now: number = Date.now()): string {
+  const base = originalFilename.replace(/\.[^.]*$/, '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100) || 'attachment';
+  return `${now}_${base}${EXTENSION_BY_MIME[mimeType] ?? ''}`;
+}
 
 const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
@@ -95,7 +107,7 @@ export async function attachmentRoutes(app: FastifyInstance): Promise<void> {
       try {
         const attachDir = join(process.cwd(), 'uploads', 'attachments');
         await mkdir(attachDir, { recursive: true });
-        const safeFilename = `${Date.now()}_${originalFilename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const safeFilename = storedAttachmentName(originalFilename, mimeType);
         await writeFile(join(attachDir, safeFilename), fileBuffer);
         publicPath = `/uploads/attachments/${safeFilename}`;
 
