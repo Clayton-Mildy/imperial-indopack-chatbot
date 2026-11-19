@@ -17,14 +17,21 @@ Do this before touching the real WhatsApp number. Needs Node 24 and Postgres 17 
    `ANTHROPIC_API_KEY=unused-in-cli-mode`, or a real `ANTHROPIC_API_KEY`.
 2. `cd api && npm install && npm run db:migrate && npm run seed:local` (admin, API key, a test phone number row).
    Then `npx tsx scripts/seed-default-prompt.ts` once for the default prompt.
+   Login: `seed:local` creates the admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` in `api/.env`; if those
+   are unset it uses `admin@imperial-indopack.example.com` / `changeme123` (local only).
+3. Dashboard settings, if `dashboard/.env.local` does not exist yet: `cp dashboard/.env.example dashboard/.env.local`.
+   Set `AUTH_SECRET` (`openssl rand -base64 32`; paste the output into the file). Set `API_SECRET_KEY` to the
+   same value as `SEED_API_KEY` without printing it:
+   `sed -i '' "s|^API_SECRET_KEY=.*|API_SECRET_KEY=$(grep '^SEED_API_KEY=' api/.env | cut -d= -f2-)|" dashboard/.env.local`
+   (macOS; on Linux drop the `''` after `-i`).
 3. `cd api && npm run catalog:demo` loads a DEMO catalog (product names end with `(CONTOH)`, fake prices).
-4. Start both apps, each in its own terminal:
+5. Start both apps, each in its own terminal:
    - `cd api && npm run dev` (API, port 50070)
-   - `cd dashboard && npm run dev` (dashboard, port 40070), then open http://localhost:40070/app/login
-5. Send a fake customer message: `cd api && npm run qa:say -- 081200000070 "berapa harga kertas supreme?"`
+   - `cd dashboard && npm run dev` (dashboard, port 40070), then open http://localhost:40070/app/login and log in with the admin from step 2
+6. Send a fake customer message: `cd api && npm run qa:say -- 081200000070 "berapa harga kertas supreme?"`
    (`qa:say` is added by the QA harness; if it is missing from `api/package.json`, that task is not merged yet).
    The bot's replies are appended to `api/logs/whatsapp-capture.jsonl` instead of going to WhatsApp.
-6. Optional conversation QA suite (also added by the QA harness): `npm run qa:setup`, `npm run qa:api`,
+7. Optional conversation QA suite (also added by the QA harness): `npm run qa:setup`, `npm run qa:api`,
    `npm run qa:run` (in `api/`). The report is `docs/qa/conversation-qa-report.md`. It uses the separate
    `imperial_indopack_qa` database and port 50071.
 
@@ -100,8 +107,9 @@ and `dashboard/.env.local`. Required means the app does not start, or does not w
 
 ## 3. First deploy
 
-From `api/` (on the server, `node dist-scripts/<name>.js` after `npm run build:scripts`; from a checkout,
-`npx tsx scripts/<name>.ts`):
+From `api/`. Every `npx tsx scripts/X.ts` below becomes `node dist-scripts/X.js` on the server after
+`npm run build:scripts` (e.g. `node dist-scripts/migrate.js`, `node dist-scripts/seed.js`,
+`node dist-scripts/seed-default-prompt.js`, `node dist-scripts/reseed-prompt-defaults.js`):
 
 1. `npx tsx scripts/migrate.ts` creates the tables (reads `MIGRATIONS_DIR`, default `./migrations`; from a
    checkout use `MIGRATIONS_DIR=src/db/migrations`).
@@ -140,8 +148,8 @@ Chakra is the BSP between your WhatsApp Business number and this API. Both direc
 **C. Webhook in Chakra**
 
 9. In Chakra, set the pass-through webhook URL to `https://bot.example.com/webhook`. The API serves the same
-   handler on both `/webhook` and `/webhooks/whatsapp` (GET for Meta's verification, POST for messages), so
-   either works; use one and use it consistently. Chakra signs each message with `X-Chakra-Signature-256`,
+   handler on `/webhook` and `/webhooks/whatsapp` (GET for Meta's verification, POST for messages); the two
+   are equivalent, `/webhook` is the one to use for Chakra. Chakra signs each message with `X-Chakra-Signature-256`,
    checked against `CHAKRA_WEBHOOK_SECRET`; a wrong secret makes every inbound message be rejected.
 
 **D. Add the number in the dashboard**
@@ -152,7 +160,7 @@ Chakra is the BSP between your WhatsApp Business number and this API. Both direc
     - **WABA ID (Meta)**: the WhatsApp Business Account ID.
     - **Phone Number ID (Meta)**: Meta's numeric phone number ID, **not** the +62 phone number. Find it in
       Chakra's WhatsApp setup for this number, or Meta Business Manager, WhatsApp Accounts, Phone numbers.
-    - Leave the Meta access token empty on chakra.
+    - The form has no access-token field; nothing else to fill.
     - Press **Daftarkan**.
     Without a number row the API ignores every inbound message and logs
     `[messageRouter] No phone number configured — ignoring inbound message`.
@@ -160,7 +168,7 @@ Chakra is the BSP between your WhatsApp Business number and this API. Both direc
 **E. Restart and check**
 
 11. Restart the API.
-12. Dashboard, **Pengaturan**, section **WhatsApp**: it must read **Terhubung · chakra · 1 nomor**. If it says
+12. Dashboard, **Pengaturan**, section **WhatsApp**: it must read **Terhubung · ChakraHQ · 1 nomor**. If it says
     "Belum terhubung", the text under it names what is missing (one of the three `CHAKRA_*` values, or no number row).
 13. Same section, **Riwayat percakapan ChakraHQ**, press **Sinkronkan sekarang** so the bot learns what staff
     already answered from the phone. After that it runs by itself on the interval set above it (field "Ambil
@@ -178,9 +186,9 @@ Chakra is the BSP between your WhatsApp Business number and this API. Both direc
    `https://bot.example.com/webhooks/whatsapp`, Verify token = `META_WEBHOOK_VERIFY_TOKEN`, then subscribe to
    the `messages` field. (The API answers Meta's verification request on both webhook paths.)
 3. Same Cloudflare rules as section 4A.
-4. Add the number on **Nomor WhatsApp** as in section 4D (Phone Number ID is Meta's numeric ID). A per-number
-   Meta token may be entered there; if empty, `META_ACCESS_TOKEN` is used.
-5. Restart the API; Pengaturan, WhatsApp shows **Terhubung · meta · 1 nomor**. The Chakra sync box does not appear on meta.
+4. Add the number on **Nomor WhatsApp** as in section 4D (Phone Number ID is Meta's numeric ID). The form has
+   no token field: the API uses `META_ACCESS_TOKEN` from `.env`.
+5. Restart the API; Pengaturan, WhatsApp shows **Terhubung · Meta · 1 nomor**. The Chakra sync box does not appear on meta.
 
 ## 6. Before the first customer
 
