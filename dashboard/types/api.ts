@@ -2,6 +2,7 @@
  * API response types — mirrors the backend domain types in api/.
  * The backend serializes camelCase objects directly; all keys here are camelCase.
  */
+import type { BrandSlug } from "@/lib/brands";
 
 export type PromptSection = { name: string; content: string };
 
@@ -233,10 +234,33 @@ export type LostReason =
   | "tidak_jadi"
   | "tidak_cocok"
   | "tidak_ada_respon"
+  | "di_bawah_minimum"
   | "lainnya";
 
 /** How warm the lead is, judged by the AI each turn. No human editor. */
 export type LeadTemperature = "hot" | "cold";
+
+/** One line of an order as the AI recorded it (api/src/domain/orderProfile.ts). */
+export interface OrderItem {
+  product?: string;
+  size?: string;
+  gsm?: string;
+  print?: string;
+  qty?: number;
+  qty_unit?: "rim" | "pcs";
+  has_design?: boolean;
+}
+
+/** One row of GET /leads/brand-summary (api/src/repositories/leads.ts). */
+export interface BrandPerformance {
+  brand: BrandSlug;
+  leads: number;
+  chats: number;
+  won: number;
+  lost: number;
+  /** round(won / leads * 100); null when there are no leads. */
+  winPct: number | null;
+}
 
 /** A lead plus the contact/conversation it resolved to. */
 export interface Lead {
@@ -253,6 +277,12 @@ export interface Lead {
   /** Form answers — keys vary per landing page, so never index one by name blindly. */
   payload: Record<string, unknown>;
   status: LeadStatus;
+  /** Which brands the customer asked about, Kertas Supreme first. */
+  brands: BrandSlug[];
+  items: OrderItem[];
+  /** Contact name and business name from the AI-extracted profile. */
+  name: string | null;
+  company: string | null;
   dealValueIdr: number | null;
   leadTemperature: LeadTemperature | null;
   totalOrders: number;

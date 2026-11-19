@@ -1,5 +1,7 @@
 import { apiFetch } from "./client";
+import type { BrandSlug } from "@/lib/brands";
 import type {
+  BrandPerformance,
   Lead,
   LeadCampaignFields,
   LeadCampaignSummary,
@@ -10,7 +12,7 @@ import type {
   LostReason,
 } from "@/types/api";
 
-export async function getLeads(params: {
+export interface LeadsQuery {
   page?: number;
   limit?: number;
   search?: string;
@@ -23,9 +25,13 @@ export async function getLeads(params: {
   /** `lead` (default), `non_lead`, or one concrete kind. */
   kind?: string;
   unreplied?: boolean;
+  /** Only leads that asked about this brand. */
+  brand?: BrandSlug;
   sort?: string;
   order?: string;
-}): Promise<{ data: Lead[]; meta: { page: number; total: number; limit: number } }> {
+}
+
+export async function getLeads(params: LeadsQuery): Promise<{ data: Lead[]; meta: { page: number; total: number; limit: number } }> {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
   if (params.limit) qs.set("limit", String(params.limit));
@@ -38,6 +44,7 @@ export async function getLeads(params: {
   if (params.followUpStatus) qs.set("followUpStatus", params.followUpStatus);
   if (params.kind) qs.set("kind", params.kind);
   if (params.unreplied) qs.set("unreplied", "true");
+  if (params.brand) qs.set("brand", params.brand);
   if (params.sort) qs.set("sort", params.sort);
   if (params.order) qs.set("order", params.order);
 
@@ -59,6 +66,18 @@ export async function getLeadsSummary(params: {
 
   const query = qs.toString();
   const envelope = await apiFetch<LeadCampaignSummary[]>(`/leads/summary${query ? `?${query}` : ""}`);
+  return envelope.data ?? [];
+}
+
+export async function getBrandSummary(params: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<BrandPerformance[]> {
+  const qs = new URLSearchParams();
+  if (params.startDate) qs.set("startDate", params.startDate);
+  if (params.endDate) qs.set("endDate", params.endDate);
+  const query = qs.toString();
+  const envelope = await apiFetch<BrandPerformance[]>(`/leads/brand-summary${query ? `?${query}` : ""}`);
   return envelope.data ?? [];
 }
 

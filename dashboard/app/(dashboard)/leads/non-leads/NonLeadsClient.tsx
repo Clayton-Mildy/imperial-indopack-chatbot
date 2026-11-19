@@ -92,7 +92,7 @@ export function NonLeadsClient({
   const [isPending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const totalPages = Math.ceil(meta.total / meta.limit);
+  const totalPages = Math.max(1, Math.ceil(meta.total / meta.limit));
 
   function go(kind: string, page: number) {
     const qs = new URLSearchParams();
@@ -182,7 +182,7 @@ export function NonLeadsClient({
             </thead>
             <tbody>
               {rows.map((row) => {
-                const name = pick(row.payload, NAME_KEYS) ?? row.displayName;
+                const name = row.name ?? pick(row.payload, NAME_KEYS) ?? row.displayName;
                 const message = pick(row.payload, MESSAGE_KEYS);
                 const setByKey = row.kindSetBy ? SET_BY_KEY[row.kindSetBy] : undefined;
                 const busy = busyId === row.id && isPending;
@@ -259,7 +259,7 @@ export function NonLeadsClient({
         )}
       </div>
 
-      {totalPages > 1 && (
+      {meta.total > 0 && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
           <span style={{ fontSize: 12, color: "#64748B" }}>
             {t("nonLeads.pageOf", { page: meta.page, pages: totalPages, total: meta.total })}
