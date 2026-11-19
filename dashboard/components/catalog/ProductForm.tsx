@@ -1138,7 +1138,10 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
               </section>
 
               {/* ─── Foto referensi desain ─── */}
-              <section style={{ ...card, gap: 12 }}>
+              {/* position: relative keeps the visually hidden (absolute) file input inside this card: without
+                  it the input is placed against the page, past the end of the scrolling <main>, and the whole
+                  layout (sidebar included) scrolls up when the input is focused or scrolled into view. */}
+              <section style={{ ...card, gap: 12, position: "relative" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   <span style={sectionTitle}>{numbered(3, "catalog.form.section.photos")}</span>
                   {!editing && <span style={{ fontSize: 12, color: "#5F6B5A" }}>{t("catalog.form.photosSub")}</span>}
