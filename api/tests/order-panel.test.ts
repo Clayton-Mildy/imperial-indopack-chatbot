@@ -118,11 +118,13 @@ describe('getOrderPanel', () => {
     expect(panel.nearest).toHaveLength(1);
     expect(panel.nearest[0]).toMatchObject({ productName: 'Box Ivory 270 gsm cetak full color', variantName: '21 x 14 x 5 cm', exact: false, tier: { minQty: 10, priceIdr: 1500 } });
     expect(panel.teamNotes).toEqual({ text: '', updatedAt: null, updatedBy: null });
+    // Has a design: the PO form staff are offered first is cetak (poFormsForOrder).
+    expect(panel.suggestedPoForms).toEqual(['cetak']);
   });
 
   it('a chat with nothing collected: six empty rows, no lead, no files, no notes', async () => {
     const panel = (await getOrderPanel(conv.bare))!;
-    expect(panel).toMatchObject({ brands: [], lead: null, detailsFilled: 0, nearest: [], files: [] });
+    expect(panel).toMatchObject({ brands: [], lead: null, detailsFilled: 0, nearest: [], files: [], suggestedPoForms: ['cetak', 'plano'] });
     expect(panel.details.every((d) => !d.filled && d.note === undefined)).toBe(true);
   });
 

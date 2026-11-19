@@ -1,7 +1,7 @@
 /**
  * bot-settings-routes.test.ts - GET|PATCH /api/v1/settings/bot, the per-field fallback of
- * getBotSettings and the po-form-url message, through Fastify inject. Needs DATABASE_URL.
- * Saves and restores the bot_settings and po_form_url rows.
+ * getBotSettings and the two PO forms (GET|PATCH /api/v1/settings/po-forms), through Fastify inject.
+ * Needs DATABASE_URL. Saves and restores the bot_settings row and the three PO link rows.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import 'dotenv/config';
@@ -15,9 +15,10 @@ vi.mock('../src/middleware/apiKey.js', () => ({ apiKeyAuth: async () => {} }));
 const { settingsRoutes } = await import('../src/routes/dashboard/settings.js');
 const { getBotSettings } = await import('../src/repositories/appSettings.js');
 const { DEFAULT_BOT_SETTINGS } = await import('../src/domain/botSettings.js');
-const { poFormMessage, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+const { poFormMessage, poFormsMessage, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
 
-const KEYS = ['bot_settings', 'po_form_url'];
+const PO_KEYS = ['po_form_url', 'po_form_url_cetak', 'po_form_url_plano'];
+const KEYS = ['bot_settings', ...PO_KEYS];
 
 describe('bot settings routes', () => {
   const app = Fastify();
@@ -36,8 +37,7 @@ describe('bot settings routes', () => {
       const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key));
       if (row) saved.set(key, row.value);
     }
-    await setRow('bot_settings', undefined);
-    await setRow('po_form_url', undefined);
+    for (const key of KEYS) await setRow(key, undefined);
   });
 
   afterAll(async () => {
@@ -71,12 +71,55 @@ describe('bot settings routes', () => {
     expect(await getBotSettings()).toEqual({ ...DEFAULT_BOT_SETTINGS, greeting: 'Hai' });
   });
 
-  it('po-form-url reports the placeholder and the message', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/settings/po-form-url' });
-    expect(res.json().data).toEqual({
-      url: PO_FORM_PLACEHOLDER_URL,
-      isPlaceholder: true,
-      message: poFormMessage(PO_FORM_PLACEHOLDER_URL),
+  const poForms = (method: 'GET' | 'PATCH', payload?: unknown) =>
+    app.inject({ method, url: '/api/v1/settings/po-forms', ...(payload !== undefined && { payload: payload as object }) });
+
+  it('po-forms reports both placeholders and the message each form sends', async () => {
+    const res = await poForms('GET');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      data: {
+        cetak: { url: PO_FORM_PLACEHOLDER_URL, isPlaceholder: true, message: poFormMessage(PO_FORM_PLACEHOLDER_URL) },
+        plano: { url: PO_FORM_PLACEHOLDER_URL, isPlaceholder: true, message: poFormMessage(PO_FORM_PLACEHOLDER_URL) },
+        both: { message: poFormsMessage(['cetak', 'plano'], { cetak: PO_FORM_PLACEHOLDER_URL, plano: PO_FORM_PLACEHOLDER_URL }) },
+      },
+      error: null,
     });
+  });
+
+  it('PATCH po-forms sets one form and answers with both', async () => {
+    const res = await poForms('PATCH', { kind: 'plano', url: 'https://forms.gle/ContohPlano' });
+    expect(res.statusCode).toBe(200);
+    const urls = { cetak: PO_FORM_PLACEHOLDER_URL, plano: 'https://forms.gle/ContohPlano' };
+    expect(res.json().data).toEqual({
+      cetak: { url: PO_FORM_PLACEHOLDER_URL, isPlaceholder: true, message: poFormMessage(PO_FORM_PLACEHOLDER_URL) },
+      plano: { url: urls.plano, isPlaceholder: false, message: poFormMessage(urls.plano) },
+      both: { message: poFormsMessage(['cetak', 'plano'], urls) },
+    });
+    await poForms('PATCH', { kind: 'cetak', url: 'https://forms.gle/ContohCetak' });
+    const got = (await poForms('GET')).json().data;
+    expect(got.cetak).toMatchObject({ url: 'https://forms.gle/ContohCetak', isPlaceholder: false });
+    expect(got.plano).toMatchObject({ url: 'https://forms.gle/ContohPlano', isPlaceholder: false });
+  });
+
+  it('PATCH po-forms: https only, a known form, a url - else 400 and nothing changes', async () => {
+    const before = (await poForms('GET')).json().data;
+    for (const body of [
+      { kind: 'cetak', url: 'http://forms.gle/x' },
+      { kind: 'plano', url: 'not a url' },
+      { kind: 'cetak', url: '' },
+      { kind: 'lainnya', url: 'https://forms.gle/x' },
+      { url: 'https://forms.gle/x' },
+      { kind: 'cetak' },
+    ]) {
+      const res = await poForms('PATCH', body);
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ data: null, error: 'VALIDATION_ERROR' });
+    }
+    expect((await poForms('GET')).json().data).toEqual(before);
+  });
+
+  it('the old single-link route is gone', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/v1/settings/po-form-url' })).statusCode).toBe(404);
   });
 });

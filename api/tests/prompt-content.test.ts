@@ -164,6 +164,18 @@ describe('the facts each section must state', () => {
     expect(c).not.toContain('konfirmasi singkat pesanannya');
   });
 
+  // Task 20b: two forms - the system picks cetak (has a design) or plano (no design), or sends both.
+  it('PO Form: the system sends the right form(s) by the design; the design question comes before agreement; no link', () => {
+    const c = section('PO Form');
+    expect(c).toMatch(/form order cetak/i);
+    expect(c).toMatch(/form order plano/i);
+    expect(c).toMatch(/sistem[^\n]*(?:memilih|mengirim)[^\n]*form/i);
+    expect(c).toMatch(/desain[^\n]*sebelum[^\n]*setuju|sebelum[^\n]*setuju[^\n]*desain/i);
+    expect(c).not.toMatch(/https?:\/\/|forms\.gle/i);
+    // The model still never writes either link or the form line itself.
+    expect(c).toMatch(/JANGAN[^\n]*link/i);
+  });
+
   // Review fix (Task 10 m4): the close-line names no PO form, and a reply may end without a question.
   it('Rules: the next step closes a reply when there is one, and a closed answer needs no question', () => {
     const close = section('Rules').split('\n').find((l) => l.includes('langkah berikutnya'))!;

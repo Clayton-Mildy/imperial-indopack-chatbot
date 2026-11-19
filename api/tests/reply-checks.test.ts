@@ -296,6 +296,13 @@ describe('verifyReplyUrls', () => {
     expect(verifyReplyUrls('Form PO-nya: https://forms.gle/REPLACE-ME', [], '').ok).toBe(false);
   });
 
+  it('accepts both configured PO forms (cetak and plano), and still no other link', () => {
+    const PLANO = 'https://forms.gle/ContohPlano456';
+    expect(verifyReplyUrls(`Cetak: ${PO}\nPlano: ${PLANO}`, [PO, PLANO], '').ok).toBe(true);
+    expect(verifyReplyUrls(`Plano: ${PLANO}/`, [PO, PLANO], '').ok).toBe(true);
+    expect(verifyReplyUrls(`Plano: ${PLANO} atau https://forms.gle/Karangan`, [PO, PLANO], '').ok).toBe(false);
+  });
+
   it.each([
     'Harganya Rp 1.800.000 ya kak',
     'Ukuran 20x20x7.5 cm ready kak',

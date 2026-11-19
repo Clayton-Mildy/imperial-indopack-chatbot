@@ -61,7 +61,7 @@ describe('leads API for Imperial Indopack', () => {
     await app.register(catalogRoutes);
     await cleanup();
     const db = getDb();
-    for (const key of ['lead_reopen_after_days', 'po_form_url']) {
+    for (const key of ['lead_reopen_after_days', 'po_form_url', 'po_form_url_cetak', 'po_form_url_plano']) {
       const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key));
       saved.set(key, { had: !!row, value: row?.value });
     }
@@ -151,12 +151,12 @@ describe('leads API for Imperial Indopack', () => {
     expect((await getLeadById(leadA))!.brands.sort()).toEqual(['imperial_indopack', 'kertas_supreme']);
   });
 
-  it('po-form-url round-trips and refuses http', async () => {
-    expect((await inject('PATCH', '/api/v1/settings/po-form-url', { url: 'http://x' })).statusCode).toBe(400);
-    expect((await inject('PATCH', '/api/v1/settings/po-form-url', { url: 'not a url' })).statusCode).toBe(400);
-    const ok = await inject('PATCH', '/api/v1/settings/po-form-url', { url: 'https://forms.example.test/po' });
+  it('po-forms round-trips each form and refuses http', async () => {
+    expect((await inject('PATCH', '/api/v1/settings/po-forms', { kind: 'cetak', url: 'http://x' })).statusCode).toBe(400);
+    expect((await inject('PATCH', '/api/v1/settings/po-forms', { kind: 'plano', url: 'not a url' })).statusCode).toBe(400);
+    const ok = await inject('PATCH', '/api/v1/settings/po-forms', { kind: 'cetak', url: 'https://forms.example.test/po-cetak' });
     expect(ok.statusCode).toBe(200);
-    expect((await inject('GET', '/api/v1/settings/po-form-url')).json().data.url).toBe('https://forms.example.test/po');
+    expect((await inject('GET', '/api/v1/settings/po-forms')).json().data.cetak.url).toBe('https://forms.example.test/po-cetak');
   });
 
   it('reopen months store as days', async () => {

@@ -1,14 +1,14 @@
 /**
  * go-live.test.ts - credentialsSet per transport, the WhatsApp status and the go-live issues
  * (services/goLive.ts), plus the two settings routes. Needs DATABASE_URL. Saves and restores the
- * PO link and each brand's catalog_file_url; its demo product is removed again.
+ * three PO link rows and each brand's catalog_file_url; its demo product is removed again.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import 'dotenv/config';
 import Fastify from 'fastify';
 import { eq, inArray, like } from 'drizzle-orm';
 import { getDb } from '../src/db/client.js';
-import { brands, products, productVariants, variantPriceTiers } from '../src/db/schema.js';
+import { appSettings, brands, products, productVariants, variantPriceTiers } from '../src/db/schema.js';
 
 vi.mock('../src/middleware/apiKey.js', () => ({ apiKeyAuth: async () => {} }));
 let transportOverride: string | null = null;
@@ -19,7 +19,7 @@ vi.mock('../src/config.js', async (orig) => {
 
 const { credentialsSet, getWhatsAppStatus, getGoLiveIssues } = await import('../src/services/goLive.js');
 const { getConfig } = await import('../src/config.js');
-const { getPoFormUrl, setPoFormUrl } = await import('../src/repositories/appSettings.js');
+const { setPoFormUrl } = await import('../src/repositories/appSettings.js');
 const { settingsRoutes } = await import('../src/routes/dashboard/settings.js');
 const { loadDemoCatalog, purgeDemoCatalog } = await import('../src/services/demoCatalog.js');
 const { brandSlugOfName } = await import('../src/domain/brands.js');
@@ -47,7 +47,13 @@ describe('brandSlugOfName', () => {
 
 describe('go-live issues', () => {
   const app = Fastify();
-  let savedPo: string;
+  const PO_KEYS = ['po_form_url', 'po_form_url_cetak', 'po_form_url_plano'];
+  const savedPo = new Map<string, unknown>();
+  const setPoRow = async (key: string, value: unknown) => {
+    await getDb().delete(appSettings).where(eq(appSettings.key, key));
+    if (value !== undefined) await getDb().insert(appSettings).values({ key, value });
+  };
+  const poIssues = async () => (await getGoLiveIssues()).filter((i) => i.code === 'po_form_placeholder');
   let hadDemo = false;
   const savedUrls = new Map<string, string | null>();
   const DEMO = '__go_live_test__ Box (CONTOH)';
@@ -57,7 +63,10 @@ describe('go-live issues', () => {
     // Independent of the dev DB: a loaded demo catalog would make catalog_demo true whatever this test does.
     hadDemo = (await getDb().select().from(products).where(like(products.name, '%(CONTOH)'))).length > 0;
     await purgeDemoCatalog();
-    savedPo = await getPoFormUrl();
+    for (const key of PO_KEYS) {
+      const [row] = await getDb().select().from(appSettings).where(eq(appSettings.key, key));
+      if (row) savedPo.set(key, row.value);
+    }
     const db = getDb();
     for (const slug of ['Kertas Supreme', 'Imperial Indopack']) {
       const [row] = await db.select().from(brands).where(eq(brands.name, slug));
@@ -72,7 +81,7 @@ describe('go-live issues', () => {
   afterAll(async () => {
     const db = getDb();
     transportOverride = null;
-    await setPoFormUrl(savedPo);
+    for (const key of PO_KEYS) await setPoRow(key, savedPo.get(key));
     await db.delete(products).where(like(products.name, '__go_live_test__%'));
     for (const [id, url] of savedUrls) {
       if (url === 'DELETE') await db.delete(brands).where(eq(brands.id, id));
@@ -81,17 +90,27 @@ describe('go-live issues', () => {
     if (hadDemo) await loadDemoCatalog();
   });
 
-  it('flags the placeholder PO link until a real one is saved', async () => {
-    await setPoFormUrl('https://forms.gle/REPLACE-ME');
-    expect(await codes()).toContain('po_form_placeholder');
-    await setPoFormUrl('https://forms.gle/x');
+  it('one po_form_placeholder issue per form still on the placeholder', async () => {
+    for (const key of PO_KEYS) await setPoRow(key, undefined);
+    expect(await poIssues()).toEqual([{ code: 'po_form_placeholder', form: 'cetak' }, { code: 'po_form_placeholder', form: 'plano' }]);
+    await setPoFormUrl('cetak', 'https://forms.gle/ContohCetak');
+    expect(await poIssues()).toEqual([{ code: 'po_form_placeholder', form: 'plano' }]);
+    await setPoFormUrl('plano', 'https://forms.gle/ContohPlano');
+    expect(await poIssues()).toEqual([]);
     expect(await codes()).not.toContain('po_form_placeholder');
   });
 
+  it('the old single link counts for cetak only', async () => {
+    for (const key of PO_KEYS) await setPoRow(key, undefined);
+    await setPoRow('po_form_url', 'https://forms.gle/ContohLama');
+    expect(await poIssues()).toEqual([{ code: 'po_form_placeholder', form: 'plano' }]);
+  });
+
   it('the placeholder written another way is still the placeholder', async () => {
+    await setPoFormUrl('cetak', 'https://forms.gle/ContohCetak');
     for (const variant of ['HTTPS://FORMS.GLE/REPLACE-ME', 'https://forms.gle/REPLACE-ME/']) {
-      await setPoFormUrl(variant);
-      expect(await codes()).toContain('po_form_placeholder');
+      await setPoFormUrl('plano', variant);
+      expect(await poIssues()).toEqual([{ code: 'po_form_placeholder', form: 'plano' }]);
     }
   });
 

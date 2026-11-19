@@ -6,7 +6,7 @@ import { sql } from 'drizzle-orm';
 import { getDb } from '../src/db/client.js';
 import { contacts, leads, phoneNumbers, conversations, messages } from '../src/db/schema.js';
 import type { Product } from '../src/domain/types.js';
-import { CANNED_PO_FORM_FROM_TEAM } from '../src/domain/constants.js';
+import { CANNED_PO_FORM_FROM_TEAM, poFormsMessage } from '../src/domain/constants.js';
 
 vi.mock('../src/middleware/apiKey.js', () => ({ apiKeyAuth: async () => {} }));
 
@@ -81,6 +81,11 @@ describe('lead detail extras', () => {
       { role: 'user', at: '2020-04-02T09:00:00', body: 'halo' },
       { role: 'assistant', at: '2020-04-02T09:01:00', body: CANNED_PO_FORM_FROM_TEAM, metadata: { source: 'po_form' } },
     ]);
+    // Design unknown: one message carrying both forms (cetak and plano) is a form sent too.
+    await mk('BOTH', { status: 'new', submittedAt: wib('2020-04-03T09:00:00') }, [
+      { role: 'user', at: '2020-04-03T09:00:00', body: 'oke saya ambil' },
+      { role: 'assistant', at: '2020-04-03T09:04:00', body: poFormsMessage(['cetak', 'plano'], { cetak: 'https://forms.gle/ContohCetak', plano: 'https://forms.gle/ContohPlano' }), metadata: { source: 'po_form' } },
+    ]);
   });
   afterAll(async () => { await cleanup(); await app.close(); });
 
@@ -102,5 +107,9 @@ describe('lead detail extras', () => {
     expect(x.poFormSentAt).toBeNull();
     expect(x.closingMinutes).toBeNull();
     expect(x.quotedPrices).toEqual([]);
+  });
+
+  it('the both-forms PO message counts as a form sent', async () => {
+    expect((await get('BOTH')).poFormSentAt).toBe(wib('2020-04-03T09:04:00').toISOString());
   });
 });

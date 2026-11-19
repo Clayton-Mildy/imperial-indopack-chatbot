@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { LEAD_KINDS, LOST_REASONS } from './types.js';
+import { PO_FORM_KINDS } from './poForms.js';
 
 const BRAND_SLUGS = ['imperial_indopack', 'kertas_supreme'] as const;
 
@@ -102,7 +103,7 @@ export const QuickSendBodySchema = z.object({
   action: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('price_list'), brand: z.enum(BRAND_SLUGS).optional() }),
     z.object({ kind: z.literal('reference_photos'), productId: z.string().uuid() }),
-    z.object({ kind: z.literal('po_form') }),
+    z.object({ kind: z.literal('po_form'), form: z.enum([...PO_FORM_KINDS, 'both']).optional() }),
   ]),
   staffName: z.string().trim().min(1).transform((s) => s.slice(0, 100)),
 });

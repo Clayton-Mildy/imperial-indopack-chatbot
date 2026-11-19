@@ -33,10 +33,11 @@ vi.mock('../src/services/ragQuery.js', async () => {
     getCatalogProducts: vi.fn(async () => CATALOG),
   };
 });
-const mockGetPoFormUrl = vi.fn(async () => 'https://forms.gle/REPLACE-ME');
+const PLACEHOLDER_URLS = { cetak: 'https://forms.gle/REPLACE-ME', plano: 'https://forms.gle/REPLACE-ME' };
+const mockGetPoFormUrls = vi.fn(async (): Promise<Record<'cetak' | 'plano', string>> => PLACEHOLDER_URLS);
 vi.mock('../src/repositories/appSettings.js', () => ({
   getDefaultPromptSections: vi.fn(async () => [{ name: 'Identitas', content: 'CS Imperial Indopack' }]),
-  getPoFormUrl: mockGetPoFormUrl,
+  getPoFormUrls: mockGetPoFormUrls,
   PO_FORM_PLACEHOLDER_URL: 'https://forms.gle/REPLACE-ME',
 }));
 vi.mock('../src/repositories/products.js', () => ({ listBrands: vi.fn(async () => []) }));
@@ -374,14 +375,30 @@ describe('links in the reply', () => {
     expect(repaired.message).toBe('Siap kak, form PO-nya saya kirim ya.');
 
     mockCreate.mockReset();
-    mockGetPoFormUrl.mockResolvedValueOnce('https://forms.gle/ContohPO123');
+    mockGetPoFormUrls.mockResolvedValueOnce({ cetak: 'https://forms.gle/ContohPO123', plano: 'https://forms.gle/REPLACE-ME' });
     mockCreate.mockResolvedValueOnce(linkReply('Ini form PO-nya kak: https://forms.gle/ContohPO123'));
     expect((await callAIWithHistory(HISTORY, 'oke saya ambil')).message).toContain('https://forms.gle/ContohPO123');
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
+  it('both configured forms (cetak and plano) are allowed links; a placeholder form is not', async () => {
+    const URLS = { cetak: 'https://forms.gle/ContohCetak1', plano: 'https://forms.gle/ContohPlano2' };
+    mockGetPoFormUrls.mockResolvedValueOnce(URLS);
+    mockCreate.mockResolvedValueOnce(linkReply(`Form cetak: ${URLS.cetak} - form plano: ${URLS.plano}`));
+    expect((await callAIWithHistory(HISTORY, 'oke saya ambil')).message).toContain(URLS.plano);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+
+    mockCreate.mockReset();
+    mockGetPoFormUrls.mockResolvedValueOnce({ cetak: URLS.cetak, plano: 'https://forms.gle/REPLACE-ME' });
+    mockCreate
+      .mockResolvedValueOnce(linkReply('Form plano: https://forms.gle/REPLACE-ME ya kak'))
+      .mockResolvedValueOnce(linkReply('Siap kak, form PO-nya saya kirim ya.'));
+    expect((await callAIWithHistory(HISTORY, 'oke saya ambil')).message).toBe('Siap kak, form PO-nya saya kirim ya.');
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
   it('a placeholder setting written another way is not an allowed link either', async () => {
-    mockGetPoFormUrl.mockResolvedValue('HTTPS://FORMS.GLE/REPLACE-ME/');
+    mockGetPoFormUrls.mockResolvedValue({ cetak: 'HTTPS://FORMS.GLE/REPLACE-ME/', plano: 'https://forms.gle/replace-me' });
     try {
       mockCreate
         .mockResolvedValueOnce(linkReply('Silakan isi form PO di HTTPS://FORMS.GLE/REPLACE-ME/ ya kak'))
@@ -390,7 +407,7 @@ describe('links in the reply', () => {
       expect(mockCreate).toHaveBeenCalledTimes(2);
       expect(repaired.message).toBe('Siap kak, form PO-nya saya kirim ya.');
     } finally {
-      mockGetPoFormUrl.mockImplementation(async () => 'https://forms.gle/REPLACE-ME');
+      mockGetPoFormUrls.mockImplementation(async () => PLACEHOLDER_URLS);
     }
   });
 });

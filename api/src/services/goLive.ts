@@ -8,8 +8,9 @@ import { getDb } from '../db/client.js';
 import { messages, phoneNumbers, productVariants, products, variantPriceTiers } from '../db/schema.js';
 import { BRAND_SLUGS } from '../domain/brands.js';
 import type { BrandSlug } from '../domain/orderProfile.js';
-import { getPoFormUrl } from '../repositories/appSettings.js';
+import { getPoFormUrls } from '../repositories/appSettings.js';
 import { isPoFormPlaceholder } from '../domain/constants.js';
+import { PO_FORM_KINDS, type PoFormKind } from '../domain/poForms.js';
 import { getBrandRowsBySlug } from '../repositories/products.js';
 
 export type WhatsAppTransport = 'chakra' | 'meta' | 'capture';
@@ -23,7 +24,7 @@ export interface WhatsAppStatus {
 }
 
 export type GoLiveIssue =
-  | { code: 'po_form_placeholder' }
+  | { code: 'po_form_placeholder'; form: PoFormKind }
   | { code: 'whatsapp_not_connected' }
   | { code: 'catalog_empty' }
   | { code: 'catalog_demo' }
@@ -78,7 +79,9 @@ async function hasActiveTieredVariant(demoOnly: boolean): Promise<boolean> {
 
 export async function getGoLiveIssues(): Promise<GoLiveIssue[]> {
   const issues: GoLiveIssue[] = [];
-  if (isPoFormPlaceholder(await getPoFormUrl())) issues.push({ code: 'po_form_placeholder' });
+  // One issue per form still on the placeholder: cetak (has a design) and plano (no design).
+  const poUrls = await getPoFormUrls();
+  for (const form of PO_FORM_KINDS) if (isPoFormPlaceholder(poUrls[form])) issues.push({ code: 'po_form_placeholder', form });
   if (!(await getWhatsAppStatus()).connected) issues.push({ code: 'whatsapp_not_connected' });
   if (!(await hasActiveTieredVariant(false))) issues.push({ code: 'catalog_empty' });
   if (await hasActiveTieredVariant(true)) issues.push({ code: 'catalog_demo' });

@@ -1,9 +1,10 @@
 import { getDb } from '../db/client.js';
 import { appSettings } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { PromptSections } from '../domain/types.js';
 import { SYSTEM_PROMPT_SECTIONS, PO_FORM_PLACEHOLDER_URL, isPoFormPlaceholder } from '../domain/constants.js';
 import { BotSettingsPatchSchema, DEFAULT_BOT_SETTINGS, type BotSettings } from '../domain/botSettings.js';
+import { PO_FORM_KINDS, type PoFormKind } from '../domain/poForms.js';
 
 const DEFAULT_PROMPT_SECTIONS_KEY = 'default_prompt_sections';
 const AI_ENABLED_DEFAULT_KEY = 'ai_enabled_default';
@@ -105,8 +106,11 @@ export async function setLeadSilenceLostDays(days: number): Promise<void> {
     });
 }
 
-const PO_FORM_URL_KEY = 'po_form_url';
-/** Until staff set the real Google Form in Settings. Defined with the other fixed texts, as is the check. */
+/** One link per form (domain/poForms.ts): cetak with a design, plano without. */
+const PO_FORM_URL_KEYS: Record<PoFormKind, string> = { cetak: 'po_form_url_cetak', plano: 'po_form_url_plano' };
+/** The single link of before Task 20b - read as cetak until cetak itself is set. */
+const LEGACY_PO_FORM_URL_KEY = 'po_form_url';
+/** Until staff set the real Google Forms in Settings. Defined with the other fixed texts, as is the check. */
 export { PO_FORM_PLACEHOLDER_URL, isPoFormPlaceholder };
 
 /** The trimmed value when it is an https URL with a host, else null. */
@@ -122,27 +126,33 @@ function httpsUrl(raw: unknown): string | null {
 }
 
 /**
- * The PO form link the bot sends when the customer agrees to a price (messageRouter, send_po_form).
- * Absent or unusable row means the placeholder.
+ * The two PO form links the bot and quick-send send (messageRouter, send_po_form; poFormsForOrder picks
+ * which). An absent or unusable row is the placeholder - except cetak, which falls back to the old
+ * single link while that is a real one (it was the form in use before there were two).
  */
-export async function getPoFormUrl(): Promise<string> {
+export async function getPoFormUrls(): Promise<Record<PoFormKind, string>> {
   const db = getDb();
-  const [row] = await db
+  const rows = await db
     .select()
     .from(appSettings)
-    .where(eq(appSettings.key, PO_FORM_URL_KEY))
-    .limit(1);
-  return httpsUrl(row?.value) ?? PO_FORM_PLACEHOLDER_URL;
+    .where(inArray(appSettings.key, [...Object.values(PO_FORM_URL_KEYS), LEGACY_PO_FORM_URL_KEY]));
+  const stored = (key: string) => httpsUrl(rows.find((r) => r.key === key)?.value);
+  const legacy = stored(LEGACY_PO_FORM_URL_KEY);
+  return {
+    cetak: stored(PO_FORM_URL_KEYS.cetak) ?? (legacy && !isPoFormPlaceholder(legacy) ? legacy : PO_FORM_PLACEHOLDER_URL),
+    plano: stored(PO_FORM_URL_KEYS.plano) ?? PO_FORM_PLACEHOLDER_URL,
+  };
 }
 
 /** https only: the link goes to customers as it is. */
-export async function setPoFormUrl(url: string): Promise<void> {
+export async function setPoFormUrl(kind: PoFormKind, url: string): Promise<void> {
+  if (!PO_FORM_KINDS.includes(kind)) throw new Error(`unknown PO form "${String(kind)}"`);
   const value = httpsUrl(url);
-  if (!value) throw new Error('po_form_url must be an https URL');
+  if (!value) throw new Error(`${PO_FORM_URL_KEYS[kind]} must be an https URL`);
   const db = getDb();
   await db
     .insert(appSettings)
-    .values({ key: PO_FORM_URL_KEY, value })
+    .values({ key: PO_FORM_URL_KEYS[kind], value })
     .onConflictDoUpdate({
       target: appSettings.key,
       set: { value, updatedAt: new Date() },

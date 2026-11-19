@@ -7,6 +7,7 @@
 
 import { contactHeadline, orderDetailRows, profileFacts, type OrderDetailRow } from '../domain/orderDetails.js';
 import { sanitizeItem, type BrandSlug } from '../domain/orderProfile.js';
+import { poFormsForOrder, type PoFormKind } from '../domain/poForms.js';
 import type { LeadKind, LeadStatus, Message } from '../domain/types.js';
 import { findConversationById, listCustomerFileMessages, teamNotesOf, type TeamNotes } from '../repositories/conversations.js';
 import { getContactProfile } from '../repositories/contactProfiles.js';
@@ -29,6 +30,8 @@ export interface OrderPanel {
   /** Newest first. */
   files: CustomerFile[];
   teamNotes: TeamNotes;
+  /** The PO form(s) the bot would send for this order (poFormsForOrder): the quick-send dialog's default. */
+  suggestedPoForms: PoFormKind[];
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -81,5 +84,6 @@ export async function getOrderPanel(conversationId: string): Promise<OrderPanel 
     nearest: matches.filter((m): m is NearestMatch => m !== null),
     files,
     teamNotes: teamNotesOf(conversation.teamNotes, conversation.teamNotesUpdatedAt, conversation.teamNotesUpdatedBy),
+    suggestedPoForms: poFormsForOrder(facts),
   };
 }

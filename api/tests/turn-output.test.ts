@@ -13,7 +13,7 @@ import { poFormMessage, PO_FORM_PLACEHOLDER_URL as CONSTANTS_PLACEHOLDER } from 
 import { formatProducts, REFERENCE_PHOTOS_MARKER } from '../src/services/ragQuery.js';
 import { getDb } from '../src/db/client.js';
 import { appSettings } from '../src/db/schema.js';
-import { PO_FORM_PLACEHOLDER_URL, getPoFormUrl, setPoFormUrl } from '../src/repositories/appSettings.js';
+import { PO_FORM_PLACEHOLDER_URL, getPoFormUrls, setPoFormUrl } from '../src/repositories/appSettings.js';
 import { SUPREME } from './price-fixtures.js';
 
 const BASE = { message: 'x', confidence: 'high', fit_basis: [] };
@@ -142,42 +142,69 @@ describe('the PO form message', () => {
     expect(poFormMessage('https://forms.gle/abc')).toBe('Untuk pemesanannya, silakan isi form PO berikut ya kak 🙏\nhttps://forms.gle/abc'));
 });
 
-describe('the PO form link setting', () => {
-  const KEY = 'po_form_url';
-  let saved: unknown = undefined;
+describe('the PO form link settings (cetak and plano)', () => {
+  const KEYS = ['po_form_url', 'po_form_url_cetak', 'po_form_url_plano'];
+  const saved = new Map<string, unknown>();
+  const setRow = async (key: string, value: unknown) => {
+    await getDb().delete(appSettings).where(eq(appSettings.key, key));
+    if (value !== undefined) await getDb().insert(appSettings).values({ key, value });
+  };
+  const clear = async () => { for (const key of KEYS) await setRow(key, undefined); };
 
   beforeAll(async () => {
-    const [row] = await getDb().select().from(appSettings).where(eq(appSettings.key, KEY));
-    saved = row?.value;
+    for (const key of KEYS) {
+      const [row] = await getDb().select().from(appSettings).where(eq(appSettings.key, key));
+      if (row) saved.set(key, row.value);
+    }
   });
   afterAll(async () => {
-    await getDb().delete(appSettings).where(eq(appSettings.key, KEY));
-    if (saved !== undefined) await getDb().insert(appSettings).values({ key: KEY, value: saved });
+    for (const key of KEYS) await setRow(key, saved.get(key));
   });
 
-  it('is the placeholder until staff set it', async () => {
+  it('both are the placeholder until staff set them', async () => {
     expect(PO_FORM_PLACEHOLDER_URL).toBe('https://forms.gle/REPLACE-ME');
     expect(PO_FORM_PLACEHOLDER_URL).toBe(CONSTANTS_PLACEHOLDER);
-    await getDb().delete(appSettings).where(eq(appSettings.key, KEY));
-    expect(await getPoFormUrl()).toBe(PO_FORM_PLACEHOLDER_URL);
+    await clear();
+    expect(await getPoFormUrls()).toEqual({ cetak: PO_FORM_PLACEHOLDER_URL, plano: PO_FORM_PLACEHOLDER_URL });
   });
 
-  it('stores an https link', async () => {
-    await setPoFormUrl('https://forms.gle/imperial-po');
-    expect(await getPoFormUrl()).toBe('https://forms.gle/imperial-po');
-    await setPoFormUrl('  https://docs.google.com/forms/d/e/abc/viewform  ');
-    expect(await getPoFormUrl()).toBe('https://docs.google.com/forms/d/e/abc/viewform');
+  it('stores an https link per form, each on its own', async () => {
+    await clear();
+    await setPoFormUrl('cetak', 'https://forms.gle/ContohCetak');
+    expect(await getPoFormUrls()).toEqual({ cetak: 'https://forms.gle/ContohCetak', plano: PO_FORM_PLACEHOLDER_URL });
+    await setPoFormUrl('plano', '  https://docs.google.com/forms/d/e/contoh-plano/viewform  ');
+    expect(await getPoFormUrls()).toEqual({ cetak: 'https://forms.gle/ContohCetak', plano: 'https://docs.google.com/forms/d/e/contoh-plano/viewform' });
   });
 
-  it('refuses anything that is not an https link', async () => {
+  it('the old single link reads as cetak while cetak is unset, and never as plano', async () => {
+    await clear();
+    await setRow('po_form_url', 'https://forms.gle/ContohLama');
+    expect(await getPoFormUrls()).toEqual({ cetak: 'https://forms.gle/ContohLama', plano: PO_FORM_PLACEHOLDER_URL });
+    // Once cetak is set it wins.
+    await setPoFormUrl('cetak', 'https://forms.gle/ContohCetak');
+    expect((await getPoFormUrls()).cetak).toBe('https://forms.gle/ContohCetak');
+  });
+
+  it('an old single link that is the placeholder (or not a link) is no fallback', async () => {
+    await clear();
+    await setRow('po_form_url', 'HTTPS://FORMS.GLE/REPLACE-ME/');
+    expect((await getPoFormUrls()).cetak).toBe(PO_FORM_PLACEHOLDER_URL);
+    await setRow('po_form_url', 'http://forms.gle/x');
+    expect((await getPoFormUrls()).cetak).toBe(PO_FORM_PLACEHOLDER_URL);
+  });
+
+  it('refuses anything that is not an https link, and an unknown form', async () => {
     for (const bad of ['http://forms.gle/x', 'forms.gle/x', '', 'javascript:alert(1)', 'https://']) {
-      await expect(setPoFormUrl(bad)).rejects.toThrow();
+      await expect(setPoFormUrl('cetak', bad)).rejects.toThrow();
+      await expect(setPoFormUrl('plano', bad)).rejects.toThrow();
     }
+    await expect(setPoFormUrl('lainnya' as 'cetak', 'https://forms.gle/x')).rejects.toThrow();
   });
 
   it('a stored value that is not an https link reads as the placeholder', async () => {
-    await getDb().insert(appSettings).values({ key: KEY, value: 42 })
-      .onConflictDoUpdate({ target: appSettings.key, set: { value: 42 } });
-    expect(await getPoFormUrl()).toBe(PO_FORM_PLACEHOLDER_URL);
+    await clear();
+    await setRow('po_form_url_cetak', 42);
+    await setRow('po_form_url_plano', 'ftp://forms.gle/x');
+    expect(await getPoFormUrls()).toEqual({ cetak: PO_FORM_PLACEHOLDER_URL, plano: PO_FORM_PLACEHOLDER_URL });
   });
 });

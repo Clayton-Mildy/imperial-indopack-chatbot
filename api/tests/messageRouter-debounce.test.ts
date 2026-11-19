@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const mockGetFirstPhoneNumber = vi.fn();
 const mockFindPhoneNumberByProviderId = vi.fn();
 const mockGetAiEnabledDefault = vi.fn();
-const mockGetPoFormUrl = vi.fn();
+const mockGetPoFormUrls = vi.fn();
 const mockUpsertContact = vi.fn();
 const mockUpsertConversation = vi.fn();
 const mockInsertMessageIfNew = vi.fn();
@@ -63,7 +63,7 @@ vi.mock('../src/repositories/contacts.js', () => ({
 }));
 vi.mock('../src/repositories/appSettings.js', () => ({
   getAiEnabledDefault: mockGetAiEnabledDefault,
-  getPoFormUrl: mockGetPoFormUrl,
+  getPoFormUrls: mockGetPoFormUrls,
 }));
 vi.mock('../src/repositories/conversations.js', () => ({
   upsertConversation: mockUpsertConversation,
@@ -221,7 +221,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     mockGetFirstPhoneNumber.mockResolvedValue(BASE_PHONE);
     mockFindPhoneNumberByProviderId.mockResolvedValue(null);
     mockGetAiEnabledDefault.mockResolvedValue(true);
-    mockGetPoFormUrl.mockResolvedValue('https://forms.gle/REPLACE-ME');
+    mockGetPoFormUrls.mockResolvedValue({ cetak: 'https://forms.gle/REPLACE-ME', plano: 'https://forms.gle/REPLACE-ME' });
     mockUpsertContact.mockResolvedValue(BASE_CONTACT);
     mockUpsertConversation.mockResolvedValue({ ...BASE_CONVERSATION });
     mockResetConversationToActive.mockResolvedValue(null);
@@ -1702,7 +1702,10 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
   // ─── Reference photos and the PO form, after the reply (spec 7.2, 7.3) ──────
 
+  // The default profile (beforeEach) has a design, so a real cetak link is what goes out.
   const PO_URL = 'https://forms.gle/imperial-po';
+  const PLANO_URL = 'https://forms.gle/imperial-po-plano';
+  const PO_URLS = { cetak: PO_URL, plano: PLANO_URL };
   const sentTexts = () => mockSendTextMessage.mock.calls.map((c) => c[2]);
   const imageRows = () => mockInsertMessage.mock.calls.map((c) => c[0]).filter((r) => r.metadata?.attachmentType === 'image');
 
@@ -1711,7 +1714,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it.each([['text', false], ['photo', true]] as const)('sends the PO form alone on a %s turn with no reply text', async (_path, photo) => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { poFormMessage } = await import('../src/domain/constants.js');
-    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockGetPoFormUrls.mockResolvedValue(PO_URLS);
     mockBuildContextAndCallAI.mockResolvedValue({ message: '', confidence: 'high', sendPoForm: true });
 
     await routeInboundBaileysMessage(photo ? makeImagePayload('wamid-PO0p', 'oke kak') : makeTextPayload('wamid-PO0', 'oke kak'));
@@ -1726,7 +1729,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('sends the PO form link from settings after the reply when sendPoForm', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { poFormMessage } = await import('../src/domain/constants.js');
-    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockGetPoFormUrls.mockResolvedValue(PO_URLS);
     mockSendTextMessage.mockResolvedValueOnce('wa-reply').mockResolvedValueOnce('wa-po');
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Siap kak, 10 rim ya 🙏', sendPoForm: true });
 
@@ -1878,7 +1881,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
   it('tags the PO form row as po_form', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockGetPoFormUrls.mockResolvedValue(PO_URLS);
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
     await routeInboundBaileysMessage(makeTextPayload('wamid-PC3', 'oke kak'));
     await vi.runAllTimersAsync();
@@ -1913,7 +1916,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     await vi.runAllTimersAsync();
 
     expect(mockSendTextMessage).toHaveBeenCalledTimes(1);
-    expect(mockGetPoFormUrl).not.toHaveBeenCalled();
+    expect(mockGetPoFormUrls).not.toHaveBeenCalled();
   });
 
   it('sends no PO form on a hand-off', async () => {
@@ -1924,14 +1927,14 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     await vi.runAllTimersAsync();
 
     expect(mockEscalateConversation).toHaveBeenCalledTimes(1);
-    expect(mockGetPoFormUrl).not.toHaveBeenCalled();
+    expect(mockGetPoFormUrls).not.toHaveBeenCalled();
   });
 
   // Review fix R2: the placeholder link never reaches a customer; the team sends the form.
   it('sends the team line instead of the placeholder PO link, and hands the chat to the team', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_PO_FORM_FROM_TEAM, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
-    mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
+    mockGetPoFormUrls.mockResolvedValue({ cetak: PO_FORM_PLACEHOLDER_URL, plano: PO_FORM_PLACEHOLDER_URL });
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-PO5', 'oke kak saya ambil 10 rim'));
@@ -1951,7 +1954,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('the placeholder written another way (case, trailing slash) is not sent either', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_PO_FORM_FROM_TEAM } = await import('../src/domain/constants.js');
-    mockGetPoFormUrl.mockResolvedValue('HTTPS://FORMS.GLE/REPLACE-ME/');
+    mockGetPoFormUrls.mockResolvedValue({ cetak: 'HTTPS://FORMS.GLE/REPLACE-ME/', plano: 'https://forms.gle/replace-me' });
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-PO5v', 'oke kak saya ambil 10 rim'));
@@ -1964,7 +1967,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('the placeholder-PO hand-off tells staff the order details too', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
-    mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
+    mockGetPoFormUrls.mockResolvedValue({ cetak: PO_FORM_PLACEHOLDER_URL, plano: PO_FORM_PLACEHOLDER_URL });
     mockGetContactProfile.mockResolvedValue({ customerType: null, profile: { name: 'Budi', items: [{ product: 'Box Nasi', size: '10x10x5' }] } });
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
 
@@ -1980,7 +1983,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('photo path: the placeholder PO link is not sent either, and the team takes it', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_PO_FORM_FROM_TEAM, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
-    mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
+    mockGetPoFormUrls.mockResolvedValue({ cetak: PO_FORM_PLACEHOLDER_URL, plano: PO_FORM_PLACEHOLDER_URL });
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
 
     await routeInboundBaileysMessage(makeImagePayload('wamid-PO6', 'yang ini kak, saya ambil'));
@@ -1995,7 +1998,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('a PO link that cannot be read is handled the same way: the reply is kept, the team sends the form', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { CANNED_PO_FORM_FROM_TEAM } = await import('../src/domain/constants.js');
-    mockGetPoFormUrl.mockRejectedValue(new Error('db down'));
+    mockGetPoFormUrls.mockRejectedValue(new Error('db down'));
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-PO4', 'oke saya ambil'));
@@ -2009,13 +2012,128 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
   it('a real PO link does not hand the chat to the team', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockGetPoFormUrls.mockResolvedValue(PO_URLS);
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-PO7', 'oke saya ambil'));
     await vi.runAllTimersAsync();
 
     expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything());
+  });
+
+  // Task 20b: two forms - cetak with a design, plano without (client rule, 2026-11-19). Code picks them
+  // from the order facts saved this turn, never the model.
+  describe('which PO form goes out', () => {
+    const poTurn = (profileUpdate?: Record<string, unknown>) =>
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true, ...(profileUpdate && { profileUpdate }) });
+    const profile = (facts: Record<string, unknown>) => mockGetContactProfile.mockResolvedValue({ customerType: null, profile: { name: 'Budi', ...facts } });
+
+    it.each([['text', false], ['photo', true]] as const)('%s path: has a design -> the cetak form only', async (_path, photo) => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue(PO_URLS);
+      profile({ items: [{ product: 'Box Nasi', size: '10x10x5', has_design: true }] });
+      poTurn();
+
+      await routeInboundBaileysMessage(photo ? makeImagePayload('wamid-PF1p', 'saya ambil kak') : makeTextPayload('wamid-PF1', 'saya ambil kak'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+      expect(sentTexts().join(' ')).not.toContain(PLANO_URL);
+      expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything(), undefined, expect.anything());
+    });
+
+    it.each([['text', false], ['photo', true]] as const)('%s path: no design -> the plano form only', async (_path, photo) => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue(PO_URLS);
+      profile({ has_design: false, items: [{ product: 'Kertas Supreme 64 gsm', size: '30x30', has_design: false }] });
+      poTurn();
+
+      await routeInboundBaileysMessage(photo ? makeImagePayload('wamid-PF2p', 'oke kak') : makeTextPayload('wamid-PF2', 'oke kak'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PLANO_URL)]);
+      const po = mockInsertMessage.mock.calls.map((c) => c[0]).find((r) => r.body === poFormMessage(PLANO_URL));
+      expect(po.metadata).toMatchObject({ source: 'po_form' });
+    });
+
+    it.each([['text', false], ['photo', true]] as const)('%s path: design unknown -> both forms, labelled, in one message', async (_path, photo) => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormsMessage } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue(PO_URLS);
+      profile({ items: [{ product: 'Box Nasi', size: '10x10x5' }] });
+      poTurn();
+
+      await routeInboundBaileysMessage(photo ? makeImagePayload('wamid-PF3p', 'oke kak') : makeTextPayload('wamid-PF3', 'oke kak'));
+      await vi.runAllTimersAsync();
+
+      const both = poFormsMessage(['cetak', 'plano'], PO_URLS);
+      expect(sentTexts()).toEqual(['AI reply', both]);
+      expect(both).toContain(`Form order cetak (bila sudah ada desain/logo):\n${PO_URL}`);
+      expect(both).toContain(`Form order plano (bila belum ada desain):\n${PLANO_URL}`);
+      expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: both, metadata: expect.objectContaining({ source: 'po_form' }) }));
+    });
+
+    it('items that disagree on the design -> both forms', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormsMessage } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue(PO_URLS);
+      profile({ items: [{ product: 'Box Nasi', has_design: true }, { product: 'Kertas Supreme', has_design: false }] });
+      poTurn();
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-PF4', 'ambil dua-duanya kak'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormsMessage(['cetak', 'plano'], PO_URLS)]);
+    });
+
+    it("this turn's own design fact counts, even before the saved profile shows it", async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue(PO_URLS);
+      profile({ items: [{ product: 'Box Nasi', size: '10x10x5' }] });
+      poTurn({ items: [{ product: 'Box Nasi', size: '10x10x5', has_design: false }] });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-PF5', 'belum ada desain, saya ambil kak'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PLANO_URL)]);
+    });
+
+    it('a chosen form still on the placeholder: the team line and a hand-off (lainnya), no link at all', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { CANNED_PO_FORM_FROM_TEAM, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue({ cetak: PO_URL, plano: PO_FORM_PLACEHOLDER_URL });
+      profile({ items: [{ product: 'Box Nasi', size: '10x10x5' }] }); // unknown -> both, and plano is not set
+      poTurn();
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-PF6', 'oke kak saya ambil'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', CANNED_PO_FORM_FROM_TEAM]);
+      expect(sentTexts().join(' ')).not.toContain(PO_URL);
+      expect(sentTexts().join(' ').toLowerCase()).not.toContain('replace-me');
+      expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.stringContaining('Form PO belum diatur di Pengaturan'), undefined, 'lainnya');
+      const reason = String(mockUpdateConversationStatus.mock.calls.find((c) => c[1] === 'escalated')![2]);
+      expect(reason).toContain('plano');
+      expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: CANNED_PO_FORM_FROM_TEAM, metadata: expect.objectContaining({ source: 'po_form' }) }));
+      expect(mockEscalateConversation).not.toHaveBeenCalled();
+    });
+
+    it('the form not chosen may still be the placeholder: the chosen one goes', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue({ cetak: PO_URL, plano: PO_FORM_PLACEHOLDER_URL });
+      profile({ has_design: true });
+      poTurn();
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-PF7', 'oke kak saya ambil'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+      expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything(), undefined, expect.anything());
+    });
   });
 
   it('sends each reference image in order and records each', async () => {
@@ -2052,7 +2170,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
   it('sends the text, then the photos, then the PO form', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
-    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockGetPoFormUrls.mockResolvedValue(PO_URLS);
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, imageUrls: ['/r/1.jpg', '/r/2.jpg'], sendPoForm: true });
 
     await routeInboundBaileysMessage(makeTextPayload('wamid-IMG3', 'oke ambil yang ini'));
@@ -2068,7 +2186,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
   it('photo path: sends the reference photos and the PO form after the reply too', async () => {
     const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
     const { poFormMessage } = await import('../src/domain/constants.js');
-    mockGetPoFormUrl.mockResolvedValue(PO_URL);
+    mockGetPoFormUrls.mockResolvedValue(PO_URLS);
     mockSendImageMessage.mockResolvedValueOnce('wa-img-1').mockResolvedValueOnce('wa-img-2');
     mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, imageUrls: ['/r/1.jpg', '/r/2.jpg'], sendPoForm: true });
 
@@ -2165,7 +2283,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     const examplesTurn = () => mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, examplesForTeam: true });
     const poTurn = async () => {
       const { PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
-      mockGetPoFormUrl.mockResolvedValue(PO_FORM_PLACEHOLDER_URL);
+      mockGetPoFormUrls.mockResolvedValue({ cetak: PO_FORM_PLACEHOLDER_URL, plano: PO_FORM_PLACEHOLDER_URL });
       mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
     };
 
@@ -2306,7 +2424,7 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       const { poFormMessage } = await import('../src/domain/constants.js');
       escalated();
       await botSaid('po');
-      mockGetPoFormUrl.mockResolvedValue(PO_URL);
+      mockGetPoFormUrls.mockResolvedValue(PO_URLS);
       mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
 
       await routeInboundBaileysMessage(makeTextPayload('wamid-PO10', 'oke kak saya ambil'));

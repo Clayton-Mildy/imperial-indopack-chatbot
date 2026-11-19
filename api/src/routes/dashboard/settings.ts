@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z, ZodError } from 'zod';
-import { isPoFormPlaceholder, poFormMessage } from '../../domain/constants.js';
+import { isPoFormPlaceholder, poFormMessage, poFormsMessage } from '../../domain/constants.js';
+import { PO_FORM_KINDS, type PoFormKind } from '../../domain/poForms.js';
 import { apiKeyAuth } from '../../middleware/apiKey.js';
 import { getGoLiveIssues, getWhatsAppStatus } from '../../services/goLive.js';
 import {
@@ -12,7 +13,7 @@ import {
   setLeadReopenAfterDays,
   getLeadSilenceLostDays,
   setLeadSilenceLostDays,
-  getPoFormUrl,
+  getPoFormUrls,
   setPoFormUrl,
   getBotSettings,
   patchBotSettings,
@@ -39,11 +40,23 @@ const PatchReopenMonthsBodySchema = z.object({
   months: z.number().int().min(1).max(12),
 });
 
-const PatchPoFormUrlBodySchema = z.object({
+const PatchPoFormsBodySchema = z.object({
+  kind: z.enum(PO_FORM_KINDS),
   url: z.string().max(2000).refine((u) => {
     try { return new URL(u).protocol === 'https:'; } catch { return false; }
   }),
 });
+
+/**
+ * Both PO forms as Settings and the quick-send dialog show them: each link, whether it is still the
+ * placeholder (then it is never sent), the message that form alone sends, and the one message that
+ * sends both (design unknown, or staff pick "Keduanya").
+ */
+async function poFormsView() {
+  const urls = await getPoFormUrls();
+  const one = (kind: PoFormKind) => ({ url: urls[kind], isPlaceholder: isPoFormPlaceholder(urls[kind]), message: poFormMessage(urls[kind]) });
+  return { cetak: one('cetak'), plano: one('plano'), both: { message: poFormsMessage(PO_FORM_KINDS, urls) } };
+}
 
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/v1/settings/prompt-defaults
@@ -109,22 +122,19 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ data: { months: result.data.months }, error: null });
   });
 
-  // GET|PATCH /api/v1/settings/po-form-url - the link the bot sends when a customer agrees to a price
-  app.get('/api/v1/settings/po-form-url', { preHandler: [apiKeyAuth] }, async (_request, reply) => {
-    const url = await getPoFormUrl();
-    return reply.send({
-      data: { url, isPlaceholder: isPoFormPlaceholder(url), message: poFormMessage(url) },
-      error: null,
-    });
+  // GET|PATCH /api/v1/settings/po-forms - the two links the bot sends when a customer agrees to a price:
+  // cetak (has a design) and plano (no design). PATCH sets one { kind, url } and answers with both.
+  app.get('/api/v1/settings/po-forms', { preHandler: [apiKeyAuth] }, async (_request, reply) => {
+    return reply.send({ data: await poFormsView(), error: null });
   });
 
-  app.patch('/api/v1/settings/po-form-url', { preHandler: [apiKeyAuth] }, async (request, reply) => {
-    const result = PatchPoFormUrlBodySchema.safeParse(request.body);
+  app.patch('/api/v1/settings/po-forms', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const result = PatchPoFormsBodySchema.safeParse(request.body);
     if (!result.success) {
       return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
     }
-    await setPoFormUrl(result.data.url);
-    return reply.send({ data: { url: await getPoFormUrl() }, error: null });
+    await setPoFormUrl(result.data.kind, result.data.url);
+    return reply.send({ data: await poFormsView(), error: null });
   });
 
   // GET|PATCH /api/v1/settings/bot - name, signature, greeting, minimum order, reminder and sync interval

@@ -21,7 +21,7 @@ import {
   getMessagesForSummary,
 } from '../repositories/conversations.js';
 import { buildBotSettingsBlock, DEFAULT_BOT_SETTINGS } from '../domain/botSettings.js';
-import { getBotSettings, getDefaultPromptSections, getPoFormUrl } from '../repositories/appSettings.js';
+import { getBotSettings, getDefaultPromptSections, getPoFormUrls } from '../repositories/appSettings.js';
 import { listBrands } from '../repositories/products.js';
 import type { AIResponse, PromptSection } from '../domain/types.js';
 import { resolveLink } from './linkResolver.js';
@@ -523,8 +523,8 @@ interface VerifyFitDeps {
   givenName?: string | null;
   /** The customer's own recent messages: a link in them may be written back (verifyReplyUrls). */
   customerText?: string;
-  /** The configured PO form link, or null while it is the placeholder; read only for a draft with a link. */
-  poFormUrl?: () => Promise<string | null>;
+  /** The configured PO form links (cetak, plano) that are not the placeholder; read only for a draft with a link. */
+  poFormUrls?: () => Promise<string[]>;
 }
 
 // Two repairs, not one. In every double failure of a UAT round the rewrite broke a DIFFERENT rule
@@ -570,12 +570,11 @@ export async function verifyFit(
   const catalogSent = systemPrompt.includes(CATALOG_SENT_MARKER);
 
   // Read once, and only when a draft has a link at all: most replies have none.
-  let poForm: Promise<string | null> | null = null;
+  let poForms: Promise<string[]> | null = null;
   const linkCheck = async (message: string): Promise<{ ok: boolean; reason: string }> => {
     if (urlsIn(message).length === 0) return { ok: true, reason: '' };
-    poForm ??= (deps.poFormUrl?.() ?? Promise.resolve(null)).catch(() => null);
-    const po = await poForm;
-    return verifyReplyUrls(message, po ? [po] : [], deps.customerText ?? '');
+    poForms ??= (deps.poFormUrls?.() ?? Promise.resolve([])).catch(() => []);
+    return verifyReplyUrls(message, await poForms, deps.customerText ?? '');
   };
 
   const check = async (r: AIResponse): Promise<FitVerdict | null> => {
@@ -1141,13 +1140,12 @@ function customerTextOf(messages: ChatMessage[]): string {
     .join('\n');
 }
 
-/** The PO form link staff set in Settings, or null while it is still the placeholder (or unreadable). */
-async function configuredPoFormUrl(): Promise<string | null> {
+/** The PO form links staff set in Settings (cetak, plano), without any still on the placeholder; none if unreadable. */
+async function configuredPoFormUrls(): Promise<string[]> {
   try {
-    const url = await getPoFormUrl();
-    return url && !isPoFormPlaceholder(url) ? url : null;
+    return Object.values(await getPoFormUrls()).filter((url) => url && !isPoFormPlaceholder(url));
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -1195,7 +1193,7 @@ async function callClaude(
     afterNotCarried: typeof lastBot?.content === 'string' && saysNotCarried(lastBot.content),
     givenName: nameGivenIn(messages),
     customerText: customerTextOf(messages),
-    poFormUrl: configuredPoFormUrl,
+    poFormUrls: configuredPoFormUrls,
   });
   return withCatalogPhotosOnly(verified, extractCatalogBlock(systemPrompt));
 }

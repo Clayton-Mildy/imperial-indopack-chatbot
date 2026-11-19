@@ -5,8 +5,8 @@ import { upsertConversation, insertMessage, insertMessageIfNew, claimSyncedInbou
 import { getContactProfile, deleteContactProfile } from '../repositories/contactProfiles.js';
 import { resetLeadsForContact, tagNonSalesLead } from '../repositories/leads.js';
 import { getFirstPhoneNumber, findPhoneNumberByProviderId } from '../repositories/phoneNumbers.js';
-import { getAiEnabledDefault, getPoFormUrl } from '../repositories/appSettings.js';
-import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormMessage, isPoFormPlaceholder, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM } from '../domain/constants.js';
+import { getAiEnabledDefault, getPoFormUrls } from '../repositories/appSettings.js';
+import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormsMessage, isPoFormPlaceholder, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM } from '../domain/constants.js';
 import { buildContextAndCallAI } from './aiLayer.js';
 import { resolveCatalogDelivery, isPriceRequest, asksForPriceList, forgetSentPriceLists, CATALOG_NOT_SENT_NOTE, type CatalogDelivery } from './catalogDelivery.js';
 import { extractCatalogKeywordsFromImage, visionExtractToKeywords, type VisionExtract } from './visionKeywords.js';
@@ -23,6 +23,7 @@ import type { BaileysInboundPayload } from '../domain/schemas.js';
 import type { AIResponse, PhoneNumber, PromptSections } from '../domain/types.js';
 import { notifyStaff } from './staffNotify.js';
 import { mergeOrderFacts, orderDetailsSummary } from '../domain/orderProfile.js';
+import { poFormsForOrder, type PoFormKind } from '../domain/poForms.js';
 import { claudeTokensExhausted } from './claude.js';
 import { getConfig } from '../config.js';
 import { NO_SIGNALS, classifyHandoff, type HandoffCategory, type HandoffSignals } from '../domain/handoff.js';
@@ -299,9 +300,9 @@ function teamFollowUp(r: AIResponse, customerText: string, po?: { teamReason: st
  * extra query.
  */
 async function onceOnlyFollowUp(
-  conv: { id: string; status: string }, r: AIResponse, customerText: string
+  conv: { id: string; status: string; contactId: string }, r: AIResponse, customerText: string
 ): Promise<{ followUp: TeamFollowUp; poForm: PoFormLine | null }> {
-  let poForm = r.sendPoForm ? await poFormToSend() : null;
+  let poForm = r.sendPoForm ? await poFormToSend(conv.contactId, r) : null;
   const due = [
     r.examplesForTeam ? CANNED_DESIGN_EXAMPLES_FROM_TEAM : null,
     poForm?.teamReason ? poForm.body : null,
@@ -963,25 +964,34 @@ async function sendReferencePhotos(
 const PO_FORM_NOT_SET_REASON = 'Form PO belum diatur di Pengaturan';
 
 /**
- * What follows the reply on a send_po_form turn: the PO form link from settings (the model never
- * writes it - spec 7.3). While the setting is still the placeholder, or cannot be read, no link goes
+ * What follows the reply on a send_po_form turn: the PO form(s) from settings (the model never writes
+ * a link - spec 7.3). Which form - cetak with a design, plano without, both when the design is unknown
+ * or mixed - is poFormsForOrder over this turn's order facts: the saved profile (saved just before)
+ * with this turn's profile_update merged in, so a fact said in this very message counts even if the
+ * save failed. While a chosen form is still the placeholder, or the links cannot be read, no link goes
  * out: the customer gets the team's promise instead and `teamReason` hands the chat to the team, who
  * send the form by hand.
  */
 interface PoFormLine { body: string; teamReason: string | null }
 
-async function poFormToSend(): Promise<PoFormLine> {
-  const fromTeam = (why: string) => ({ body: CANNED_PO_FORM_FROM_TEAM, teamReason: `${why} - pelanggan setuju harga, mohon kirimkan form PO` });
+async function poFormToSend(contactId: string, r: AIResponse): Promise<PoFormLine> {
+  const saved = await getContactProfile(contactId).catch(() => null);
+  const kinds = poFormsForOrder(mergeOrderFacts(saved?.profile ?? {}, r.profileUpdate ?? {}));
+  const fromTeam = (why: string) => ({ body: CANNED_PO_FORM_FROM_TEAM, teamReason: `${why} - pelanggan setuju harga, mohon kirimkan ${formsNamed(kinds)}` });
   try {
-    const url = await getPoFormUrl();
-    if (!isPoFormPlaceholder(url)) return { body: poFormMessage(url), teamReason: null };
-    console.warn('[messageRouter] PO form link is still the placeholder - the team sends the form');
-    return fromTeam(PO_FORM_NOT_SET_REASON);
+    const urls = await getPoFormUrls();
+    const unset = kinds.filter((k) => isPoFormPlaceholder(urls[k]));
+    if (unset.length === 0) return { body: poFormsMessage(kinds, urls), teamReason: null };
+    console.warn(`[messageRouter] PO form ${unset.join(' + ')} is still the placeholder - the team sends the form`);
+    return fromTeam(`${PO_FORM_NOT_SET_REASON} (${formsNamed(unset)})`);
   } catch (err) {
-    console.warn('[messageRouter] PO form link unavailable - the team sends the form:', err instanceof Error ? err.message : err);
+    console.warn('[messageRouter] PO form links unavailable - the team sends the form:', err instanceof Error ? err.message : err);
     return fromTeam('Form PO tidak bisa dibaca dari Pengaturan');
   }
 }
+
+/** 'form PO cetak', 'form PO cetak dan plano' - for the team's hand-off reason. */
+const formsNamed = (kinds: PoFormKind[]): string => `form PO ${kinds.join(' dan ')}`;
 
 interface FixedLineSent { body: string; source: string; wamid: string | null }
 

@@ -4,8 +4,9 @@
  * The Percakapan screen's one-click sends: a brand's price-list PDF, a product's reference photos, or
  * the PO form link, sent to the customer through whatsappSender and stored as the staff member's
  * rows; the first one that goes out hands the chat to that staff member. The placeholder PO link is
- * never sent. Real Postgres with the capture transport (every send lands in a temp JSONL file).
- * Saves and restores both brands' price-list columns and the PO link setting.
+ * never sent. The PO form is cetak (has a design) or plano (no design): staff pick one or both, or the
+ * order's design facts decide (poFormsForOrder). Real Postgres with the capture transport (every send
+ * lands in a temp JSONL file). Saves and restores both brands' price-list columns and the PO link rows.
  */
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
@@ -47,14 +48,21 @@ const { appSettings, brands, contacts, contactProfiles, conversations, messages,
   await import('../src/db/schema.js');
 const { readCaptured } = await import('../src/services/captureClient.js');
 const { conversationRoutes } = await import('../src/routes/dashboard/conversations.js');
-const { poFormMessage, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+const { poFormMessage, poFormsMessage, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
 const { BRAND_NAME, BRAND_SLUGS } = await import('../src/domain/brands.js');
 const { getBrandRowsBySlug, setBrandPriceList } = await import('../src/repositories/products.js');
 const { setPoFormUrl, isPoFormPlaceholder } = await import('../src/repositories/appSettings.js');
 
 const PREFIX = '__quick_send__';
 const STAFF = 'Admin QA';
-const REAL_PO = 'https://forms.gle/qa-imperial-form';
+const REAL = { cetak: 'https://forms.gle/qa-contoh-cetak', plano: 'https://forms.gle/qa-contoh-plano' };
+const BOTH_MESSAGE = () => poFormsMessage(['cetak', 'plano'], REAL);
+const PO_KEYS = ['po_form_url', 'po_form_url_cetak', 'po_form_url_plano'];
+async function setPo(cetak: string, plano: string) {
+  await setPoFormUrl('cetak', cetak);
+  await setPoFormUrl('plano', plano);
+}
+const setRealPo = () => setPo(REAL.cetak, REAL.plano);
 const KS_FILE = { url: `/uploads/catalogs/${PREFIX}ks.pdf`, fileName: 'Daftar Harga Contoh Kertas Supreme.pdf' };
 const II_FILE = { url: `/uploads/catalogs/${PREFIX}ii.pdf`, fileName: 'Daftar Harga Contoh Imperial Indopack.pdf' };
 const PHOTO = (n: number) => `/uploads/images/${PREFIX}photo-${n}.jpg`;
@@ -70,7 +78,7 @@ type BrandColumns = { id: string; catalogFileUrl: string | null; catalogFileName
 const savedBrands: BrandColumns[] = [];
 const createdBrandIds: string[] = [];
 // updated_at as text: a JS Date would drop its microseconds.
-let savedPo: { value: unknown; updatedAt: string } | null = null;
+const savedPo = new Map<string, { value: unknown; updatedAt: string }>();
 
 async function cleanup() {
   const db = getDb();
@@ -83,12 +91,12 @@ async function cleanup() {
   await db.execute(sql`DELETE FROM products WHERE name LIKE ${`${PREFIX}%`}`);
 }
 
-/** A customer with its own chat (status `active`), its profile holding `brands` when given. */
-async function chat(nn: string, brandSlugs?: string[]): Promise<{ id: string; to: string }> {
+/** A customer with its own chat (status `active`), its profile holding `brands` (and any other facts) when given. */
+async function chat(nn: string, brandSlugs?: string[], facts?: Record<string, unknown>): Promise<{ id: string; to: string }> {
   const db = getDb();
   const to = `62812000070${nn}`;
   const [c] = await db.insert(contacts).values({ waId: `${PREFIX}${to}`, displayName: `Contoh WA ${nn}` }).returning();
-  if (brandSlugs) await db.insert(contactProfiles).values({ contactId: c!.id, profile: { name: `Contoh ${nn}`, brands: brandSlugs } });
+  if (brandSlugs || facts) await db.insert(contactProfiles).values({ contactId: c!.id, profile: { name: `Contoh ${nn}`, brands: brandSlugs ?? [], ...facts } });
   const [conv] = await db.insert(conversations).values({ contactId: c!.id, phoneNumberId: numberId, status: 'active' }).returning();
   return { id: conv!.id, to };
 }
@@ -123,8 +131,11 @@ beforeAll(async () => {
     savedBrands.push({ id, catalogFileUrl: raw!.catalogFileUrl, catalogFileName: raw!.catalogFileName, catalogFileUploadedAt: raw!.catalogFileUploadedAt });
     if (slug === 'imperial_indopack') ids.brandII = id;
   }
-  const { rows: poRows } = await db.execute(sql`SELECT value, updated_at::text AS "updatedAt" FROM app_settings WHERE key = 'po_form_url'`);
-  savedPo = (poRows[0] as { value: unknown; updatedAt: string } | undefined) ?? null;
+  for (const key of PO_KEYS) {
+    const { rows: poRows } = await db.execute(sql`SELECT value, updated_at::text AS "updatedAt" FROM app_settings WHERE key = ${key}`);
+    const row = poRows[0] as { value: unknown; updatedAt: string } | undefined;
+    if (row) savedPo.set(key, row);
+  }
 
   const [number] = await db.insert(phoneNumbers).values({ number: `${PREFIX}n`, wabaId: 'test', phoneNumberId: 'test-quick-send' }).returning();
   numberId = number!.id;
@@ -149,13 +160,16 @@ afterAll(async () => {
     if (createdBrandIds.includes(b.id)) await db.delete(brands).where(eq(brands.id, b.id));
     else await db.update(brands).set({ catalogFileUrl: b.catalogFileUrl, catalogFileName: b.catalogFileName, catalogFileUploadedAt: b.catalogFileUploadedAt }).where(eq(brands.id, b.id));
   }
-  if (savedPo) {
-    const value = JSON.stringify(savedPo.value);
-    await db.execute(sql`
-      INSERT INTO app_settings (key, value, updated_at) VALUES ('po_form_url', ${value}::jsonb, ${savedPo.updatedAt}::timestamptz)
-      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`);
-  } else {
-    await db.delete(appSettings).where(eq(appSettings.key, 'po_form_url'));
+  for (const key of PO_KEYS) {
+    const row = savedPo.get(key);
+    if (row) {
+      const value = JSON.stringify(row.value);
+      await db.execute(sql`
+        INSERT INTO app_settings (key, value, updated_at) VALUES (${key}, ${value}::jsonb, ${row.updatedAt}::timestamptz)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`);
+    } else {
+      await db.delete(appSettings).where(eq(appSettings.key, key));
+    }
   }
   await app.close();
   for (const [k, v] of Object.entries(savedEnv)) {
@@ -244,7 +258,7 @@ describe('POST /api/v1/conversations/:id/quick-send - price list', () => {
 
 describe('POST /api/v1/conversations/:id/quick-send - PO form', () => {
   it('refuses the placeholder PO link and sends nothing', async () => {
-    await setPoFormUrl(PO_FORM_PLACEHOLDER_URL);
+    await setPo(PO_FORM_PLACEHOLDER_URL, PO_FORM_PLACEHOLDER_URL);
     const conv = await chat('66');
     const before = readCaptured(LOG).length;
 
@@ -260,7 +274,7 @@ describe('POST /api/v1/conversations/:id/quick-send - PO form', () => {
     const conv = await chat('77');
     const before = readCaptured(LOG).length;
     for (const variant of ['HTTPS://FORMS.GLE/REPLACE-ME', 'https://forms.gle/REPLACE-ME/', 'https://forms.gle/replace-me']) {
-      await setPoFormUrl(variant);
+      await setPo(variant, variant);
       const res = await quickSend(conv.id, { kind: 'po_form' });
       expect(res.statusCode).toBe(409);
       expect(res.json().error).toBe('PO_FORM_PLACEHOLDER');
@@ -273,13 +287,13 @@ describe('POST /api/v1/conversations/:id/quick-send - PO form', () => {
     for (const v of [PO_FORM_PLACEHOLDER_URL, 'HTTPS://FORMS.GLE/REPLACE-ME', 'https://forms.gle/REPLACE-ME/', '  https://forms.gle/REPLACE-ME//  ']) {
       expect(isPoFormPlaceholder(v)).toBe(true);
     }
-    for (const v of [REAL_PO, 'https://forms.gle/REPLACE-ME-2', 'https://forms.gle/', '']) {
+    for (const v of [REAL.cetak, REAL.plano, 'https://forms.gle/REPLACE-ME-2', 'https://forms.gle/', '']) {
       expect(isPoFormPlaceholder(v)).toBe(false);
     }
   });
 
-  it('sends the PO message once a real link is set', async () => {
-    await setPoFormUrl(REAL_PO);
+  it('sends the PO message once real links are set: no design known, both forms in one message', async () => {
+    await setRealPo();
     const conv = await chat('67');
 
     const res = await quickSend(conv.id, { kind: 'po_form' });
@@ -288,17 +302,72 @@ describe('POST /api/v1/conversations/:id/quick-send - PO form', () => {
 
     const captured = readCaptured(LOG, { to: conv.to });
     expect(captured).toHaveLength(1);
-    expect(captured[0]).toMatchObject({ kind: 'text', text: poFormMessage(REAL_PO), phoneNumberId: 'test-quick-send' });
+    expect(captured[0]).toMatchObject({ kind: 'text', text: BOTH_MESSAGE(), phoneNumberId: 'test-quick-send' });
 
     const [row] = (await rowsOf(conv.id)).filter((r) => r.role === 'assistant');
     expect(row).toMatchObject({
-      id: res.json().data.sent[0].messageId, body: poFormMessage(REAL_PO), senderName: STAFF, status: 'sent',
+      id: res.json().data.sent[0].messageId, body: BOTH_MESSAGE(), senderName: STAFF, status: 'sent',
       waMessageId: captured[0]!.id, metadata: { source: 'po_form' },
     });
   });
 
+  it('without a form, the design facts decide: has a design -> cetak, none -> plano', async () => {
+    await setRealPo();
+    const withDesign = await chat('78', ['imperial_indopack'], { items: [{ product: 'Box Contoh', size: '20x20x7', has_design: true }] });
+    const noDesign = await chat('79', ['kertas_supreme'], { has_design: false });
+    expect((await quickSend(withDesign.id, { kind: 'po_form' })).statusCode).toBe(200);
+    expect((await quickSend(noDesign.id, { kind: 'po_form' })).statusCode).toBe(200);
+    expect(readCaptured(LOG, { to: withDesign.to }).map((c) => c.text)).toEqual([poFormMessage(REAL.cetak)]);
+    expect(readCaptured(LOG, { to: noDesign.to }).map((c) => c.text)).toEqual([poFormMessage(REAL.plano)]);
+  });
+
+  it('items that disagree on the design: both forms', async () => {
+    await setRealPo();
+    const conv = await chat('80', ['imperial_indopack', 'kertas_supreme'], {
+      items: [{ product: 'Box Contoh', has_design: true }, { product: 'Kertas Contoh', has_design: false }],
+    });
+    expect((await quickSend(conv.id, { kind: 'po_form' })).statusCode).toBe(200);
+    expect(readCaptured(LOG, { to: conv.to }).map((c) => c.text)).toEqual([BOTH_MESSAGE()]);
+  });
+
+  it('the form staff picked wins over the design facts: cetak, plano or both', async () => {
+    await setRealPo();
+    const conv = await chat('81', ['imperial_indopack'], { has_design: true });
+    for (const form of ['plano', 'cetak', 'both'] as const) {
+      const res = await quickSend(conv.id, { kind: 'po_form', form });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.sent).toEqual([{ messageId: expect.any(String), kind: 'text', status: 'sent' }]);
+    }
+    expect(readCaptured(LOG, { to: conv.to }).map((c) => c.text)).toEqual([poFormMessage(REAL.plano), poFormMessage(REAL.cetak), BOTH_MESSAGE()]);
+    const bodies = (await rowsOf(conv.id)).filter((r) => r.role === 'assistant').map((r) => [r.body, (r.metadata as { source?: string }).source]);
+    expect(bodies).toEqual([[poFormMessage(REAL.plano), 'po_form'], [poFormMessage(REAL.cetak), 'po_form'], [BOTH_MESSAGE(), 'po_form']]);
+  });
+
+  it('a chosen form still on the placeholder: 409 and nothing sent; the other form alone still goes', async () => {
+    await setPo(REAL.cetak, PO_FORM_PLACEHOLDER_URL);
+    const unknown = await chat('82');
+    const noDesign = await chat('83', ['kertas_supreme'], { has_design: false });
+    const withDesign = await chat('84', ['imperial_indopack'], { has_design: true });
+    const before = readCaptured(LOG).length;
+    for (const [conv, action] of [
+      [unknown, { kind: 'po_form' }],
+      [noDesign, { kind: 'po_form' }],
+      [withDesign, { kind: 'po_form', form: 'plano' }],
+      [withDesign, { kind: 'po_form', form: 'both' }],
+    ] as const) {
+      const res = await quickSend(conv.id, action);
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual({ data: null, error: 'PO_FORM_PLACEHOLDER' });
+    }
+    expect(readCaptured(LOG)).toHaveLength(before);
+    for (const conv of [unknown, noDesign, withDesign]) expect(await rowsOf(conv.id)).toHaveLength(0);
+
+    expect((await quickSend(withDesign.id, { kind: 'po_form' })).statusCode).toBe(200);
+    expect(readCaptured(LOG, { to: withDesign.to }).map((c) => c.text)).toEqual([poFormMessage(REAL.cetak)]);
+  });
+
   it('a send the provider refuses is stored as saved, and the chat stays with the AI', async () => {
-    await setPoFormUrl(REAL_PO);
+    await setRealPo();
     const conv = await chat('68');
     gate.refuseNext = 1;
     try {
@@ -406,7 +475,7 @@ describe('POST /api/v1/conversations/:id/quick-send - reference photos', () => {
 
 describe('POST /api/v1/conversations/:id/quick-send - request', () => {
   it('404 for a malformed or unknown conversation id', async () => {
-    await setPoFormUrl(REAL_PO);
+    await setRealPo();
     expect((await quickSend('not-a-uuid', { kind: 'po_form' })).statusCode).toBe(404);
     const res = await quickSend('00000000-0000-4000-8000-000000000000', { kind: 'po_form' });
     expect(res.statusCode).toBe(404);
@@ -421,6 +490,7 @@ describe('POST /api/v1/conversations/:id/quick-send - request', () => {
       { action: { kind: 'price_list', brand: 'lainnya' }, staffName: STAFF },
       { action: { kind: 'reference_photos', productId: 'x' }, staffName: STAFF },
       { action: { kind: 'po_form' }, staffName: '   ' },
+      { action: { kind: 'po_form', form: 'lainnya' }, staffName: STAFF },
       { action: { kind: 'po_form' } },
     ]) {
       const res = await inject('POST', `/api/v1/conversations/${conv.id}/quick-send`, body);
@@ -431,7 +501,7 @@ describe('POST /api/v1/conversations/:id/quick-send - request', () => {
   });
 
   it('the staff name is trimmed and capped at 100 characters', async () => {
-    await setPoFormUrl(REAL_PO);
+    await setRealPo();
     const conv = await chat('74');
     expect((await quickSend(conv.id, { kind: 'po_form' }, `  ${'A'.repeat(150)}  `)).statusCode).toBe(200);
     const [row] = (await rowsOf(conv.id)).filter((r) => r.role === 'assistant');

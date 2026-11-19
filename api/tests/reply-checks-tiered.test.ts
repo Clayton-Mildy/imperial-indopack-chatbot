@@ -350,14 +350,17 @@ describe('verifyFit - the strict price check in the pipeline', () => {
       const echo = draft('Siap kak, sudah saya lihat https://instagram.com/ContohToko 😊');
       expect(await verifyFit(echo, PROMPT, 'x', { judge: okJudge().judge, regenerate: noRegenerate, customerText: 'ini IG saya https://instagram.com/ContohToko' })).toBe(echo);
       const po = draft('Ini form PO-nya kak: https://forms.gle/ContohPO123');
-      const poFormUrl = vi.fn(async () => 'https://forms.gle/ContohPO123');
-      expect(await verifyFit(po, PROMPT, 'x', { judge: okJudge().judge, regenerate: noRegenerate, poFormUrl })).toBe(po);
+      const poFormUrls = vi.fn(async () => ['https://forms.gle/ContohPO123', 'https://forms.gle/ContohPlano456']);
+      expect(await verifyFit(po, PROMPT, 'x', { judge: okJudge().judge, regenerate: noRegenerate, poFormUrls })).toBe(po);
+      // Both configured forms (cetak and plano) are allowed in one reply.
+      const both = draft('Form cetak: https://forms.gle/ContohPO123 - form plano: https://forms.gle/ContohPlano456');
+      expect(await verifyFit(both, PROMPT, 'x', { judge: okJudge().judge, regenerate: noRegenerate, poFormUrls })).toBe(both);
     });
 
     it('reads the PO form setting only when the draft has a link', async () => {
-      const poFormUrl = vi.fn(async () => 'https://forms.gle/ContohPO123');
-      await verifyFit(draft('Boleh tahu ukurannya kak?'), PROMPT, 'x', { judge: okJudge().judge, regenerate: noRegenerate, poFormUrl });
-      expect(poFormUrl).not.toHaveBeenCalled();
+      const poFormUrls = vi.fn(async () => ['https://forms.gle/ContohPO123']);
+      await verifyFit(draft('Boleh tahu ukurannya kak?'), PROMPT, 'x', { judge: okJudge().judge, regenerate: noRegenerate, poFormUrls });
+      expect(poFormUrls).not.toHaveBeenCalled();
     });
   });
 

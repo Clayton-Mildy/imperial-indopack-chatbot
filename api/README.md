@@ -53,8 +53,10 @@ Clean 4-layer architecture: routes → services → repositories → domain.
 
 The catalog is maintained in the dashboard: Excel import/export (`POST /api/v1/catalog/import`,
 `GET /api/v1/catalog/export`), product and reference photos, and one price-list file per brand
-(`brands.catalog_file_url`). The PO form link is a setting (`/api/v1/settings/po-form-url`); while
-it is still the placeholder, the bot never sends it and the team sends the form by hand.
+(`brands.catalog_file_url`). The two PO form links are settings (`/api/v1/settings/po-forms`): cetak
+for a customer with a design, plano for one without; the bot sends one or both from the order's design
+facts. While a form it needs is still the placeholder, the bot never sends it and the team sends the
+form by hand.
 
 ## Scripts
 

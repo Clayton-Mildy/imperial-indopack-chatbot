@@ -3,19 +3,27 @@ import type { BrandSlug } from '../domain/orderProfile.js';
 import { BRAND_NAME } from '../domain/brands.js';
 import { contactHeadline } from '../domain/orderDetails.js';
 import { MESSAGE_SOURCE } from '../domain/messageSources.js';
-import { isPoFormPlaceholder, poFormMessage } from '../domain/constants.js';
+import { isPoFormPlaceholder, poFormsMessage } from '../domain/constants.js';
+import { poFormsForOrder, PO_FORM_KINDS, type PoFormKind } from '../domain/poForms.js';
 import { findConversationById, insertMessage } from '../repositories/conversations.js';
 import { findContactById } from '../repositories/contacts.js';
 import { findPhoneNumberById } from '../repositories/phoneNumbers.js';
 import { getContactProfile } from '../repositories/contactProfiles.js';
 import { getBrandRowsBySlug } from '../repositories/products.js';
 import { listReferenceImageUrls, productExists } from '../repositories/referenceImages.js';
-import { getPoFormUrl } from '../repositories/appSettings.js';
+import { getPoFormUrls } from '../repositories/appSettings.js';
 import { sendDocumentMessage, sendImageMessage, sendTextMessage } from './whatsappSender.js';
 import { outboundMediaRow } from './outboundMedia.js';
 import { markHumanTakeover } from './humanTakeover.js';
 
-export type QuickSendAction = { kind: 'price_list'; brand?: BrandSlug } | { kind: 'reference_photos'; productId: string } | { kind: 'po_form' };
+/**
+ * `form` on po_form: the form staff picked (cetak, plano, or both in one message). Absent, the order's
+ * design facts decide, as for the bot (poFormsForOrder - both when the design is unknown).
+ */
+export type QuickSendAction =
+  | { kind: 'price_list'; brand?: BrandSlug }
+  | { kind: 'reference_photos'; productId: string }
+  | { kind: 'po_form'; form?: PoFormKind | 'both' };
 export type QuickSendError = 'NOT_FOUND' | 'BRAND_UNKNOWN' | 'NO_PRICE_LIST' | 'NO_REFERENCE_PHOTOS' | 'PO_FORM_PLACEHOLDER';
 /** One stored row per item, in send order; `status` 'saved' = the provider refused it (the dashboard shows "gagal terkirim"). */
 export type QuickSendItem = { messageId: string; kind: 'text' | 'image' | 'document'; status: 'sent' | 'saved' };
@@ -30,10 +38,14 @@ const IMAGE_MIME: Record<string, string> = { '.jpg': 'image/jpeg', '.jpeg': 'ima
 /** What the action sends, in order - or why nothing can go. Nothing is sent here. */
 async function itemsFor(action: QuickSendAction, contactId: string): Promise<Item[] | QuickSendError> {
   if (action.kind === 'po_form') {
-    // The placeholder link never reaches a customer, from the bot or from staff.
-    const url = await getPoFormUrl();
-    if (isPoFormPlaceholder(url)) return 'PO_FORM_PLACEHOLDER';
-    return [{ kind: 'text', body: poFormMessage(url), source: MESSAGE_SOURCE.poForm }];
+    const kinds: PoFormKind[] = action.form === 'both' ? [...PO_FORM_KINDS]
+      : action.form ? [action.form]
+        : poFormsForOrder((await getContactProfile(contactId))?.profile ?? {});
+    // The placeholder link never reaches a customer, from the bot or from staff: one chosen form still
+    // on it and nothing goes.
+    const urls = await getPoFormUrls();
+    if (kinds.some((k) => isPoFormPlaceholder(urls[k]))) return 'PO_FORM_PLACEHOLDER';
+    return [{ kind: 'text', body: poFormsMessage(kinds, urls), source: MESSAGE_SOURCE.poForm }];
   }
 
   if (action.kind === 'reference_photos') {
@@ -70,7 +82,7 @@ async function itemsFor(action: QuickSendAction, contactId: string): Promise<Ite
 
 /**
  * One-click sends from the Percakapan screen: a brand's price list, a product's reference photos or
- * the PO form link, to the customer through whatsappSender. Best effort, like POST /api/v1/send:
+ * the PO form link(s), to the customer through whatsappSender. Best effort, like POST /api/v1/send:
  * every item is stored as the staff member's row - 'sent', or 'saved' when the provider refused it,
  * returned per item so the dashboard can say which failed - and once the batch is out, the chat is
  * handed to that staff member (the AI stops) if at least one item went. A refusal (no brand known,

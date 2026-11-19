@@ -1,6 +1,7 @@
 // Constants (imports limited to pure domain modules)
 import { formatMinOrder } from './botSettings.js';
 import { FALLBACK_MIN_PCS } from './pricing.js';
+import { PO_FORM_KINDS, type PoFormKind } from './poForms.js';
 
 export const MAX_CONTEXT_MESSAGES = 20;
 export const MAX_CATALOG_RAG_RESULTS = 20;
@@ -10,13 +11,32 @@ export const MAX_CATALOG_RAG_RESULTS = 20;
 export const CATALOG_SENT_MARKER = 'KATALOG: file terkirim.';
 
 // Sent as its own message after the reply on the turn the model sets send_po_form (the customer
-// agreed to buy at the quoted price). The link comes from settings (getPoFormUrl), never from the
-// model: it is the one place the order is placed (spec 7.3).
+// agreed to buy at the quoted price). The link comes from settings (getPoFormUrls), never from the
+// model: it is the one place the order is placed (spec 7.3). This is the line for one form.
 export function poFormMessage(url: string): string {
   return `Untuk pemesanannya, silakan isi form PO berikut ya kak 🙏\n${url}`;
 }
 
-/** The po_form_url setting until staff set the real Google Form (getPoFormUrl). Never sent to a customer. */
+/** What each form is for, as the customer reads it when both are sent (client, 2026-11-19). */
+export const PO_FORM_LABELS: Record<PoFormKind, string> = {
+  cetak: 'Form order cetak (bila sudah ada desain/logo)',
+  plano: 'Form order plano (bila belum ada desain)',
+};
+
+/**
+ * The PO message for the form(s) poFormsForOrder chose: one form is poFormMessage; both are one
+ * message, each link under its label, cetak first, so the customer picks.
+ */
+export function poFormsMessage(kinds: readonly PoFormKind[], urls: Record<PoFormKind, string>): string {
+  const chosen = PO_FORM_KINDS.filter((k) => kinds.includes(k));
+  if (chosen.length === 1) return poFormMessage(urls[chosen[0]!]);
+  return [
+    'Untuk pemesanannya, silakan isi form PO yang sesuai ya kak 🙏',
+    ...chosen.map((k) => `${PO_FORM_LABELS[k]}:\n${urls[k]}`),
+  ].join('\n\n');
+}
+
+/** Each PO form setting until staff set the real Google Form (getPoFormUrls). Never sent to a customer. */
 export const PO_FORM_PLACEHOLDER_URL = 'https://forms.gle/REPLACE-ME';
 
 const placeholderKey = (url: string): string => url.trim().replace(/\/+$/, '').toLowerCase();
@@ -30,8 +50,8 @@ export function isPoFormPlaceholder(url: string): boolean {
   return placeholderKey(url) === placeholderKey(PO_FORM_PLACEHOLDER_URL);
 }
 
-// Sent instead of the PO link while it is still the placeholder (or cannot be read): a promise, so
-// messageRouter hands the chat to the team, who send the form by hand.
+// Sent instead of the PO link while a form the order needs is still the placeholder (or cannot be
+// read): a promise, so messageRouter hands the chat to the team, who send the form by hand.
 export const CANNED_PO_FORM_FROM_TEAM = 'Untuk form PO-nya, tim kami kirimkan sebentar lagi ya kak 🙏';
 
 // Sent as its own message after the reply (and any photos) on the turn the model sets examples_for_team:
@@ -218,6 +238,7 @@ Pelanggan yang minta model, gsm, atau cetakan yang tidak ada di KATALOG PRODUK d
 – Pelanggan mengirim foto box atau kertas yang dia inginkan → tawarkan produk di KATALOG PRODUK yang jenis dan ukurannya paling dekat; kalau yang dia mau model atau cetakan khusus, itu pesanan custom (lihat Pricing, TIDAK_ADA_DI_KATALOG).` },
   { name: 'PO Form', content: `– Set send_po_form: true HANYA pada giliran pelanggan jelas setuju membeli dengan harga yang sudah disebutkan (mis. "oke kak saya ambil 10 rim", "boleh, saya pesan yang itu") — bukan saat dia baru bertanya, menimbang, atau menawar. Sekali saja untuk pesanan yang sama.
 – Form PO dikirim sistem sebagai pesan tersendiri. JANGAN menulis link apa pun, dan JANGAN menulis kalimat tentang mengisi form PO ("silakan isi form PO", "ini link form-nya") di message — cukup set send_po_form.
+– Ada dua form PO: form order cetak (pelanggan yang sudah punya desain/logo) dan form order plano (pelanggan yang belum punya desain). Sistem memilih dan mengirim form yang sesuai sendiri dari has_design yang tercatat; kalau desainnya belum diketahui, sistem mengirim keduanya dan pelanggan memilih. Jadi sebisa mungkin pastikan pertanyaan desain (sudah punya desain/logo atau belum) sudah terjawab sebelum pelanggan setuju membeli, dan catat jawabannya sebagai has_design. Jangan menyebut sendiri form mana yang dikirim.
 – Di message, ulangi singkat pesanannya (barang, ukuran, jumlah, dan harganya — kalau menyebut harga atau total, panggil hitung_harga lagi di giliran ini) dan ucapkan terima kasih. Tulis pesanannya dalam satu baris di follow_up_notes.
 – Pemesanan diselesaikan lewat form PO dan tim: JANGAN meminta alamat, pembayaran, atau bukti transfer, dan JANGAN bilang pesanan sudah dikonfirmasi, dibayar, atau sedang diproduksi.` },
   { name: 'Rules', content: `– Sapa dengan hangat. Setelah nama diketahui, panggil "Kak <nama>", "Pak <nama>", atau "Bu <nama>" — jangan nama polos, dan jangan menyingkat nama.
