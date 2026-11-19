@@ -92,6 +92,17 @@ export const TeamNotesBodySchema = z.object({
   staffName: z.string().trim().min(1).max(200),
 });
 
+// Quick-send on the conversation panel (services/quickSend.ts). The staff name comes from the
+// dashboard session, capped like the attachment route's.
+export const QuickSendBodySchema = z.object({
+  action: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('price_list'), brand: z.enum(BRAND_SLUGS).optional() }),
+    z.object({ kind: z.literal('reference_photos'), productId: z.string().uuid() }),
+    z.object({ kind: z.literal('po_form') }),
+  ]),
+  staffName: z.string().trim().min(1).transform((s) => s.slice(0, 100)),
+});
+
 export const CreatePhoneNumberBodySchema = z.object({
   number: z.string().min(1),
   label: z.string().optional(),

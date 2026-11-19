@@ -14,18 +14,7 @@ export function storedMediaUrl(link: string): string {
   return link;
 }
 
-/**
- * Stores a photo or PDF the bot (or a dashboard user) just sent, under its wamid. Until 2026-11-10
- * these were never stored at send time: chakraSync imported them later with no file and no sender,
- * so the dashboard showed "Gambar dikirim" under an "AI" label - and, the bot's files being
- * indistinguishable from staff's, every photo staff sent off the phone was labelled "AI" too.
- * With the bot's files stored under their wamid, an outbound file the sync still finds new was
- * sent by a person (chakraSync's PHONE_REPLY_SENDER).
- *
- * Never throws: the file is already with the customer, and a failed insert must not turn into a
- * failed send.
- */
-export async function recordOutboundMedia(opts: {
+interface OutboundMedia {
   conversationId: string;
   kind: 'image' | 'document';
   link: string;
@@ -37,25 +26,45 @@ export async function recordOutboundMedia(opts: {
   source: string;
   /** Extra metadata beside `source` (a price list's brand, a reference photo's product). */
   extra?: Record<string, unknown>;
-}): Promise<void> {
+  /** 'saved' when the provider refused the send; default 'sent'. */
+  status?: 'sent' | 'saved';
+}
+
+/** The message row for a photo or PDF that was sent (or tried): what recordOutboundMedia stores. */
+export function outboundMediaRow(opts: OutboundMedia): Parameters<typeof insertMessage>[0] {
   const placeholder = opts.kind === 'image' ? '[Foto]' : '[Dokumen]';
+  return {
+    conversationId: opts.conversationId,
+    role: 'assistant',
+    // Same body the sync gives an imported file, so the AI's history reads the same either way.
+    body: opts.caption?.trim() || opts.filename || placeholder,
+    waMessageId: opts.wamid || undefined,
+    status: opts.status ?? 'sent',
+    senderName: opts.senderName ?? null,
+    metadata: {
+      source: opts.source,
+      attachmentType: opts.kind,
+      mediaUrl: storedMediaUrl(opts.link),
+      ...(opts.filename && { filename: opts.filename }),
+      ...opts.extra,
+    },
+  };
+}
+
+/**
+ * Stores a photo or PDF the bot (or a dashboard user) just sent, under its wamid. Until 2026-11-10
+ * these were never stored at send time: chakraSync imported them later with no file and no sender,
+ * so the dashboard showed "Gambar dikirim" under an "AI" label - and, the bot's files being
+ * indistinguishable from staff's, every photo staff sent off the phone was labelled "AI" too.
+ * With the bot's files stored under their wamid, an outbound file the sync still finds new was
+ * sent by a person (chakraSync's PHONE_REPLY_SENDER).
+ *
+ * Never throws: the file is already with the customer, and a failed insert must not turn into a
+ * failed send.
+ */
+export async function recordOutboundMedia(opts: OutboundMedia): Promise<void> {
   try {
-    await insertMessage({
-      conversationId: opts.conversationId,
-      role: 'assistant',
-      // Same body the sync gives an imported file, so the AI's history reads the same either way.
-      body: opts.caption?.trim() || opts.filename || placeholder,
-      waMessageId: opts.wamid || undefined,
-      status: 'sent',
-      senderName: opts.senderName ?? null,
-      metadata: {
-        source: opts.source,
-        attachmentType: opts.kind,
-        mediaUrl: storedMediaUrl(opts.link),
-        ...(opts.filename && { filename: opts.filename }),
-        ...opts.extra,
-      },
-    });
+    await insertMessage(outboundMediaRow(opts));
   } catch (err) {
     console.warn('[outboundMedia] could not store a sent file:', err instanceof Error ? err.message : err);
   }

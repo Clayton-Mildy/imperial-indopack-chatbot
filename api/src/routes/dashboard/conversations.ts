@@ -14,9 +14,11 @@ import {
   PatchConversationBodySchema,
   MarkReadBodySchema,
   TeamNotesBodySchema,
+  QuickSendBodySchema,
 } from '../../domain/schemas.js';
 import { NO_SIGNALS, classifyHandoff } from '../../domain/handoff.js';
 import { getOrderPanel } from '../../services/orderPanel.js';
+import { quickSend } from '../../services/quickSend.js';
 
 // A malformed id is a conversation that does not exist, not a database error.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -147,6 +149,22 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       const notes = await setTeamNotes(request.params.id, body.data.text, body.data.staffName);
       if (!notes) return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
       return reply.send({ data: notes, error: null });
+    }
+  );
+
+  // POST /api/v1/conversations/:id/quick-send - a price list, reference photos or the PO form link,
+  // sent as the staff member, who then holds the chat. 409 when there is nothing to send.
+  app.post<{ Params: { id: string } }>(
+    '/api/v1/conversations/:id/quick-send',
+    { preHandler: [apiKeyAuth] },
+    async (request, reply) => {
+      if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
+      const body = QuickSendBodySchema.safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
+
+      const result = await quickSend(request.params.id, body.data.action, body.data.staffName);
+      if (!result.ok) return reply.code(result.error === 'NOT_FOUND' ? 404 : 409).send({ data: null, error: result.error });
+      return reply.send({ data: { sent: result.sent }, error: null });
     }
   );
 
