@@ -7,9 +7,11 @@ interface HeaderProps {
   title: string;
   breadcrumb?: string;
   breadcrumbHref?: string;
+  /** Shown right after the title, e.g. a product's Aktif / Nonaktif status. */
+  badge?: React.ReactNode;
 }
 
-export async function Header({ title, breadcrumb, breadcrumbHref }: HeaderProps) {
+export async function Header({ title, breadcrumb, breadcrumbHref, badge }: HeaderProps) {
   const session = await auth();
   const t = await getT();
   const userName = session?.user?.name ?? session?.user?.email ?? t("header.defaultUser");
@@ -56,9 +58,13 @@ export async function Header({ title, breadcrumb, breadcrumbHref }: HeaderProps)
             </Link>
             <span style={{ color: "#CBD5E1" }}>/</span>
             <span style={{ color: "#1F2421" }}>{title}</span>
+            {badge}
           </span>
         ) : (
-          title
+          <>
+            {title}
+            {badge}
+          </>
         )}
       </div>
 

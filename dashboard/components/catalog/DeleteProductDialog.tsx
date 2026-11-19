@@ -20,9 +20,19 @@ const footerBtn: React.CSSProperties = {
 
 /**
  * Hapus produk: "Hapus permanen" stays disabled until the ack box is ticked; "Nonaktifkan saja"
- * switches the bot's offer off instead and closes. Both server actions revalidate /catalog.
+ * switches the bot's offer off instead and closes. Both server actions revalidate /catalog. With
+ * `onDone`, a finished delete or deactivation is reported there instead of closing (the edit page
+ * leaves for the catalog after a delete).
  */
-export function DeleteProductDialog({ product, onClose }: { product: CatalogProduct; onClose: () => void }) {
+export function DeleteProductDialog({
+  product,
+  onClose,
+  onDone,
+}: {
+  product: CatalogProduct;
+  onClose: () => void;
+  onDone?: (kind: "delete" | "deactivate") => void;
+}) {
   const t = useT();
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState<"delete" | "deactivate" | null>(null);
@@ -43,7 +53,7 @@ export function DeleteProductDialog({ product, onClose }: { product: CatalogProd
     setError(null);
     try {
       const res = kind === "delete" ? await deleteProductAction(product.id) : await setProductActiveAction(product.id, false);
-      if (res.ok) return onClose();
+      if (res.ok) return onDone ? onDone(kind) : onClose();
       setError(res.error ?? t("catalog.err.saveFailed"));
     } catch {
       setError(t("common.err.network"));

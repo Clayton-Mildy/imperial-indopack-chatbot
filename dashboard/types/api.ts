@@ -126,6 +126,91 @@ export interface CatalogProduct {
 /** GET /catalog/products meta: per brand tab, following search and status but not the brand filter. */
 export type CatalogCounts = Record<"all" | BrandSlug, number>;
 
+/**
+ * The product form as the API takes it (api/src/services/catalogEditor.ts ProductDraftSchema). A null
+ * quantity or price is "not filled in yet"; the API names it by size and tier index.
+ */
+export interface ProductDraft {
+  brand: BrandSlug;
+  name: string;
+  gsm: string | null;
+  print: string | null;
+  finishing: string | null;
+  use: string;
+  isActive: boolean;
+  sizes: {
+    /** The variant id from GET; absent for a size added in the form. */
+    id?: string | null;
+    size: string;
+    tiers: {
+      minQty: number | null;
+      qtyUnit: QtyUnit;
+      priceIdr: number | null;
+      priceUnit: QtyUnit;
+      includesDelivery: boolean;
+    }[];
+  }[];
+}
+
+export type ProductInputErrorCode =
+  | "name_required"
+  | "use_required"
+  | "no_sizes"
+  | "size_required"
+  | "duplicate_size"
+  | "no_tiers"
+  | "qty_missing"
+  | "qty_invalid"
+  | "price_missing"
+  | "price_invalid"
+  | "duplicate_tier"
+  | "tier_order";
+
+export interface ProductInputError {
+  code: ProductInputErrorCode;
+  sizeIndex?: number;
+  tierIndex?: number;
+}
+
+/** One line of a product's change history (api/src/services/catalogEditor.ts). */
+export type CatalogChange =
+  | { kind: "created"; via: "form" | "import"; fileName?: string }
+  | { kind: "field"; field: "name" | "brand" | "gsm" | "print" | "finishing" | "use"; from: string | null; to: string | null }
+  | { kind: "active"; to: boolean }
+  | { kind: "size_added" | "size_removed"; size: string }
+  | { kind: "size_renamed"; from: string; to: string }
+  | { kind: "tier_added" | "tier_removed"; size: string; minQty: number; qtyUnit: QtyUnit }
+  | { kind: "tier_price"; size: string; minQty: number; qtyUnit: QtyUnit; priceUnit: QtyUnit; from: number; to: number }
+  | { kind: "delivery"; size: string; minQty: number; qtyUnit: QtyUnit; to: boolean };
+
+/** POST /catalog/products/preview: the form's "Yang dilihat bot" panel. */
+export interface ProductPreview {
+  botText: string;
+  /** Sizes left out of botText because the validator has something against them, as typed. */
+  hiddenSizes: string[];
+  errors: ProductInputError[];
+  /** What saving this draft over the stored product would record; [] for a new product or an invalid draft. */
+  changes: CatalogChange[];
+}
+
+/** api/src/repositories/catalogAudit.ts */
+export type CatalogChangeType = "created" | "updated" | "imported" | "activated" | "deactivated" | "deleted";
+
+export interface CatalogHistoryEntry {
+  id: string;
+  changeType: CatalogChangeType;
+  changes: CatalogChange[];
+  actorName: string;
+  changedAt: string;
+}
+
+/** GET /catalog/products/:id - the product, its history (newest first) and its use in chats. */
+export interface CatalogProductDetail {
+  product: CatalogProduct;
+  history: CatalogHistoryEntry[];
+  usage: { quotedLast30Days: number; wonLeads: number };
+}
+
 /** api/src/domain/pricing.ts, without `no_tiers` (the price check reports that as not_in_catalog). */
 export type PriceQuote =
   | {

@@ -1,4 +1,4 @@
-// Size guard for the multipart proxies (catalog import, brand price lists). With a Content-Length
+// Size guard for the multipart proxies (catalog import, brand price lists, reference photos). With a Content-Length
 // the verdict comes from the header, before any of the body is read; without one (Cloudflare can
 // forward an upload chunked, and the API's /app proxy copies Content-Length only when it had one)
 // the body is counted while it is read and dropped as soon as it passes the cap. The API checks
@@ -8,6 +8,8 @@
 export const MULTIPART_SLACK_BYTES = 64 * 1024;
 export const XLSX_MAX_BYTES = 5 * 1024 * 1024;
 export const PDF_MAX_BYTES = 20 * 1024 * 1024;
+/** A design-reference photo (JPG/PNG); the API itself takes images up to its 20 MB multipart cap. */
+export const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
 export type UploadRefusal = {
   status: 400 | 413;

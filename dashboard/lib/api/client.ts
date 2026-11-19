@@ -27,7 +27,9 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public code: string,
-    message: string
+    message: string,
+    /** The body's `details`, when the API sent one (the catalog editor's per-field errors). */
+    public details?: unknown
   ) {
     super(message);
     this.name = "ApiError";
@@ -80,7 +82,8 @@ export async function apiFetch<T>(
         : res.status === 404
         ? "NOT_FOUND"
         : "API_ERROR",
-      body.error ?? `HTTP ${res.status}`
+      body.error ?? `HTTP ${res.status}`,
+      (body as { details?: unknown }).details
     );
   }
 
