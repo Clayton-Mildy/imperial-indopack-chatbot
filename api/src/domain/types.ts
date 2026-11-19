@@ -64,6 +64,8 @@ export type ProductVariant = {
   stockStatus: StockStatus;
   isActive: boolean;
   description: string | null;
+  /** Gramasi of this size row, canonical "<n> gsm"; null when the product has no gramasi choice. */
+  gsm: string | null;
   sourceUrl: string | null;
   scrapedAt: string | null;
   sourceHash: string | null;

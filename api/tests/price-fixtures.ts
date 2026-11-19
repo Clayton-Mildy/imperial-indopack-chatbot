@@ -25,7 +25,7 @@ function variant(over: Partial<ProductVariant> & Pick<ProductVariant, 'id' | 'pr
   return {
     sku: null, priceIdr: null, mpPriceIdr: null, isiCtn: null, isiBox: null,
     uomPriceId: null, mpUomId: null, uomCtnId: null, uomBoxId: null, minOrderQty: null, minOrderUomId: null,
-    imageUrl: null, stockStatus: 'normal', isActive: true, description: null,
+    imageUrl: null, stockStatus: 'normal', isActive: true, description: null, gsm: null,
     sourceUrl: null, scrapedAt: null, sourceHash: null, createdAt: TS, updatedAt: TS,
     priceTiers: [],
     ...over,

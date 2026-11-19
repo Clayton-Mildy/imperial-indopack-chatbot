@@ -226,6 +226,8 @@ export const productVariants = pgTable(
     stockStatus: text('stock_status').notNull().default('normal'),
     isActive: boolean('is_active').notNull().default(true),
     description: text('description'),
+    // Gramasi of this size row, canonical "<n> gsm" (0030). null = the product has no gramasi choice.
+    gsm: text('gsm'),
     sourceUrl: text('source_url'),
     scrapedAt: timestamp('scraped_at', { withTimezone: true }),
     sourceHash: text('source_hash'),
@@ -234,7 +236,7 @@ export const productVariants = pgTable(
   },
   (table) => [
     index('idx_variants_product').on(table.productId, table.isActive),
-    uniqueIndex('uq_variant_name_per_product').on(table.productId, table.name),
+    uniqueIndex('uq_variant_gsm_name_per_product').on(table.productId, sql`coalesce(${table.gsm}, '')`, table.name),
   ]
 );
 

@@ -307,7 +307,7 @@ export function previewProduct(draft: ProductDraft, stored: CatalogProduct | nul
     variants.push({
       id: s.id ?? `preview-${i}`, productId: stored?.id ?? 'preview', name: s.size.trim(), sku: null, priceIdr: lowestTier(priceTiers)!.priceIdr,
       mpPriceIdr: null, isiCtn: null, isiBox: null, uomPriceId: null, mpUomId: null, uomCtnId: null, uomBoxId: null, minOrderQty: null,
-      minOrderUomId: null, priceTiers, imageUrl: null, stockStatus: 'normal', isActive: true, description: null, sourceUrl: null,
+      minOrderUomId: null, priceTiers, imageUrl: null, stockStatus: 'normal', isActive: true, description: null, gsm: null, sourceUrl: null,
       scrapedAt: null, sourceHash: null, createdAt: now, updatedAt: now,
     });
   });

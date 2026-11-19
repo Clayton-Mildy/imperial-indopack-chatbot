@@ -105,6 +105,7 @@ export function mapVariant(
     stockStatus: row.stockStatus as StockStatus,
     isActive: row.isActive,
     description: row.description,
+    gsm: row.gsm,
     sourceUrl: row.sourceUrl,
     scrapedAt: row.scrapedAt?.toISOString() ?? null,
     sourceHash: row.sourceHash,
@@ -533,6 +534,7 @@ export async function createVariant(
     stockStatus?: StockStatus;
     isActive?: boolean;
     description?: string | null;
+    gsm?: string | null;
     sourceUrl?: string | null;
   }
 ): Promise<ProductVariant> {
@@ -557,6 +559,7 @@ export async function createVariant(
       stockStatus: data.stockStatus ?? 'normal',
       isActive: data.isActive ?? true,
       description: data.description ?? null,
+      gsm: data.gsm ?? null,
       sourceUrl: data.sourceUrl ?? null,
     })
     .returning();
@@ -583,6 +586,7 @@ export async function updateVariant(
     stockStatus: StockStatus;
     isActive: boolean;
     description: string | null;
+    gsm: string | null;
     sourceUrl: string | null;
   }>
 ): Promise<ProductVariant | null> {
