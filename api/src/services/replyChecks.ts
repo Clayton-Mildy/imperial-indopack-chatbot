@@ -237,6 +237,7 @@ const PAID_RE = new RegExp([
 const PRODUCED_RE = new RegExp([
   String.raw`\b(?:sedang|lagi)\s+(?:dalam\s+)?(?:(?:di)?produksi|proses\s+produksi)\b`,
   String.raw`\b${DONE}\s+dalam\s+(?:proses\s+)?produksi\b`,
+  String.raw`\b${DONE}\s+(?:di)?proses\s+produksi\b`,
   String.raw`\bdalam\s+(?:proses\s+|tahap\s+)?produksi\b`,
   String.raw`\b${DONE}\s+masuk\s+(?:tahap\s+|proses\s+)?produksi\b`,
   String.raw`\b(?:sedang|lagi)\s+(?:di)?cetak\b`,

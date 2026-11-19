@@ -328,6 +328,7 @@ describe('verifyReplyOrderStatus', () => {
     'Pesanan kakak sedang diproduksi',
     'Saat ini sedang dalam proses produksi ya kak',
     'Kertasnya sedang dicetak kak',
+    'Pesanan kakak sudah proses produksi ya kak.',
     'Pesanannya sudah masuk produksi',
     'Barangnya sudah dikirim ya kak',
     'Pesanan sudah kami kirimkan kemarin',
