@@ -59,6 +59,16 @@ export interface ContactWithProfile extends Contact {
   followUpNotes: string | null;
 }
 
+/** Why a chat was handed to the team (api/src/domain/handoff.ts HANDOFF_CATEGORIES). */
+export type HandoffCategory =
+  | "harga_custom"
+  | "desain_masuk"
+  | "pesanan_besar"
+  | "minta_orang"
+  | "komplain"
+  | "bukan_pembeli"
+  | "lainnya";
+
 export interface Conversation {
   id: string;
   contactId: string;
@@ -66,6 +76,8 @@ export interface Conversation {
   status: ConversationStatus;
   escalationReason: string | null;
   assignedAgent: string | null;
+  /** Why the chat went to the team; null when it is not held. */
+  handoffCategory?: HandoffCategory | null;
   followUpNotes: string | null;
   createdAt: string;
   /** Row mtime — only bumped on status/follow-up changes. Not "last activity". */
@@ -93,6 +105,49 @@ export interface Message {
 
 export interface ConversationWithMessages extends Conversation {
   messages: Message[];
+}
+
+/** The inbox tabs (api/src/repositories/conversations.ts ConversationView): team = escalated or needs_human, ai = active. */
+export type ConversationView = "team" | "ai" | "resolved";
+
+/** GET /conversations meta.counts: each tab's size under the same search. */
+export interface ConversationCounts {
+  all: number;
+  team: number;
+  ai: number;
+  resolved: number;
+}
+
+/** GET /conversations meta: the paging fields and each tab's count. */
+export interface ConversationListMeta {
+  page: number;
+  total: number;
+  limit: number;
+  counts: ConversationCounts;
+}
+
+/** One row of GET /conversations (api/src/repositories/conversations.ts ConversationListRow). */
+export interface ConversationListRow
+  extends Omit<Conversation, "handoffCategory" | "contact" | "phoneNumber" | "lastMessageAt" | "escalatedAt"> {
+  handoffCategory: HandoffCategory | null;
+  conversationSummary: string | null;
+  teamNotes: string | null;
+  teamNotesUpdatedAt: string | null;
+  teamNotesUpdatedBy: string | null;
+  contact?: { id: string; waId: string; displayName: string | null };
+  phoneNumber?: { id: string; number: string; label: string | null };
+  unread: boolean;
+  lastMessageAt: string;
+  escalatedAt: string | null;
+  /** The name the bot collected (profile `name`), else the WhatsApp display name. */
+  customerName: string | null;
+  businessName: string | null;
+  /** Brands discussed (profile `brands`), known slugs only. */
+  brands: BrandSlug[];
+  /** The last chat line (customer, bot or staff); internal system notes are left out. */
+  lastMessage: { body: string; role: string; senderName: string | null } | null;
+  /** When the real PO form link last went to the customer (the placeholder line does not count). */
+  poFormSentAt: string | null;
 }
 
 /** A quantity or price unit: 1 rim = 500 pcs (api/src/domain/pricing.ts). */
@@ -244,6 +299,87 @@ export interface PriceToolCall {
   variantName: string | null;
   /** The quote behind a `quote`, `below_minimum` or `above_top_tier` call; null for `not_in_catalog`. */
   quote: PriceQuote | null;
+}
+
+/** The six order details (api/src/domain/orderDetails.ts ORDER_DETAIL_KEYS), always in this order. */
+export type OrderDetailKey = "name" | "business_name" | "model" | "size" | "qty" | "design";
+
+/** One row of the order panel (api/src/services/orderPanel.ts PanelDetailRow). */
+export interface PanelDetailRow {
+  key: OrderDetailKey;
+  filled: boolean;
+  value: string | null;
+  note?: { kind: "out_of_catalog" } | { kind: "file_sent"; at: string };
+}
+
+/** "Terdekat di katalog" for one sized item (api/src/services/nearestCatalog.ts NearestMatch). */
+export interface NearestMatch {
+  item: OrderItem;
+  productId: string;
+  productName: string;
+  variantName: string;
+  /** The catalog has the size itself, not just a close one. */
+  exact: boolean;
+  /** The quote for the item's quantity; null when the quantity or its unit is unknown. */
+  quote: PriceQuote | { kind: "no_tiers" } | null;
+  /** The quote's tier; above the top tier the top one; otherwise the lowest tier. null when the size has no tiers. */
+  tier: PriceTier | null;
+}
+
+/** A photo or document the customer sent (api/src/services/orderPanel.ts CustomerFile). */
+export interface CustomerFile {
+  messageId: string;
+  kind: "image" | "document";
+  url: string | null;
+  filename: string;
+  at: string;
+}
+
+/** Catatan tim (api/src/repositories/conversations.ts TeamNotes). */
+export interface TeamNotes {
+  text: string;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+/** GET /conversations/:id/order-panel (api/src/services/orderPanel.ts OrderPanel). */
+export interface OrderPanel {
+  brands: BrandSlug[];
+  lead: { id: string; status: LeadStatus; kind: LeadKind; temperature: LeadTemperature | null } | null;
+  details: PanelDetailRow[];
+  detailsFilled: number;
+  nearest: NearestMatch[];
+  /** Newest first. */
+  files: CustomerFile[];
+  teamNotes: TeamNotes;
+}
+
+/** POST /conversations/:id/quick-send (api/src/services/quickSend.ts). */
+export type QuickSendAction =
+  | { kind: "price_list"; brand?: BrandSlug }
+  | { kind: "reference_photos"; productId: string }
+  | { kind: "po_form" };
+export type QuickSendError = "NOT_FOUND" | "BRAND_UNKNOWN" | "NO_PRICE_LIST" | "NO_REFERENCE_PHOTOS" | "PO_FORM_PLACEHOLDER";
+/** One stored row per item, in send order; `saved` = the provider refused it. */
+export interface QuickSendItem {
+  messageId: string;
+  kind: "text" | "image" | "document";
+  status: "sent" | "saved";
+}
+
+/** A product in the quick-send photo picker: the active catalog with each product's reference-photo count. */
+export interface PhotoProduct {
+  id: string;
+  name: string;
+  brand: BrandSlug;
+  photos: number;
+}
+
+/** GET /settings/po-form-url: the link, whether it is still the placeholder, and the message the customer gets. */
+export interface PoFormSetting {
+  url: string;
+  isPlaceholder: boolean;
+  message: string;
 }
 
 /** A brand's price-list PDF, the file the bot sends (api/src/repositories/products.ts). */

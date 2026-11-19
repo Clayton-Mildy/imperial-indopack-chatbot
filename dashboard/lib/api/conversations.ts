@@ -1,31 +1,50 @@
 import { apiFetch } from "./client";
-import type { Conversation, ConversationWithMessages, ContactProfile, PaginatedResponse } from "@/types/api";
+import type {
+  Conversation,
+  ConversationCounts,
+  ConversationListMeta,
+  ConversationListRow,
+  ConversationView,
+  ConversationWithMessages,
+  OrderPanel,
+  QuickSendAction,
+  QuickSendItem,
+  TeamNotes,
+} from "@/types/api";
 
-export async function getConversations(params?: {
-  status?: string;
+// The Percakapan screen's API (api/src/routes/dashboard/conversations.ts).
+
+const EMPTY_COUNTS: ConversationCounts = { all: 0, team: 0, ai: 0, resolved: 0 };
+
+/** One inbox page: the tab (none = all), the search over name, business and number. */
+export async function getConversations(params: {
+  view?: ConversationView;
+  search?: string;
   page?: number;
   limit?: number;
-  search?: string;
-  upsell_accepted?: boolean;
-}): Promise<PaginatedResponse<Conversation>> {
+}): Promise<{ rows: ConversationListRow[]; meta: ConversationListMeta }> {
   const qs = new URLSearchParams();
-  if (params?.status) qs.set("status", params.status);
-  if (params?.page) qs.set("page", String(params.page));
-  if (params?.limit) qs.set("limit", String(params.limit));
-  if (params?.search) qs.set("search", params.search);
-  if (params?.upsell_accepted) qs.set("upsell_accepted", "true");
-
-  const query = qs.toString() ? `?${qs.toString()}` : "";
-  const envelope = await apiFetch<Conversation[]>(`/conversations${query}`);
-
+  if (params.view) qs.set("view", params.view);
+  if (params.search) qs.set("search", params.search);
+  if (params.page) qs.set("page", String(params.page));
+  if (params.limit) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  const envelope = await apiFetch<ConversationListRow[]>(`/conversations${query ? `?${query}` : ""}`);
+  // This route's meta carries counts beside the paging fields ApiEnvelope declares.
+  const meta = envelope.meta as unknown as Partial<ConversationListMeta> | undefined;
   return {
-    data: envelope.data ?? [],
-    meta: envelope.meta ?? { page: 1, total: 0, limit: 20 },
+    rows: envelope.data ?? [],
+    meta: {
+      page: meta?.page ?? params.page ?? 1,
+      total: meta?.total ?? 0,
+      limit: meta?.limit ?? params.limit ?? 20,
+      counts: { ...EMPTY_COUNTS, ...meta?.counts },
+    },
   };
 }
 
 export async function getConversation(id: string): Promise<ConversationWithMessages> {
-  const envelope = await apiFetch<ConversationWithMessages>(`/conversations/${id}`);
+  const envelope = await apiFetch<ConversationWithMessages>(`/conversations/${encodeURIComponent(id)}`);
   if (!envelope.data) {
     throw new Error("Conversation not found");
   }
@@ -36,7 +55,7 @@ export async function patchConversation(
   id: string,
   data: { status?: string; assignedAgent?: string }
 ): Promise<Conversation> {
-  const envelope = await apiFetch<Conversation>(`/conversations/${id}`, {
+  const envelope = await apiFetch<Conversation>(`/conversations/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
@@ -46,13 +65,31 @@ export async function patchConversation(
   return envelope.data;
 }
 
-export async function getContactProfile(conversationId: string): Promise<ContactProfile | null> {
-  const envelope = await apiFetch<ContactProfile | null>(`/conversations/${conversationId}/contact-profile`);
-  return envelope.data ?? null;
+/** The order panel: six details, nearest catalog items, customer files, team notes. A 404 throws ApiError(404). */
+export async function getOrderPanel(conversationId: string): Promise<OrderPanel> {
+  const envelope = await apiFetch<OrderPanel>(`/conversations/${encodeURIComponent(conversationId)}/order-panel`);
+  if (!envelope.data) throw new Error("ORDER_PANEL_EMPTY");
+  return envelope.data;
 }
 
-export async function markFollowUpDone(conversationId: string): Promise<void> {
-  await apiFetch<{ ok: boolean }>(`/conversations/${conversationId}/contact-profile/follow-up-done`, {
+/** Catatan tim (at most 2000 characters), written by the session's staff member. */
+export async function saveTeamNotes(conversationId: string, text: string, staffName: string): Promise<TeamNotes> {
+  const envelope = await apiFetch<TeamNotes>(`/conversations/${encodeURIComponent(conversationId)}/team-notes`, {
     method: "PATCH",
+    body: JSON.stringify({ text, staffName }),
   });
+  if (!envelope.data) throw new Error("TEAM_NOTES_EMPTY");
+  return envelope.data;
+}
+
+/**
+ * A price list, reference photos or the PO form link, sent as the staff member. One stored row per
+ * item ('saved' = the provider refused it). A 404 or 409 throws ApiError with the QuickSendError as its message.
+ */
+export async function quickSend(conversationId: string, action: QuickSendAction, staffName: string): Promise<QuickSendItem[]> {
+  const envelope = await apiFetch<{ sent: QuickSendItem[] }>(`/conversations/${encodeURIComponent(conversationId)}/quick-send`, {
+    method: "POST",
+    body: JSON.stringify({ action, staffName }),
+  });
+  return envelope.data?.sent ?? [];
 }
