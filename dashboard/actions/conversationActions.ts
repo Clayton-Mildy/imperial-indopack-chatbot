@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth } from "@/lib/auth";
 import { patchConversation, quickSend, saveTeamNotes } from "@/lib/api/conversations";
 import { listCatalogProducts } from "@/lib/api/catalog";
 import { getPoFormSetting } from "@/lib/api/settings";
@@ -12,8 +11,8 @@ import { isReadOnly, sessionStaff } from "@/lib/session";
 import type { PhotoProduct, PoFormSetting, QuickSendAction, QuickSendError, QuickSendItem, TeamNotes } from "@/types/api";
 
 export async function resolveConversation(id: string) {
-  const session = await auth();
-  const agentName = session?.user?.name ?? "Agen";
+  if (await isReadOnly()) throw new Error("FORBIDDEN");
+  const { staffName: agentName } = await sessionStaff();
 
   await patchConversation(id, { status: "resolved" });
   revalidatePath(`/conversations/${id}`);
@@ -30,6 +29,7 @@ export async function resolveConversation(id: string) {
 
 /** "Ambil alih": the session's staff member holds the chat (the pill reads "Ditangani tim · {name}") and the AI stops. */
 export async function takeOverConversation(id: string) {
+  if (await isReadOnly()) throw new Error("FORBIDDEN");
   const { staffName: agentName } = await sessionStaff();
 
   await patchConversation(id, { status: "needs_human", assignedAgent: agentName });
@@ -46,8 +46,8 @@ export async function takeOverConversation(id: string) {
 }
 
 export async function returnToAi(id: string) {
-  const session = await auth();
-  const agentName = session?.user?.name ?? "Agen";
+  if (await isReadOnly()) throw new Error("FORBIDDEN");
+  const { staffName: agentName } = await sessionStaff();
 
   await patchConversation(id, { status: "active" });
   revalidatePath(`/conversations/${id}`);

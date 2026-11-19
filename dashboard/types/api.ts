@@ -687,3 +687,27 @@ export interface ChakraSyncStatus {
   } | null;
   running: boolean;
 }
+
+/** One chat waiting on the team (api/src/services/teamQueue.ts TeamQueueItem). */
+export interface TeamQueueItem {
+  conversationId: string;
+  customerName: string | null;
+  businessName: string | null;
+  waId: string;
+  brands: BrandSlug[];
+  itemsSummary: string;
+  detailsFilled: number;
+  missing: OrderDetailKey[];
+  /** ISO time the chat started waiting. */
+  waitingSince: string;
+  assignedAgent: string | null;
+  status: "escalated" | "needs_human";
+}
+
+/** GET /team-queue (api/src/services/teamQueue.ts TeamQueue): all seven categories, in HANDOFF_CATEGORIES order. */
+export interface TeamQueue {
+  waitingCount: number;
+  oldestWaitingSince: string | null;
+  reminderMinutes: number;
+  groups: { category: HandoffCategory; items: TeamQueueItem[] }[];
+}

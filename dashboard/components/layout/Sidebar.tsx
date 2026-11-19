@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { signOut } from "next-auth/react";
-import { getEscalationCount } from "@/actions/escalationActions";
+import { getTeamQueueCount } from "@/actions/teamQueueActions";
 import { roleLabel as roleLabelOf } from "@/lib/roles";
 import { useT } from "@/lib/i18n/LangProvider";
 import type { TKey } from "@/lib/i18n/core";
@@ -74,7 +74,7 @@ export function Sidebar({ role, userName }: { role: string; userName: string }) 
   // only has to be right when someone is looking at it.
   useEffect(() => {
     let active = true;
-    void getEscalationCount().then((count) => {
+    void getTeamQueueCount().then((count) => {
       if (active) setQueueCount(count);
     });
     return () => {
