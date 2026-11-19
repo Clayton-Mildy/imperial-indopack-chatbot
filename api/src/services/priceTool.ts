@@ -194,7 +194,7 @@ export async function runPriceTool(input: PriceToolInputType, catalog?: Product[
   }
   if (sizes.length === 0) {
     const ready = readySizes(active);
-    return notInCatalog(`${product.name} ukuran "${input.size}" tidak ada di katalog.${ready.length ? ` Ukuran yang ada: ${ready.join(', ')}.` : ''}`, product);
+    return notInCatalog(`${product.name} ukuran "${input.size}" tidak ada di katalog.${ready.length ? ` Ukuran yang ada: ${ready.join(', ')}.` : ''} Ukuran ini pesanan custom, harganya dihitung tim: jangan sebut harga apa pun, set confidence "low" dengan escalation_reason berisi barang, ukuran, dan jumlahnya.`, product);
   }
   const variant: ProductVariant = sizes[0]!;
   const item = `${product.name} ukuran ${variant.name}`;

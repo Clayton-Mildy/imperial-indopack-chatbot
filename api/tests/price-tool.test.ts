@@ -237,6 +237,12 @@ describe('runPriceTool - two variants with one size', () => {
     const r = await runPriceTool({ ...SUPREME_INPUT, size: '32x32' }, twin(['30 x 30 cm', '30x30', '25 x 25 cm']));
     expect(r.text).toContain('Ukuran yang ada: 30 x 30 cm, 25 x 25 cm.');
   });
+
+  it('an unknown size is a custom order: no price, the team calculates it', async () => {
+    const r = await runPriceTool({ ...SUPREME_INPUT, size: '32x32' }, twin(['30 x 30 cm', '25 x 25 cm']));
+    expect(r.text).toMatch(/pesanan custom[^.]*dihitung tim[^\n]*jangan sebut harga[^\n]*confidence "low"/);
+    expect(r.figures).toEqual([]);
+  });
 });
 
 describe('runPriceTool - the catalog source', () => {
