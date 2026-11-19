@@ -9,6 +9,7 @@ import {
   saveProductAction,
   setProductActiveAction,
 } from "@/actions/catalogActions";
+import { AddGramasi, GramasiHeader } from "@/components/catalog/GramasiControls";
 import { DeleteProductDialog } from "@/components/catalog/DeleteProductDialog";
 import { ProductHistory, ProductUsage } from "@/components/catalog/ProductHistory";
 import { BASE_PATH } from "@/lib/basePath";
@@ -19,6 +20,7 @@ import {
   MAX_TEXT_LENGTH,
   MAX_USE_LENGTH,
   PRINT_OPTIONS,
+  addGramasi,
   copyTiersToOtherSizes,
   defaultPriceUnit,
   describeChange,
@@ -28,11 +30,16 @@ import {
   errorMessage,
   formErrors,
   fromCatalogProduct,
+  gramasiGroups,
   isJpgOrPng,
   nextTierRow,
   parseQty,
   parseRupiah,
   previousPrice,
+  removeGramasi,
+  renameGramasi,
+  sameGsm,
+  setFirstGramasi,
   shiftErrors,
   sizeChange,
   toDraft,
@@ -253,8 +260,8 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
     setForm((f) => copyTiersToOtherSizes(f, si));
     setTouched((list) => [
       ...list.filter((r) => r.sizeIndex === undefined || r.sizeIndex === si || (r.field !== "qty" && r.field !== "price")),
-      ...form.sizes.flatMap((_, i) =>
-        i === si ? [] : Array.from({ length: sourceTiers }, (_, ti): TouchedField => ({ field: "price", sizeIndex: i, tierIndex: ti }))
+      ...form.sizes.flatMap((o, i) =>
+        i === si || !sameGsm(o.gsm, form.sizes[si]?.gsm ?? "") ? [] : Array.from({ length: sourceTiers }, (_, ti): TouchedField => ({ field: "price", sizeIndex: i, tierIndex: ti }))
       ),
     ]);
   }
@@ -300,8 +307,28 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
     setTouched((list) => shiftErrors(list, si, ti));
   }
 
-  function addSize() {
-    setForm((f) => ({ ...f, sizes: [...f.sizes, emptySize(f.brand)] }));
+  /** A new size inside one gramasi ('' on a no-gramasi product). */
+  function addSize(gsm: string) {
+    setForm((f) => ({ ...f, sizes: [...f.sizes, emptySize(f.brand, gsm)] }));
+  }
+
+  /** Row indexes move when a gramasi's rows go, so the errors and touched marks about sizes are dropped; the preview re-judges. */
+  function dropSizeMarks() {
+    setServerErrors([]);
+    setTouched((list) => list.filter((r) => r.sizeIndex === undefined));
+  }
+
+  function addGramasiToForm(gsm: string, copyFrom: string | undefined, first: string | undefined) {
+    setForm((f) => addGramasi(first === undefined ? f : setFirstGramasi(f, first), gsm, copyFrom));
+  }
+
+  function renameGramasiInForm(from: string, to: string) {
+    setForm((f) => renameGramasi(f, from, to));
+  }
+
+  function removeGramasiFromForm(gsm: string) {
+    setForm((f) => removeGramasi(f, gsm));
+    dropSizeMarks();
   }
 
   function removeSize(si: number) {
@@ -617,11 +644,12 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
 
   function renderSize(s: SizeRow, si: number) {
     const open = !initial || !s.id || unlocked.has(s.id);
+    const sameGramasiCount = form.sizes.filter((o) => sameGsm(o.gsm, s.gsm)).length;
     const label = sizeLabel(s, si);
     const sizeErrs = shown.filter((e) => e.sizeIndex === si && e.tierIndex === undefined);
     const hasErrors = shown.some((e) => e.sizeIndex === si);
     const change = initial ? sizeChange(s, initial) : null;
-    const copiedNote = s.copiedFrom !== undefined && s.tiers.some((row) => !row.price.trim());
+    const copiedNote = (s.copiedFrom !== undefined || s.copiedFromGramasi !== undefined) && s.tiers.some((row) => !row.price.trim());
     const nameErrs = sizeErrs.filter((e) => SIZE_NAME_CODES.has(e.code));
     const otherErrs = sizeErrs.filter((e) => !SIZE_NAME_CODES.has(e.code));
     const next = nextTierRow(s, form.brand);
@@ -643,7 +671,9 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
     );
     const copied = copiedNote && (
       <span style={{ fontSize: 12, color: "#B91C1C", fontWeight: 600 }}>
-        {t("catalog.form.copied", { size: s.copiedFrom?.trim() ? displaySize(s.copiedFrom.trim()) : "—" })}
+        {s.copiedFromGramasi !== undefined
+          ? t("catalog.form.copiedGsm", { gsm: s.copiedFromGramasi })
+          : t("catalog.form.copied", { size: s.copiedFrom?.trim() ? displaySize(s.copiedFrom.trim()) : "—" })}
       </span>
     );
     return (
@@ -691,9 +721,9 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
             <span style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 8 }}>
               <button
                 type="button"
-                disabled={form.sizes.length < 2}
+                disabled={sameGramasiCount < 2}
                 onClick={() => copyTiers(si)}
-                style={{ ...btn, ...(form.sizes.length < 2 ? { color: "#8A949B", cursor: "not-allowed" } : {}) }}
+                style={{ ...btn, ...(sameGramasiCount < 2 ? { color: "#8A949B", cursor: "not-allowed" } : {}) }}
               >
                 {t("catalog.form.copyTiers")}
               </button>
@@ -888,7 +918,8 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
   const nameFieldErr = fieldError("name_required", "name");
   const nameErr = nameTaken ? t("catalog.form.err.name_taken") : nameFieldErr ? message(nameFieldErr) : null;
   const useErr = fieldError("use_required", "use");
-  const gsmErr = topError(shown, "text_too_long", "gsm");
+  const groups = gramasiGroups(form);
+  const gramasiNames = groups.map((g) => g.gsm).filter(Boolean);
   const noSizesErr = topError(shown, "no_sizes");
   const numbered = (n: number, key: TKey) => (editing ? t(key) : `${n} · ${t(key)}`);
 
@@ -1064,21 +1095,6 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
                   </>
                 )}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-                  <div style={field}>
-                    <label htmlFor="pf-gsm" style={labelStyle}>
-                      {t("catalog.form.gsm")}
-                    </label>
-                    <input
-                      id="pf-gsm"
-                      type="text"
-                      value={form.gsm}
-                      maxLength={MAX_TEXT_LENGTH}
-                      aria-invalid={gsmErr ? true : undefined}
-                      onChange={(e) => set("gsm", e.target.value)}
-                      style={{ ...input, ...(gsmErr ? invalid : {}) }}
-                    />
-                    {gsmErr && <span style={errText}>{message(gsmErr)}</span>}
-                  </div>
                   {specSelect("pf-print", "print", PRINT_OPTIONS, "catalog.form.print")}
                   {specSelect("pf-finish", "finishing", FINISHING_OPTIONS, "catalog.form.finishing")}
                 </div>
@@ -1131,10 +1147,27 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
                     {message(noSizesErr)}
                   </span>
                 )}
-                {form.sizes.map((s, si) => renderSize(s, si))}
-                <button type="button" onClick={addSize} style={{ ...dashedBtn, alignSelf: "flex-start", fontSize: 13, height: 36, padding: "0 14px" }}>
-                  {t("catalog.form.addSize")}
-                </button>
+                {groups.map((g) => (
+                  <div key={g.gsm || "none"} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {g.gsm && (
+                      <GramasiHeader
+                        gsm={g.gsm}
+                        all={gramasiNames}
+                        onRename={(to) => renameGramasiInForm(g.gsm, to)}
+                        onRemove={() => removeGramasiFromForm(g.gsm)}
+                      />
+                    )}
+                    {g.indexes.map((si) => renderSize(form.sizes[si]!, si))}
+                    <button
+                      type="button"
+                      onClick={() => addSize(g.gsm)}
+                      style={{ ...dashedBtn, alignSelf: "flex-start", fontSize: 13, height: 36, padding: "0 14px" }}
+                    >
+                      {t("catalog.form.addSize")}
+                    </button>
+                  </div>
+                ))}
+                <AddGramasi existing={gramasiNames} onAdd={addGramasiToForm} />
               </section>
 
               {/* ─── Foto referensi desain ─── */}

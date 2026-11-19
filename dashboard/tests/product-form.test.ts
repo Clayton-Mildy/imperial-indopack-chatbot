@@ -7,6 +7,8 @@ import {
   emptyForm,
   formErrors,
   fromCatalogProduct,
+  gramasiProblem,
+  gramasiSummary,
   gramasiGroups,
   isJpgOrPng,
   nextTierRow,
@@ -14,6 +16,7 @@ import {
   parseRupiah,
   previousPrice,
   removeGramasi,
+  sameGsm,
   renameGramasi,
   setFirstGramasi,
   shiftErrors,
@@ -188,6 +191,18 @@ describe("copyTiersToOtherSizes", () => {
     expect(f.sizes[1]!.tiers[0]!.price).toBe("1.200");
     // 5 rim is the same 2.500 pcs, but another (minQty, qtyUnit): its price does not carry over.
     expect(f.sizes[2]!.tiers).toEqual([tier("2.500", "", "pcs", "pcs")]);
+  });
+});
+
+describe("copyTiersToOtherSizes with gramasi", () => {
+  it("stays within the source size's gramasi", () => {
+    const g = gsmForm(); // [350 30x30, 300 30x30, 300 35x35]
+    const f = copyTiersToOtherSizes(g, 1);
+    expect(f.sizes[0]).toEqual(g.sizes[0]); // the 350 size is untouched
+    expect(f.sizes[1]).toEqual(g.sizes[1]);
+    expect(f.sizes[2]!.copiedFrom).toBe("30 x 30 cm");
+    expect(f.sizes[2]!.tiers.map((t) => t.minQty)).toEqual(["5", "10"]);
+    expect(f.sizes.every((s, i) => i === 2 || s === g.sizes[i] || sameGsm(s.gsm, "300 gsm"))).toBe(true);
   });
 });
 
@@ -430,7 +445,7 @@ describe("addGramasi", () => {
     const f = addGramasi(gsmForm(), "400 gsm", "300 gsm");
     expect(f.sizes).toHaveLength(5);
     const added = f.sizes.slice(3);
-    expect(added.map((s) => [s.id, s.size, s.gsm, s.copiedFrom])).toEqual([
+    expect(added.map((s) => [s.id, s.size, s.gsm, s.copiedFromGramasi])).toEqual([
       [undefined, "30 x 30 cm", "400 gsm", "300 gsm"],
       [undefined, "35 x 35 cm", "400 gsm", "300 gsm"],
     ]);
@@ -485,5 +500,21 @@ describe("gsm_mixed", () => {
     expect(formErrors(gsmForm(), [{ code: "gsm_mixed", sizeIndex: 1 }])).toEqual([]);
     const f = base([{ size: "A", gsm: "a".repeat(201), tiers: [tier("5", "1")] }]);
     expect(formErrors(f, [])).toEqual([{ code: "text_too_long", field: "gsm", sizeIndex: 0 }]);
+  });
+});
+
+describe("gramasiProblem", () => {
+  it("blocks a blank gramasi and one the product already has, however it is written", () => {
+    expect(gramasiProblem(["300 gsm"], "  ")).toBe("blank");
+    expect(gramasiProblem(["300 gsm"], "300")).toBe("exists");
+    expect(gramasiProblem(["300 gsm"], "350")).toBeNull();
+  });
+});
+
+describe("gramasiSummary", () => {
+  it("lists the distinct gramasi in order with one gsm", () => {
+    expect(gramasiSummary(["350 gsm", "300 gsm", "300", "270 gsm", "270 gsm"])).toBe("270 · 300 · 350 gsm");
+    expect(gramasiSummary([null, ""])).toBe("");
+    expect(gramasiSummary(["Art Carton"])).toBe("Art Carton");
   });
 });

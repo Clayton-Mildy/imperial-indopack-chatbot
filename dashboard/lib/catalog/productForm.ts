@@ -21,6 +21,8 @@ export interface SizeRow {
   gsm: string;
   tiers: TierRow[];
   copiedFrom?: string;
+  /** Set on rows addGramasi made from another gramasi: the source gramasi (copiedFrom is a size name). */
+  copiedFromGramasi?: string;
 }
 export interface ProductFormState {
   brand: BrandSlug;
@@ -194,7 +196,7 @@ export function gramasiGroups(f: ProductFormState): { gsm: string; indexes: numb
 
 /**
  * A new gramasi. With copyFrom, it copies that gramasi's sizes and tier quantities with every price
- * empty, marked as copied (as copyTiersToOtherSizes marks a size); without, it adds one empty size.
+ * empty, marked as copied from that gramasi (copiedFromGramasi); without, it adds one empty size.
  * The new rows go at the end of sizes[], so existing indexes stay where they are.
  */
 export function addGramasi(f: ProductFormState, gsm: string, copyFrom?: string): ProductFormState {
@@ -208,7 +210,7 @@ export function addGramasi(f: ProductFormState, gsm: string, copyFrom?: string):
       ...source.map((s) => ({
         size: s.size,
         gsm: to,
-        copiedFrom: copyFrom,
+        copiedFromGramasi: copyFrom,
         tiers: s.tiers.map((t) => ({ ...t, price: "" })),
       })),
     ],
@@ -218,6 +220,25 @@ export function addGramasi(f: ProductFormState, gsm: string, copyFrom?: string):
 /** A no-gramasi product gets its first gramasi: every existing row takes it (the form asks "which gramasi is this?"). */
 export function setFirstGramasi(f: ProductFormState, gsm: string): ProductFormState {
   return { ...f, sizes: f.sizes.map((s) => ({ ...s, gsm: gsm.trim() })) };
+}
+
+/** "270 · 300 · 350 gsm" for a card: the product's distinct gramasi in order; '' when it has none. */
+export function gramasiSummary(gsms: (string | null)[]): string {
+  const distinct: string[] = [];
+  for (const g of gsms) {
+    const n = normalizeGsm(g ?? "");
+    if (n && !distinct.some((d) => sameGsm(d, n))) distinct.push(n);
+  }
+  distinct.sort(compareGsm);
+  const numeric = distinct.filter((g) => gsmNumber(g) !== null).map((g) => g.replace(/\s*gsm$/i, ""));
+  const other = distinct.filter((g) => gsmNumber(g) === null);
+  return [numeric.length ? `${numeric.join(" · ")} gsm` : "", ...other].filter(Boolean).join(" · ");
+}
+
+/** Why a gramasi text cannot be used for a product that already has these gramasi: blank, or already there. */
+export function gramasiProblem(existing: string[], gsm: string): "blank" | "exists" | null {
+  if (!normalizeGsm(gsm)) return "blank";
+  return existing.some((g) => sameGsm(g, gsm)) ? "exists" : null;
 }
 
 /** Only the rows of that gramasi change. */
@@ -237,7 +258,7 @@ function tierKey(t: { minQty: string; qtyUnit: QtyUnit }): string | null {
 }
 
 /**
- * Every other size gets the source size's tier rows. Where that size already had a tier with the same
+ * Every other size of the same gramasi gets the source size's tier rows. Where that size already had a tier with the same
  * (minQty, qtyUnit), its price - with the unit and delivery that go with it - stays; every other row
  * comes with an empty price, and the size is marked as copied until its prices are filled in.
  */
@@ -247,7 +268,7 @@ export function copyTiersToOtherSizes(f: ProductFormState, from: number): Produc
   return {
     ...f,
     sizes: f.sizes.map((s, i) => {
-      if (i === from) return s;
+      if (i === from || !sameGsm(s.gsm, source.gsm)) return s;
       const own = new Map<string, TierRow>();
       for (const t of s.tiers) {
         const key = tierKey(t);

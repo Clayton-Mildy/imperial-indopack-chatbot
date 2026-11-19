@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BrandTags } from "@/components/BrandTag";
 import { BRAND_TAG } from "@/lib/brands";
 import { apiFileUrl } from "@/lib/format";
+import { gramasiSummary } from "@/lib/catalog/productForm";
 import { cellFor, deliveryLabel, tierColumns, type TierColumn } from "@/lib/catalog/tierTable";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import { formatNumber, formatRupiah, type TFn } from "@/lib/i18n/core";
@@ -38,14 +39,14 @@ const th: React.CSSProperties = {
 };
 const td: React.CSSProperties = { padding: "10px 12px", borderTop: "1px solid #EEF2EA", whiteSpace: "nowrap" };
 
-/** "Gramasi 64 gsm · Cetak 1 warna · Laminasi food grade"; a value that already starts with its label keeps it once. */
+/** "270 · 300 · 350 gsm · Cetak 1 warna · Laminasi food grade"; a value that already starts with its label keeps it once. */
 function specLine(p: CatalogProduct, t: TFn): string {
   const labelled = (label: string, v: string | null): string | null => {
     const value = v?.trim();
     if (!value) return null;
     return value.toLowerCase().startsWith(label.toLowerCase()) ? value : `${label} ${value}`;
   };
-  return [labelled(t("catalog.card.gsm"), p.gsm), labelled(t("catalog.card.print"), p.print), p.finishing?.trim() || null]
+  return [gramasiSummary(p.sizes.map((s) => s.gsm)) || null, labelled(t("catalog.card.print"), p.print), p.finishing?.trim() || null]
     .filter(Boolean)
     .join(" · ");
 }
