@@ -45,26 +45,24 @@ const tier = (minQty: number | null, priceIdr: number | null, qtyUnit: Unit = 'r
 const supremeDraft = (size35Price: number | null) => ({
   brand: 'kertas_supreme',
   name: SUPREME_NAME,
-  gsm: '64 gsm',
   print: '1 warna',
   finishing: 'Laminasi food grade',
   use: 'bungkus nasi padang, kebab, burger',
   isActive: true,
   sizes: [
-    { size: '30 x 30 cm', tiers: [tier(5, 185000), tier(10, 165000), tier(20, 160000)] },
-    { size: '35 x 35 cm', tiers: [tier(5, size35Price)] },
+    { size: '30 x 30 cm', gsm: '64 gsm', tiers: [tier(5, 185000), tier(10, 165000), tier(20, 160000)] },
+    { size: '35 x 35 cm', gsm: '64 gsm', tiers: [tier(5, size35Price)] },
   ],
 });
 const SUPREME_DRAFT_WITH_EMPTY_35 = supremeDraft(null);
 const ivoryDraft = (price: number, sizeId?: string) => ({
   brand: 'imperial_indopack',
   name: IVORY_NAME,
-  gsm: '270 gsm',
   print: 'Full color',
   finishing: 'Non laminasi',
   use: 'box kue, cookies, snack, bento kecil',
   isActive: true,
-  sizes: [{ ...(sizeId ? { id: sizeId } : {}), size: '21 x 14 x 5 cm', tiers: [tier(10, price, 'rim', 'pcs')] }],
+  sizes: [{ ...(sizeId ? { id: sizeId } : {}), size: '21 x 14 x 5 cm', gsm: '270 gsm', tiers: [tier(10, price, 'rim', 'pcs')] }],
 });
 
 /** One file as the dashboard's form sends it. */
@@ -149,7 +147,7 @@ describe('product preview, price check and brand price lists', () => {
     expect(p.errors).toEqual([{ code: 'price_missing', sizeIndex: 1, tierIndex: 0 }]);
     expect(p.changes).toEqual([]);
     expect(p.botText).toContain('Merek: Kertas Supreme');
-    expect(p.botText).toContain(`Produk: ${SUPREME_NAME} — Gramasi: 64 gsm · Cetak: 1 warna · Finishing: Laminasi food grade`);
+    expect(p.botText).toContain(`Produk: ${SUPREME_NAME} — Cetak: 1 warna · Finishing: Laminasi food grade`);
     expect(p.botText).toContain('Kegunaan: bungkus nasi padang, kebab, burger');
     expect(p.botText).toContain('  - Ukuran: 30 x 30 cm');
     expect(p.botText).toContain('  • mulai 20 rim (10.000 pcs): Rp 160.000/rim, belum termasuk ongkir');
@@ -159,7 +157,7 @@ describe('product preview, price check and brand price lists', () => {
   });
 
   it('a shown size is trimmed as the save trims it, a hidden one is listed as typed; a malformed body is a 400', async () => {
-    const draft = { ...SUPREME_DRAFT_WITH_EMPTY_35, sizes: [{ size: '  30 x 30 cm ', tiers: [tier(5, 185000)] }, { size: ' 40 x 40 ', tiers: [] }] };
+    const draft = { ...SUPREME_DRAFT_WITH_EMPTY_35, sizes: [{ size: '  30 x 30 cm ', gsm: null, tiers: [tier(5, 185000)] }, { size: ' 40 x 40 ', gsm: null, tiers: [] }] };
     const p = (await post('/api/v1/catalog/products/preview', { draft })).json().data;
     expect(p.botText).toContain('  - Ukuran: 30 x 30 cm\n');
     expect(p.hiddenSizes).toEqual([' 40 x 40 ']);
@@ -179,7 +177,7 @@ describe('product preview, price check and brand price lists', () => {
     const res = await post('/api/v1/catalog/products/preview', { productId: ivoryId, draft: ivoryDraft(1450, ivorySizeId) });
     expect(res.statusCode).toBe(200);
     const p = res.json().data;
-    expect(p.changes).toEqual([{ kind: 'tier_price', size: '21 x 14 x 5 cm', minQty: 10, qtyUnit: 'rim', priceUnit: 'pcs', from: 1500, to: 1450 }]);
+    expect(p.changes).toEqual([{ kind: 'tier_price', size: '21 x 14 x 5 cm', gsm: '270 gsm', minQty: 10, qtyUnit: 'rim', priceUnit: 'pcs', from: 1500, to: 1450 }]);
     expect(p.errors).toEqual([]);
     expect(p.hiddenSizes).toEqual([]);
     expect(p.botText).toContain('Merek: Imperial Indopack');

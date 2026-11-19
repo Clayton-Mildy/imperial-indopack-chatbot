@@ -12,6 +12,7 @@ import { and, asc, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
 import { getDb, type DbOrTx } from '../db/client.js';
 import { brands, leads, messages, productReferenceImages, productVariants, products } from '../db/schema.js';
 import { BRAND_NAME, brandSlugOfName } from '../domain/brands.js';
+import { compareGsm, normalizeGsm, sameGsm } from '../domain/gramasi.js';
 import { normalizeSize, type BrandSlug } from '../domain/orderProfile.js';
 import { lowestTier, toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
 import { formatProductSpec, parseProductSpec } from '../domain/productSpec.js';
@@ -50,7 +51,6 @@ const shortText = z.string().max(MAX_TEXT_LENGTH);
 export const ProductDraftSchema = z.object({
   brand: z.enum(['kertas_supreme', 'imperial_indopack']),
   name: shortText,
-  gsm: shortText.nullable(),
   print: shortText.nullable(),
   finishing: shortText.nullable(),
   use: z.string().max(MAX_USE_LENGTH),
@@ -60,6 +60,8 @@ export const ProductDraftSchema = z.object({
       // The variant id from GET; absent (or null) for a size added in the form.
       id: z.string().uuid().nullish(),
       size: shortText,
+      // Gramasi of this size row, as typed ('300', '300 gsm'); null or blank = the product has no gramasi.
+      gsm: shortText.nullable(),
       tiers: z.array(DraftTierSchema),
     })
   ),
@@ -69,12 +71,11 @@ export type ProductDraft = z.infer<typeof ProductDraftSchema>;
 export interface ProductInput {
   brand: BrandSlug;
   name: string;
-  gsm: string | null;
   print: string | null;
   finishing: string | null;
   use: string;
   isActive: boolean;
-  sizes: { id?: string; size: string; tiers: PriceTier[] }[];
+  sizes: { id?: string; size: string; gsm: string | null; tiers: PriceTier[] }[];
 }
 
 export type ProductInputErrorCode =
@@ -83,6 +84,7 @@ export type ProductInputErrorCode =
   | 'no_sizes'
   | 'size_required'
   | 'duplicate_size'
+  | 'gsm_mixed'
   | 'no_tiers'
   | 'qty_missing'
   | 'qty_invalid'
@@ -118,13 +120,19 @@ export function validateProductDraft(d: ProductDraft): { ok: true; input: Produc
   if (!use) errors.push({ code: 'use_required' });
   if (d.sizes.length === 0) errors.push({ code: 'no_sizes' });
 
+  // A product is all-gramasi or no-gramasi: the first row sets which, and the first row that differs is gsm_mixed.
+  const gsmOf = d.sizes.map((s) => normalizeGsm(s.gsm));
+  const mixedAt = gsmOf.findIndex((g) => (g === null) !== (gsmOf[0] === null));
+  if (mixedAt > 0) errors.push({ code: 'gsm_mixed', sizeIndex: mixedAt });
+
   const seenSizes = new Set<string>();
   const sizes: ProductInput['sizes'] = d.sizes.map((s, sizeIndex) => {
     const size = s.size.trim();
+    const gsm = gsmOf[sizeIndex]!;
     if (!size) {
       errors.push({ code: 'size_required', sizeIndex });
     } else {
-      const key = normalizeSize(size);
+      const key = `${(gsm ?? '').toLowerCase()}\u0000${normalizeSize(size)}`;
       if (seenSizes.has(key)) errors.push({ code: 'duplicate_size', sizeIndex });
       seenSizes.add(key);
     }
@@ -154,7 +162,7 @@ export function validateProductDraft(d: ProductDraft): { ok: true; input: Produc
       highestPcs = Math.max(highestPcs, pcs);
       if (price === 'ok') tiers.push({ minQty: t.minQty!, qtyUnit: t.qtyUnit, priceIdr: t.priceIdr!, priceUnit: t.priceUnit, includesDelivery: t.includesDelivery });
     });
-    return { ...(s.id ? { id: s.id } : {}), size, tiers };
+    return { ...(s.id ? { id: s.id } : {}), size, gsm, tiers };
   });
 
   if (errors.length > 0) return { ok: false, errors };
@@ -163,7 +171,6 @@ export function validateProductDraft(d: ProductDraft): { ok: true; input: Produc
     input: {
       brand: d.brand,
       name,
-      gsm: optionalText(d.gsm),
       print: optionalText(d.print),
       finishing: optionalText(d.finishing),
       use,
@@ -177,20 +184,24 @@ export function validateProductDraft(d: ProductDraft): { ok: true; input: Produc
 
 export type CatalogChange =
   | { kind: 'created'; via: 'form' | 'import'; fileName?: string }
+  // field 'gsm' is a product-level Gramasi change, kept so history rows written before gramasi moved onto the sizes still read.
   | { kind: 'field'; field: 'name' | 'brand' | 'gsm' | 'print' | 'finishing' | 'use'; from: string | null; to: string | null }
   | { kind: 'active'; to: boolean }
-  | { kind: 'size_added' | 'size_removed'; size: string }
-  | { kind: 'size_renamed'; from: string; to: string }
-  | { kind: 'tier_added' | 'tier_removed'; size: string; minQty: number; qtyUnit: QtyUnit }
-  | { kind: 'tier_price'; size: string; minQty: number; qtyUnit: QtyUnit; priceUnit: QtyUnit; from: number; to: number }
-  | { kind: 'delivery'; size: string; minQty: number; qtyUnit: QtyUnit; to: boolean };
+  | { kind: 'gsm_added' | 'gsm_removed'; gsm: string }
+  | { kind: 'gsm_renamed'; from: string; to: string }
+  // `gsm` names the gramasi a size or tier change sits under (the new name when the gramasi was renamed); left out when the product has none.
+  | { kind: 'size_added' | 'size_removed'; size: string; gsm?: string | null }
+  | { kind: 'size_renamed'; from: string; to: string; gsm?: string | null }
+  | { kind: 'tier_added' | 'tier_removed'; size: string; gsm?: string | null; minQty: number; qtyUnit: QtyUnit }
+  | { kind: 'tier_price'; size: string; gsm?: string | null; minQty: number; qtyUnit: QtyUnit; priceUnit: QtyUnit; from: number; to: number }
+  | { kind: 'delivery'; size: string; gsm?: string | null; minQty: number; qtyUnit: QtyUnit; to: boolean };
 
 /**
  * For each `after` size, the index of the `before` size it is (or -1 for a new one): first by id, then,
- * for a size sent without one (or with an id that is not among `before`), by normalizeSize among the
+ * for a size sent without one (or with an id that is not among `before`), by sameGsm and normalizeSize among the
  * sizes still unclaimed. The save and the diff both use this, so history says what the save did.
  */
-function matchSizes(before: { id?: string; size: string }[], after: { id?: string; size: string }[]): number[] {
+function matchSizes(before: { id?: string; size: string; gsm?: string | null }[], after: { id?: string; size: string; gsm?: string | null }[]): number[] {
   const claimed = new Set<number>();
   const match = after.map(() => -1);
   after.forEach((s, i) => {
@@ -204,7 +215,7 @@ function matchSizes(before: { id?: string; size: string }[], after: { id?: strin
   after.forEach((s, i) => {
     if (match[i] !== -1) return;
     const key = normalizeSize(s.size);
-    const j = before.findIndex((b, k) => !claimed.has(k) && normalizeSize(b.size) === key);
+    const j = before.findIndex((b, k) => !claimed.has(k) && sameGsm(b.gsm, s.gsm) && normalizeSize(b.size) === key);
     if (j >= 0) {
       match[i] = j;
       claimed.add(j);
@@ -213,53 +224,111 @@ function matchSizes(before: { id?: string; size: string }[], after: { id?: strin
   return match;
 }
 
-function diffTiers(before: PriceTier[], after: PriceTier[], size: string): CatalogChange[] {
+const under = (gsm: string | null): { gsm?: string } => (gsm ? { gsm } : {});
+
+function diffTiers(before: PriceTier[], after: PriceTier[], size: string, gsm: string | null): CatalogChange[] {
   const out: CatalogChange[] = [];
+  const at = { size, ...under(gsm) };
   const beforeByKey = new Map(before.map((t) => [tierKey(t), t]));
   const afterKeys = new Set(after.map(tierKey));
   for (const t of before) {
-    if (!afterKeys.has(tierKey(t))) out.push({ kind: 'tier_removed', size, minQty: t.minQty, qtyUnit: t.qtyUnit });
+    if (!afterKeys.has(tierKey(t))) out.push({ kind: 'tier_removed', ...at, minQty: t.minQty, qtyUnit: t.qtyUnit });
   }
   for (const t of after) {
     const b = beforeByKey.get(tierKey(t));
     if (!b) {
-      out.push({ kind: 'tier_added', size, minQty: t.minQty, qtyUnit: t.qtyUnit });
+      out.push({ kind: 'tier_added', ...at, minQty: t.minQty, qtyUnit: t.qtyUnit });
       continue;
     }
     if (b.priceIdr !== t.priceIdr || b.priceUnit !== t.priceUnit) {
-      out.push({ kind: 'tier_price', size, minQty: t.minQty, qtyUnit: t.qtyUnit, priceUnit: t.priceUnit, from: b.priceIdr, to: t.priceIdr });
+      out.push({ kind: 'tier_price', ...at, minQty: t.minQty, qtyUnit: t.qtyUnit, priceUnit: t.priceUnit, from: b.priceIdr, to: t.priceIdr });
     }
     if (b.includesDelivery !== t.includesDelivery) {
-      out.push({ kind: 'delivery', size, minQty: t.minQty, qtyUnit: t.qtyUnit, to: t.includesDelivery });
+      out.push({ kind: 'delivery', ...at, minQty: t.minQty, qtyUnit: t.qtyUnit, to: t.includesDelivery });
     }
   }
   return out;
 }
 
-/** Fields, the active flag, sizes removed / added / renamed, then each kept size's tiers (named as after). */
+const gsmKey = (g: string | null): string => (g ?? '').toLowerCase();
+
+/**
+ * Gramasi relabelled as a whole: every before row of X (matched) now carries one Y, no after row still
+ * carries X, and Y is not a gramasi the product already had. X -> Y is gsm_renamed; no gramasi -> Y reads
+ * as gsm_added and X -> no gramasi as gsm_removed (the caller sorts that out). Returns before-key -> after gsm.
+ */
+function relabelledGramasi(before: ProductInput['sizes'], after: ProductInput['sizes'], match: number[]): Map<string, string | null> {
+  const beforeKeys = new Set(before.map((b) => gsmKey(b.gsm)));
+  const afterKeys = new Set(after.map((a) => gsmKey(a.gsm)));
+  const out = new Map<string, string | null>();
+  const taken = new Set<string>();
+  for (const key of beforeKeys) {
+    if (afterKeys.has(key)) continue;
+    const rows = before.flatMap((b, j) => (gsmKey(b.gsm) === key ? [j] : []));
+    const targets = rows.map((j) => {
+      const i = match.indexOf(j);
+      return i < 0 ? undefined : after[i]!.gsm;
+    });
+    const to = targets[0];
+    if (to === undefined || targets.some((t) => t === undefined || gsmKey(t) !== gsmKey(to))) continue;
+    if (beforeKeys.has(gsmKey(to)) || taken.has(gsmKey(to))) continue;
+    taken.add(gsmKey(to));
+    out.set(key, to);
+  }
+  return out;
+}
+
+/**
+ * Fields, the active flag, gramasi added / removed / renamed, sizes removed / added / renamed, then each
+ * kept size's tiers (named as after, under their gramasi). A row kept by id that moved to another gramasi
+ * without its whole gramasi being relabelled reads as removed under the old one and added under the new.
+ */
 export function diffProduct(before: ProductInput, after: ProductInput): CatalogChange[] {
   const out: CatalogChange[] = [];
-  const fields = ['name', 'brand', 'gsm', 'print', 'finishing', 'use'] as const;
+  const fields = ['name', 'brand', 'print', 'finishing', 'use'] as const;
   for (const field of fields) {
     if (before[field] !== after[field]) out.push({ kind: 'field', field, from: before[field], to: after[field] });
   }
   if (before.isActive !== after.isActive) out.push({ kind: 'active', to: after.isActive });
 
   const match = matchSizes(before.sizes, after.sizes);
-  const kept = new Set(match.filter((j) => j >= 0));
+  const relabels = relabelledGramasi(before.sizes, after.sizes, match);
+  const gsmChanges: CatalogChange[] = [];
+  const beforeGsms = [...new Map(before.sizes.flatMap((b) => (b.gsm ? [[gsmKey(b.gsm), b.gsm] as const] : []))).values()].sort(compareGsm);
+  const afterGsms = [...new Map(after.sizes.flatMap((a) => (a.gsm ? [[gsmKey(a.gsm), a.gsm] as const] : []))).values()].sort(compareGsm);
+  for (const x of beforeGsms) {
+    if (afterGsms.some((y) => sameGsm(x, y))) continue;
+    const to = relabels.get(gsmKey(x));
+    gsmChanges.push(to ? { kind: 'gsm_renamed', from: x, to } : { kind: 'gsm_removed', gsm: x });
+  }
+  for (const y of afterGsms) {
+    if (beforeGsms.some((x) => sameGsm(x, y))) continue;
+    if ([...relabels.entries()].some(([k, to]) => k !== '' && to !== null && sameGsm(to, y))) continue; // a rename, listed above
+    gsmChanges.push({ kind: 'gsm_added', gsm: y });
+  }
+  out.push(...gsmChanges);
+
+  // A matched row whose gramasi is not simply relabelled has moved.
+  const moved = after.sizes.map((s, i) => {
+    const b = before.sizes[match[i]!];
+    if (!b || sameGsm(b.gsm, s.gsm)) return false;
+    const k = gsmKey(b.gsm);
+    return !(relabels.has(k) && sameGsm(relabels.get(k), s.gsm));
+  });
+  const kept = new Set(match.flatMap((j, i) => (j >= 0 && !moved[i] ? [j] : [])));
   before.sizes.forEach((s, j) => {
-    if (!kept.has(j)) out.push({ kind: 'size_removed', size: s.size });
+    if (!kept.has(j)) out.push({ kind: 'size_removed', size: s.size, ...under(s.gsm) });
   });
   after.sizes.forEach((s, i) => {
-    if (match[i] === -1) out.push({ kind: 'size_added', size: s.size });
-  });
-  after.sizes.forEach((s, i) => {
-    const b = before.sizes[match[i]!];
-    if (b && b.size !== s.size) out.push({ kind: 'size_renamed', from: b.size, to: s.size });
+    if (match[i] === -1 || moved[i]) out.push({ kind: 'size_added', size: s.size, ...under(s.gsm) });
   });
   after.sizes.forEach((s, i) => {
     const b = before.sizes[match[i]!];
-    if (b) out.push(...diffTiers(b.tiers, s.tiers, s.size));
+    if (b && !moved[i] && b.size !== s.size) out.push({ kind: 'size_renamed', from: b.size, to: s.size, ...under(s.gsm) });
+  });
+  after.sizes.forEach((s, i) => {
+    const b = before.sizes[match[i]!];
+    if (b && !moved[i]) out.push(...diffTiers(b.tiers, s.tiers, s.size, s.gsm));
   });
   return out;
 }
@@ -287,7 +356,7 @@ export function previewProduct(draft: ProductDraft, stored: CatalogProduct | nul
   const errors = checked.ok ? [] : checked.errors;
   const flagged = new Set(errors.flatMap((e) => (e.sizeIndex === undefined ? [] : [e.sizeIndex])));
   const match = stored
-    ? matchSizes(stored.sizes, draft.sizes.map((s) => ({ ...(s.id ? { id: s.id } : {}), size: s.size.trim() })))
+    ? matchSizes(stored.sizes, draft.sizes.map((s) => ({ ...(s.id ? { id: s.id } : {}), size: s.size.trim(), gsm: normalizeGsm(s.gsm) })))
     : draft.sizes.map(() => -1);
   const now = new Date().toISOString();
 
@@ -307,14 +376,14 @@ export function previewProduct(draft: ProductDraft, stored: CatalogProduct | nul
     variants.push({
       id: s.id ?? `preview-${i}`, productId: stored?.id ?? 'preview', name: s.size.trim(), sku: null, priceIdr: lowestTier(priceTiers)!.priceIdr,
       mpPriceIdr: null, isiCtn: null, isiBox: null, uomPriceId: null, mpUomId: null, uomCtnId: null, uomBoxId: null, minOrderQty: null,
-      minOrderUomId: null, priceTiers, imageUrl: null, stockStatus: 'normal', isActive: true, description: null, gsm: null, sourceUrl: null,
+      minOrderUomId: null, priceTiers, imageUrl: null, stockStatus: 'normal', isActive: true, description: null, gsm: normalizeGsm(s.gsm), sourceUrl: null,
       scrapedAt: null, sourceHash: null, createdAt: now, updatedAt: now,
     });
   });
 
   const product: Product = {
     id: stored?.id ?? 'preview', brandId: '', categoryId: null, name: draft.name.trim(),
-    description: formatProductSpec(draft), fungsi: draft.use.trim() || null, usp: null, kataKunci: null, kelengkapan: null,
+    description: formatProductSpec({ print: optionalText(draft.print), finishing: optionalText(draft.finishing) }), fungsi: draft.use.trim() || null, usp: null, kataKunci: null, kelengkapan: null,
     bahan: null, ketebalan: null, imageUrl: null, isActive: draft.isActive, createdAt: now, updatedAt: now,
     brand: { id: '', name: BRAND_NAME[draft.brand], description: null, catalogFileUrl: null, catalogFileName: null, catalogFileUploadedAt: null, brandType: 'own', createdAt: now },
     category: null,
@@ -333,7 +402,7 @@ export function previewProduct(draft: ProductDraft, stored: CatalogProduct | nul
 
 export interface CatalogProduct extends Omit<ProductInput, 'sizes'> {
   id: string;
-  sizes: { id: string; size: string; tiers: PriceTier[] }[];
+  sizes: { id: string; size: string; gsm: string | null; tiers: PriceTier[] }[];
   referenceImages: { id: string; imageUrl: string; sort: number }[];
   updatedAt: string;
 }
@@ -351,7 +420,7 @@ export class ProductNameTakenError extends Error {
 }
 
 /**
- * Products of the two brands, as the editor shows them. Sizes in the order they were added (one save's
+ * Products of the two brands, as the editor shows them. Sizes by gramasi (none first, then ascending), then in the order they were added (one save's
  * new sizes keep the order they were typed; an import's share a timestamp and fall back to their names).
  * A product under any other brand row is not the editor's and is left out.
  */
@@ -376,7 +445,9 @@ async function loadCatalogProducts(db: DbOrTx, where?: SQL): Promise<CatalogProd
       .where(inArray(productReferenceImages.productId, ids))
       .orderBy(asc(productReferenceImages.sort), asc(productReferenceImages.createdAt)),
   ]);
-  variantRows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.name.localeCompare(b.name, 'id', { numeric: true }));
+  variantRows.sort(
+    (a, b) => compareGsm(a.gsm, b.gsm) || a.createdAt.getTime() - b.createdAt.getTime() || a.name.localeCompare(b.name, 'id', { numeric: true })
+  );
   const tierMap = await listTiersByVariant(variantRows.map((v) => v.id), db);
 
   return known.map(({ p, brand }) => {
@@ -385,12 +456,11 @@ async function loadCatalogProducts(db: DbOrTx, where?: SQL): Promise<CatalogProd
       id: p.id,
       brand,
       name: p.name,
-      gsm: spec.gsm,
       print: spec.print,
       finishing: spec.finishing,
       use: p.fungsi ?? '',
       isActive: p.isActive,
-      sizes: variantRows.filter((v) => v.productId === p.id).map((v) => ({ id: v.id, size: v.name, tiers: tierMap.get(v.id) ?? [] })),
+      sizes: variantRows.filter((v) => v.productId === p.id).map((v) => ({ id: v.id, size: v.name, gsm: v.gsm, tiers: tierMap.get(v.id) ?? [] })),
       referenceImages: imageRows.filter((i) => i.productId === p.id).map((i) => ({ id: i.id, imageUrl: i.imageUrl, sort: i.sort })),
       updatedAt: p.updatedAt.toISOString(),
     };
@@ -403,7 +473,7 @@ export async function loadOne(db: DbOrTx, id: string): Promise<CatalogProduct | 
 }
 
 /**
- * The Katalog list. The search matches the name, the use text (Kegunaan) or a size. `counts` are per
+ * The Katalog list. The search matches the name, the use text (Kegunaan), a size or a size's gramasi. `counts` are per
  * brand tab: they follow the search and status filters but not the brand filter, so every tab shows
  * what it would list.
  */
@@ -419,7 +489,9 @@ export async function listCatalogProducts(f: {
       (!q ||
         p.name.toLowerCase().includes(q) ||
         p.use.toLowerCase().includes(q) ||
-        p.sizes.some((s) => s.size.toLowerCase().includes(q) || (qSize !== '' && normalizeSize(s.size).includes(qSize)))) &&
+        p.sizes.some(
+          (s) => s.size.toLowerCase().includes(q) || (qSize !== '' && normalizeSize(s.size).includes(qSize)) || (s.gsm ?? '').toLowerCase().includes(q)
+        )) &&
       (!f.status || p.isActive === (f.status === 'active'))
   );
   const counts: Record<'all' | BrandSlug, number> = { all: matches.length, kertas_supreme: 0, imperial_indopack: 0 };
@@ -481,7 +553,7 @@ async function brandIdFor(tx: DbOrTx, brand: BrandSlug): Promise<string> {
 }
 
 /**
- * Brings a product's variants in line with `sizes`: matched variants are updated (renamed too), the
+ * Brings a product's variants in line with `sizes`: matched variants are updated (renamed, or moved to another gramasi, too), the
  * rest inserted, unmatched variants deleted (their tiers go with them), then each size's tiers are
  * replaced. A tier the form re-sends keeps the note its (minQty, unit) had: the form has no note field,
  * and an Excel note must survive an edit.
@@ -501,7 +573,7 @@ async function writeSizes(
   // never collide on uq_variant_name_per_product halfway through.
   for (const [i, s] of sizes.entries()) {
     const v = existing[match[i]!];
-    if (v && v.size !== s.size) await tx.update(productVariants).set({ name: v.id }).where(eq(productVariants.id, v.id));
+    if (v && (v.size !== s.size || v.gsm !== s.gsm)) await tx.update(productVariants).set({ name: v.id }).where(eq(productVariants.id, v.id));
   }
 
   const t0 = Date.now();
@@ -511,11 +583,11 @@ async function writeSizes(
     let variantId: string;
     if (v) {
       variantId = v.id;
-      await tx.update(productVariants).set({ name: s.size, priceIdr, isActive: true, updatedAt: new Date() }).where(eq(productVariants.id, variantId));
+      await tx.update(productVariants).set({ name: s.size, gsm: s.gsm, priceIdr, isActive: true, updatedAt: new Date() }).where(eq(productVariants.id, variantId));
     } else {
       const [row] = await tx
         .insert(productVariants)
-        .values({ productId, name: s.size, priceIdr, isActive: true, createdAt: new Date(t0 + i) })
+        .values({ productId, name: s.size, gsm: s.gsm, priceIdr, isActive: true, createdAt: new Date(t0 + i) })
         .returning({ id: productVariants.id });
       variantId = row!.id;
     }
@@ -545,7 +617,7 @@ export async function createCatalogProduct(input: ProductInput, actor: Actor): P
 }
 
 /**
- * Saves the whole form. The description is rewritten only when gramasi, cetak or finishing changed, so
+ * Saves the whole form. The description is rewritten only when cetak or finishing changed, so
  * free text an older product keeps there survives an edit of its prices. A save that changes nothing
  * writes no history row.
  */
@@ -555,7 +627,7 @@ export async function updateCatalogProduct(id: string, input: ProductInput, acto
     if (!before) return false;
     await assertNameFree(tx, input.name, id);
     const brandId = await brandIdFor(tx, input.brand);
-    const specChanged = before.gsm !== input.gsm || before.print !== input.print || before.finishing !== input.finishing;
+    const specChanged = before.print !== input.print || before.finishing !== input.finishing;
     await tx
       .update(products)
       .set({

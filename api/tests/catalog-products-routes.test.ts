@@ -60,14 +60,13 @@ const tier = (minQty: number, priceIdr: number, qtyUnit: Unit = 'rim', priceUnit
 const draft = (over: Record<string, unknown> = {}) => ({
   brand: 'kertas_supreme',
   name: NAME,
-  gsm: '64 gsm',
   print: '1 warna',
   finishing: 'Laminasi food grade',
   use: 'bungkus nasi padang, kebab, burger',
   isActive: true,
   sizes: [
-    { size: '30 x 30 cm', tiers: [tier(5, 185000), tier(10, 165000), tier(20, 160000)] },
-    { size: '35 x 35 cm', tiers: [tier(5, 245000)] },
+    { size: '30 x 30 cm', gsm: '64 gsm', tiers: [tier(5, 185000), tier(10, 165000), tier(20, 160000)] },
+    { size: '35 x 35 cm', gsm: '64 gsm', tiers: [tier(5, 245000)] },
   ],
   ...over,
 });
@@ -131,7 +130,7 @@ describe('product editor routes', () => {
     id = product.id;
     productIds.add(id);
     sizeIds = product.sizes.map((s: { id: string }) => s.id);
-    expect(product).toMatchObject({ brand: 'kertas_supreme', name: NAME, gsm: '64 gsm', print: '1 warna', finishing: 'Laminasi food grade', use: 'bungkus nasi padang, kebab, burger', isActive: true });
+    expect(product).toMatchObject({ brand: 'kertas_supreme', name: NAME, print: '1 warna', finishing: 'Laminasi food grade', use: 'bungkus nasi padang, kebab, burger', isActive: true });
     expect(product.sizes.map((s: { size: string }) => s.size)).toEqual(['30 x 30 cm', '35 x 35 cm']);
     expect(product.sizes[0].tiers).toHaveLength(3);
 
@@ -146,7 +145,7 @@ describe('product editor routes', () => {
     const [v] = await db.select().from(productVariants).where(eq(productVariants.id, sizeIds[0]!));
     expect(v!.priceIdr).toBe('185000');
     const [row] = await db.select().from(products).where(eq(products.id, id));
-    expect(row).toMatchObject({ description: 'Gramasi: 64 gsm · Cetak: 1 warna · Finishing: Laminasi food grade', fungsi: 'bungkus nasi padang, kebab, burger', isActive: true });
+    expect(row).toMatchObject({ description: 'Cetak: 1 warna · Finishing: Laminasi food grade', fungsi: 'bungkus nasi padang, kebab, burger', isActive: true });
 
     const detail = await get(id);
     expect(detail.history).toEqual([expect.objectContaining({ changeType: 'created', actorName: 'Admin QA', changes: [{ kind: 'created', via: 'form' }] })]);
@@ -162,28 +161,28 @@ describe('product editor routes', () => {
   });
 
   it('400 VALIDATION_ERROR with tier_order details', async () => {
-    const res = await post({ draft: draft({ name: `${P}Urutan`, sizes: [{ size: '30x30', tiers: [tier(10, 165000), tier(5, 185000)] }] }), ...ACTOR });
+    const res = await post({ draft: draft({ name: `${P}Urutan`, sizes: [{ size: '30x30', gsm: null, tiers: [tier(10, 165000), tier(5, 185000)] }] }), ...ACTOR });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ data: null, error: 'VALIDATION_ERROR', details: [{ code: 'tier_order', sizeIndex: 0, tierIndex: 1 }] });
 
     // 5 rim and 2500 pcs are one threshold: reported, never a 500 from replaceVariantTiers.
-    const twin = await post({ draft: draft({ name: `${P}Kembar`, sizes: [{ size: '30x30', tiers: [tier(5, 185000), tier(2500, 370, 'pcs', 'pcs')] }] }), ...ACTOR });
+    const twin = await post({ draft: draft({ name: `${P}Kembar`, sizes: [{ size: '30x30', gsm: null, tiers: [tier(5, 185000), tier(2500, 370, 'pcs', 'pcs')] }] }), ...ACTOR });
     expect(twin.statusCode).toBe(400);
     expect(twin.json().details).toEqual([{ code: 'tier_order', sizeIndex: 0, tierIndex: 1 }]);
 
     // A fractional price never reaches the database CHECK or replaceVariantTiers, and the form learns which field.
-    const frac = await post({ draft: draft({ name: `${P}Pecahan`, sizes: [{ size: '30x30', tiers: [tier(5, 1500.5)] }] }), ...ACTOR });
+    const frac = await post({ draft: draft({ name: `${P}Pecahan`, sizes: [{ size: '30x30', gsm: null, tiers: [tier(5, 1500.5)] }] }), ...ACTOR });
     expect(frac.statusCode).toBe(400);
     expect(frac.json()).toEqual({ data: null, error: 'VALIDATION_ERROR', details: [{ code: 'price_invalid', sizeIndex: 0, tierIndex: 0 }] });
 
     // Above the integer min_qty column (and the business cap): a 400, not a 500 from the INSERT.
-    const huge = await post({ draft: draft({ name: `${P}Raksasa`, sizes: [{ size: '30x30', tiers: [tier(3_000_000_000, 185000)] }] }), ...ACTOR });
+    const huge = await post({ draft: draft({ name: `${P}Raksasa`, sizes: [{ size: '30x30', gsm: null, tiers: [tier(3_000_000_000, 185000)] }] }), ...ACTOR });
     expect(huge.statusCode).toBe(400);
     expect(huge.json()).toEqual({ data: null, error: 'VALIDATION_ERROR', details: [{ code: 'qty_invalid', sizeIndex: 0, tierIndex: 0 }] });
 
     // Over-long text, and a missing or over-long staff name: a 400 before anything is written.
     expect((await post({ draft: draft({ name: `${P}${'x'.repeat(5000)}` }), ...ACTOR })).statusCode).toBe(400);
-    expect((await post({ draft: draft({ name: `${P}Ukuran Panjang`, sizes: [{ size: '3'.repeat(5000), tiers: [tier(5, 185000)] }] }), ...ACTOR })).statusCode).toBe(400);
+    expect((await post({ draft: draft({ name: `${P}Ukuran Panjang`, sizes: [{ size: '3'.repeat(5000), gsm: null, tiers: [tier(5, 185000)] }] }), ...ACTOR })).statusCode).toBe(400);
     expect((await post({ draft: draft({ name: `${P}Tanpa Staf` }) })).statusCode).toBe(400);
     expect((await post({ draft: draft({ name: `${P}Staf Panjang` }), staffName: 'A'.repeat(101) })).statusCode).toBe(400);
     const made = await getDb().select().from(products).where(ilike(products.name, `${P}%`));
@@ -205,7 +204,7 @@ describe('product editor routes', () => {
     expect(res.json().data.sizes.map((s: { id: string }) => s.id)).toEqual(sizeIds);
     const detail = await get(id);
     expect(detail.history[0]).toMatchObject({ changeType: 'updated', actorName: 'Admin QA',
-      changes: [{ kind: 'tier_price', size: '30 x 30 cm', minQty: 10, qtyUnit: 'rim', priceUnit: 'rim', from: 165000, to: 160500 }] });
+      changes: [{ kind: 'tier_price', size: '30 x 30 cm', gsm: '64 gsm', minQty: 10, qtyUnit: 'rim', priceUnit: 'rim', from: 165000, to: 160500 }] });
     expect(detail.history).toHaveLength(2);
 
     // Saving the same draft again changes nothing and writes no history.
@@ -215,12 +214,12 @@ describe('product editor routes', () => {
 
   it('renaming a size keeps its variant id', async () => {
     const d = draft();
-    d.sizes[0] = { id: sizeIds[0], size: '30 × 30 cm', tiers: [tier(5, 185000), tier(10, 160500), tier(20, 160000)] } as (typeof d.sizes)[number];
+    d.sizes[0] = { id: sizeIds[0], size: '30 × 30 cm', gsm: '64 gsm', tiers: [tier(5, 185000), tier(10, 160500), tier(20, 160000)] } as (typeof d.sizes)[number];
     d.sizes[1] = { ...d.sizes[1]!, id: sizeIds[1] } as (typeof d.sizes)[number];
     const res = await put(id, { draft: d, ...ACTOR });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.sizes[0]).toMatchObject({ id: sizeIds[0], size: '30 × 30 cm' });
-    expect((await get(id)).history[0].changes).toEqual([{ kind: 'size_renamed', from: '30 x 30 cm', to: '30 × 30 cm' }]);
+    expect((await get(id)).history[0].changes).toEqual([{ kind: 'size_renamed', from: '30 x 30 cm', to: '30 × 30 cm', gsm: '64 gsm' }]);
   });
 
   it('deactivating hides the product from the bot at once', async () => {
@@ -268,7 +267,7 @@ describe('product editor routes', () => {
   });
 
   it('usage counts the bot\'s quotes in 30 days and the won leads naming the product', async () => {
-    const created = await post({ draft: draft({ brand: 'imperial_indopack', name: USAGE_NAME, sizes: [{ size: '21 x 14 x 5 cm', tiers: [tier(2500, 1900, 'pcs', 'pcs', true)] }] }), ...ACTOR });
+    const created = await post({ draft: draft({ brand: 'imperial_indopack', name: USAGE_NAME, sizes: [{ size: '21 x 14 x 5 cm', gsm: null, tiers: [tier(2500, 1900, 'pcs', 'pcs', true)] }] }), ...ACTOR });
     expect(created.statusCode).toBe(201);
     const pid = created.json().data.id as string;
     productIds.add(pid);
@@ -291,12 +290,12 @@ describe('product editor routes', () => {
   describe('save paths', () => {
     const SAVE_NAME = `${P}Box Simpan`;
     const pcsTier = (minQty: number, priceIdr: number) => tier(minQty, priceIdr, 'pcs', 'pcs', true);
-    const A = { size: '20 x 20 x 7 cm', tiers: [pcsTier(2500, 1900), pcsTier(5000, 1700)] };
-    const B = { size: '25 x 25 x 8 cm', tiers: [pcsTier(2500, 2100)] };
-    const C = { size: '30 x 30 x 10 cm', tiers: [pcsTier(2500, 2500)] };
-    const D = { size: '16 x 16 x 6 cm', tiers: [pcsTier(2500, 1500), pcsTier(5000, 1400)] };
+    const A = { size: '20 x 20 x 7 cm', gsm: null, tiers: [pcsTier(2500, 1900), pcsTier(5000, 1700)] };
+    const B = { size: '25 x 25 x 8 cm', gsm: null, tiers: [pcsTier(2500, 2100)] };
+    const C = { size: '30 x 30 x 10 cm', gsm: null, tiers: [pcsTier(2500, 2500)] };
+    const D = { size: '16 x 16 x 6 cm', gsm: null, tiers: [pcsTier(2500, 1500), pcsTier(5000, 1400)] };
     const boxDraft = (sizes: object[], name = SAVE_NAME) =>
-      draft({ brand: 'imperial_indopack', name, gsm: '270 gsm', print: 'Full color', finishing: null, use: 'box kue', sizes });
+      draft({ brand: 'imperial_indopack', name, print: 'Full color', finishing: null, use: 'box kue', sizes });
     const variantRows = (ids: string[]) => getDb().select().from(productVariants).where(inArray(productVariants.id, ids));
     const tierRows = (ids: string[]) => getDb().select().from(variantPriceTiers).where(inArray(variantPriceTiers.variantId, ids));
     let boxId: string;
@@ -355,8 +354,8 @@ describe('product editor routes', () => {
         const res = await put(boxId, {
           draft: boxDraft(
             [
-              { id: a, size: B.size, tiers: [pcsTier(2500, 1850), pcsTier(5000, 1700)] },
-              { id: b, size: '25 x 25 x 9 cm', tiers: [pcsTier(2500, 2050)] },
+              { id: a, size: B.size, gsm: null, tiers: [pcsTier(2500, 1850), pcsTier(5000, 1700)] },
+              { id: b, size: '25 x 25 x 9 cm', gsm: null, tiers: [pcsTier(2500, 2050)] },
               { ...D, id: d },
             ],
             `${SAVE_NAME} Baru`
@@ -371,6 +370,67 @@ describe('product editor routes', () => {
       const after = await get(boxId);
       expect(after.product).toEqual(before.product); // name, first size's tiers, renames, updatedAt
       expect(after.history).toEqual(before.history);
+    });
+  });
+
+  describe('gramasi options inside one product', () => {
+    const GNAME = `${P}Box Dua Gramasi`;
+    const pcsTier = (minQty: number, priceIdr: number) => tier(minQty, priceIdr, 'pcs', 'pcs', true);
+    // Typed out of order, and '300' without its unit: the product comes back 270 first, as "300 gsm".
+    const rows = [
+      { size: '20 x 20 x 7 cm', gsm: '300', tiers: [pcsTier(2500, 2300)] },
+      { size: '25 x 25 x 8 cm', gsm: '300', tiers: [pcsTier(2500, 2600)] },
+      { size: '20 x 20 x 7 cm', gsm: '270', tiers: [pcsTier(2500, 1900)] },
+      { size: '25 x 25 x 8 cm', gsm: '270', tiers: [pcsTier(2500, 2100)] },
+    ];
+    const gDraft = (sizes: object[]) => draft({ brand: 'imperial_indopack', name: GNAME, print: 'Full color', finishing: null, use: 'box kue', sizes });
+    let gid: string;
+    let ids: { id: string; size: string; gsm: string | null }[];
+
+    it('creates a product with 270 and 300 gsm and lists both under it', async () => {
+      const res = await post({ draft: gDraft(rows), ...ACTOR });
+      expect(res.statusCode).toBe(201);
+      gid = res.json().data.id;
+      productIds.add(gid);
+      ids = res.json().data.sizes;
+      expect(ids.map((s) => [s.gsm, s.size])).toEqual([
+        ['270 gsm', '20 x 20 x 7 cm'], ['270 gsm', '25 x 25 x 8 cm'], ['300 gsm', '20 x 20 x 7 cm'], ['300 gsm', '25 x 25 x 8 cm'],
+      ]);
+      expect(res.json().data).not.toHaveProperty('gsm');
+      const stored = await getDb().select().from(productVariants).where(inArray(productVariants.id, ids.map((s) => s.id)));
+      expect(stored.map((v) => v.gsm).sort()).toEqual(['270 gsm', '270 gsm', '300 gsm', '300 gsm']);
+      // the gramasi is searchable in the list
+      expect((await list('search=300 gsm')).data.map((p) => p.id)).toContain(gid);
+      expect((await list('search=270')).data.map((p) => p.id)).toContain(gid);
+    });
+
+    it('some sizes with gramasi and some without is a 400 naming gsm_mixed', async () => {
+      const res = await post({ draft: gDraft([rows[0], { ...rows[1], gsm: null }]), ...ACTOR });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.stringify(res.json())).toContain('gsm_mixed');
+    });
+
+    it('a PUT renaming a gramasi keeps the size row ids', async () => {
+      const byId = (gsm: string, size: string) => ids.find((s) => s.gsm === gsm && s.size === size)!.id;
+      const renamed = [
+        { id: byId('300 gsm', '20 x 20 x 7 cm'), size: '20 x 20 x 7 cm', gsm: '320 gsm', tiers: rows[0]!.tiers },
+        { id: byId('300 gsm', '25 x 25 x 8 cm'), size: '25 x 25 x 8 cm', gsm: '320', tiers: rows[1]!.tiers },
+        { id: byId('270 gsm', '20 x 20 x 7 cm'), size: '20 x 20 x 7 cm', gsm: '270 gsm', tiers: rows[2]!.tiers },
+        { id: byId('270 gsm', '25 x 25 x 8 cm'), size: '25 x 25 x 8 cm', gsm: '270 gsm', tiers: rows[3]!.tiers },
+      ];
+      const res = await put(gid, { draft: gDraft(renamed), ...ACTOR });
+      expect(res.statusCode).toBe(200);
+      const after = res.json().data.sizes as { id: string; gsm: string }[];
+      expect(after.map((s) => s.gsm)).toEqual(['270 gsm', '270 gsm', '320 gsm', '320 gsm']);
+      expect(after.map((s) => s.id).sort()).toEqual(ids.map((s) => s.id).sort());
+      expect((await get(gid)).history[0].changes).toEqual([{ kind: 'gsm_renamed', from: '300 gsm', to: '320 gsm' }]);
+    });
+
+    it('renaming a gramasi onto one that already has the same size is a 400 duplicate_size', async () => {
+      const clash = ids.map((s) => ({ id: s.id, size: s.size, gsm: '270', tiers: [pcsTier(2500, 2000)] }));
+      const res = await put(gid, { draft: gDraft(clash), ...ACTOR });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.stringify(res.json())).toContain('duplicate_size');
     });
   });
 

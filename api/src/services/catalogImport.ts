@@ -283,14 +283,13 @@ export async function importCatalogFromXlsx(
         next.brand = brandSlugOfName(v.brand)!;
         if (v.description !== null) {
           const spec = parseProductSpec(v.description);
-          next.gsm = spec.gsm;
           next.print = spec.print;
           next.finishing = spec.finishing;
         }
         if (v.fungsi !== null) next.use = v.fungsi;
         const slot = next.sizes.find((s) => s.id === variantId);
         if (slot) slot.tiers = v.tiers;
-        else next.sizes.push({ id: variantId, size: v.size, tiers: v.tiers });
+        else next.sizes.push({ id: variantId, size: v.size, gsm: v.gsm, tiers: v.tiers });
       }
     }
 

@@ -214,7 +214,7 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
     .map(([, v]) => {
       // The product's merged Cetak / Finishing / Kegunaan, the same for all of its size rows.
       const f = productFacts.get(v.product.toLowerCase())!;
-      return { ...v, description: formatProductSpec({ gsm: null, print: f.cetak, finishing: f.finishing }), fungsi: f.kegunaan };
+      return { ...v, description: formatProductSpec({ print: f.cetak, finishing: f.finishing }), fungsi: f.kegunaan };
     });
   return out;
 }
