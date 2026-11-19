@@ -29,6 +29,8 @@ interface MetaMessage {
   //   "context": { "from": "628...", "from_user_id": "ID.316...", "id": "wamid.HBgN..." }
   // Chakra adds `from_user_id`, which Meta does not send and we do not read.
   context?: { id: string; from?: string };
+  // Click-to-WhatsApp ad the chat started from (Meta's shape; Chakra passes it through).
+  referral?: { source_type?: string; source_id?: string; headline?: string };
 }
 interface MetaValue {
   messages?: MetaMessage[];
@@ -131,6 +133,9 @@ async function toInboundPayload(msg: MetaMessage, value: MetaValue, log: Fastify
     pushName: value.contacts?.[0]?.profile?.name ?? null,
     toPhoneNumberId: value.metadata?.phone_number_id ?? null,
     quotedWaMessageId: msg.context?.id ?? null,
+    referral: msg.referral
+      ? { sourceType: msg.referral.source_type ?? null, sourceId: msg.referral.source_id ?? null, headline: msg.referral.headline ?? null }
+      : null,
     messageKey: { remoteJid: fromJid, fromMe: false, id: msg.id },
   };
 }

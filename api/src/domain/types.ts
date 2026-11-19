@@ -181,6 +181,8 @@ export interface LeadReport {
   conversionPct: number | null;
   avgDaysToClose: number | null;
   daily: { day: string; newLeads: number; contacted: number }[];
+  /** New leads per WIB day per brand; a two-brand lead counts in both. */
+  dailyByBrand: { day: string; kertas_supreme: number; imperial_indopack: number }[];
   funnel: Record<LeadStatus, number>;
   lostReasons: { reason: LostReason | null; count: number }[];
   unreplied: {
@@ -215,6 +217,7 @@ export type LostReason =
   | 'tidak_jadi'
   | 'tidak_cocok'
   | 'tidak_ada_respon'
+  | 'di_bawah_minimum'
   | 'lainnya';
 export const LOST_REASONS: readonly LostReason[] = [
   'barang_tidak_ada',
@@ -223,6 +226,7 @@ export const LOST_REASONS: readonly LostReason[] = [
   'tidak_jadi',
   'tidak_cocok',
   'tidak_ada_respon',
+  'di_bawah_minimum',
   'lainnya',
 ];
 

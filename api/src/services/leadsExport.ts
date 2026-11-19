@@ -59,6 +59,7 @@ const LOST_REASON_ID: Record<LostReason, string> = {
   tidak_ada_respon: 'Tidak Ada Respon',
   harga: 'Harga',
   beli_di_tempat_lain: 'Beli di Tempat Lain',
+  di_bawah_minimum: 'Di Bawah Minimum',
   tidak_jadi: 'Tidak Jadi',
   tidak_cocok: 'Tidak Cocok',
   lainnya: 'Lainnya',

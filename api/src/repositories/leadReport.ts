@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { IS_CURRENT_LEAD_SQL, WAITING_SINCE_SQL, isRecentWaitSql, wibDayStart } from './leads.js';
 import { LEAD_STATUSES } from '../domain/types.js';
+import type { BrandSlug } from '../domain/orderProfile.js';
 import type { LeadReport, LeadStatus, LostReason } from '../domain/types.js';
 
 /**
@@ -39,7 +40,7 @@ function addDays(day: string, n: number): string {
 
 const oneDecimal = (v: number) => Math.round(v * 10) / 10;
 
-export async function getLeadReport(p: { startDate?: string; endDate?: string }): Promise<LeadReport> {
+export async function getLeadReport(p: { startDate?: string; endDate?: string; brand?: BrandSlug }): Promise<LeadReport> {
   const endDay = p.endDate ?? wibToday();
   const startDay = p.startDate ?? addDays(endDay, -13);
   const start = wibDayStart(startDay);
@@ -48,8 +49,11 @@ export async function getLeadReport(p: { startDate?: string; endDate?: string })
   const from = start.toISOString();
   const to = endExcl.toISOString();
   const db = getDb();
+  // Every lead block narrows to the brand when one is chosen; `leads.` qualifies it inside the unreplied subquery too.
+  const brandL = p.brand ? sql`AND ${p.brand} = ANY(leads.brands)` : sql``;
+  const brandAlias = p.brand ? sql`AND ${p.brand} = ANY(l.brands)` : sql``;
 
-  const [tiles, contacted, daily, funnel, reasons, unreplied] = await Promise.all([
+  const [tiles, contacted, daily, dailyBrand, funnel, reasons, unreplied] = await Promise.all([
     db.execute<{ new_leads: number; returning: number; won: number; lost: number; won_now: number; avg_days: string | null }>(sql`
       SELECT
         count(*) FILTER (WHERE submitted_at >= ${from}::timestamptz AND submitted_at < ${to}::timestamptz)::int AS new_leads,
@@ -61,12 +65,12 @@ export async function getLeadReport(p: { startDate?: string; endDate?: string })
         round((avg(extract(epoch FROM closed_at - coalesce(first_contact_at, matched_at, submitted_at)) / 86400.0)
           FILTER (WHERE status = 'won' AND closed_at >= ${from}::timestamptz AND closed_at < ${to}::timestamptz))::numeric, 1) AS avg_days
       FROM leads
-      WHERE kind = 'lead'
+      WHERE kind = 'lead' ${brandL}
     `),
     db.execute<{ n: number }>(sql`
       SELECT count(DISTINCT l.contact_id)::int AS n
       FROM leads l
-      WHERE l.kind = 'lead' AND EXISTS (
+      WHERE l.kind = 'lead' ${brandAlias} AND EXISTS (
         SELECT 1 FROM conversations cv JOIN messages m ON m.conversation_id = cv.id
         WHERE cv.contact_id = l.contact_id AND m.role = 'user'
           AND m.created_at >= ${from}::timestamptz AND m.created_at < ${to}::timestamptz)
@@ -79,7 +83,7 @@ export async function getLeadReport(p: { startDate?: string; endDate?: string })
       LEFT JOIN (
         SELECT (submitted_at AT TIME ZONE 'Asia/Jakarta')::date AS day, count(*) AS cnt
         FROM leads
-        WHERE kind = 'lead' AND submitted_at >= ${from}::timestamptz AND submitted_at < ${to}::timestamptz
+        WHERE kind = 'lead' ${brandL} AND submitted_at >= ${from}::timestamptz AND submitted_at < ${to}::timestamptz
         GROUP BY 1
       ) n ON n.day = d.day
       LEFT JOIN (
@@ -87,20 +91,35 @@ export async function getLeadReport(p: { startDate?: string; endDate?: string })
         FROM leads l
         JOIN conversations cv ON cv.contact_id = l.contact_id
         JOIN messages m ON m.conversation_id = cv.id
-        WHERE l.kind = 'lead' AND m.role = 'user'
+        WHERE l.kind = 'lead' ${brandAlias} AND m.role = 'user'
           AND m.created_at >= ${from}::timestamptz AND m.created_at < ${to}::timestamptz
         GROUP BY 1
       ) c ON c.day = d.day
       ORDER BY d.day
     `),
+    db.execute<{ day: string; kertas_supreme: number; imperial_indopack: number }>(sql`
+      SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
+             coalesce(n.ks, 0)::int AS kertas_supreme,
+             coalesce(n.ii, 0)::int AS imperial_indopack
+      FROM generate_series(${startDay}::date, ${endDay}::date, interval '1 day') AS d(day)
+      LEFT JOIN (
+        SELECT (submitted_at AT TIME ZONE 'Asia/Jakarta')::date AS day,
+               count(*) FILTER (WHERE 'kertas_supreme' = ANY(brands)) AS ks,
+               count(*) FILTER (WHERE 'imperial_indopack' = ANY(brands)) AS ii
+        FROM leads
+        WHERE kind = 'lead' ${brandL} AND submitted_at >= ${from}::timestamptz AND submitted_at < ${to}::timestamptz
+        GROUP BY 1
+      ) n ON n.day = d.day
+      ORDER BY d.day
+    `),
     db.execute<{ status: LeadStatus; n: number }>(sql`
       SELECT status, count(*)::int AS n FROM leads
-      WHERE kind = 'lead' AND submitted_at >= ${from}::timestamptz AND submitted_at < ${to}::timestamptz
+      WHERE kind = 'lead' ${brandL} AND submitted_at >= ${from}::timestamptz AND submitted_at < ${to}::timestamptz
       GROUP BY status
     `),
     db.execute<{ reason: LostReason | null; n: number }>(sql`
       SELECT lost_reason AS reason, count(*)::int AS n FROM leads
-      WHERE kind = 'lead' AND status = 'lost' AND closed_at >= ${from}::timestamptz AND closed_at < ${to}::timestamptz
+      WHERE kind = 'lead' ${brandL} AND status = 'lost' AND closed_at >= ${from}::timestamptz AND closed_at < ${to}::timestamptz
       GROUP BY lost_reason
       ORDER BY n DESC, lost_reason ASC NULLS LAST
     `),
@@ -115,7 +134,7 @@ export async function getLeadReport(p: { startDate?: string; endDate?: string })
                  WHERE cv.contact_id = leads.contact_id AND m.role IN ('user', 'assistant')
                  ORDER BY m.created_at DESC LIMIT 1) AS last_message
         FROM leads LEFT JOIN contacts ct ON ct.id = leads.contact_id
-        WHERE leads.kind = 'lead' AND ${IS_CURRENT_LEAD_SQL}
+        WHERE leads.kind = 'lead' ${brandL} AND ${IS_CURRENT_LEAD_SQL}
       ) w
       WHERE ${isRecentWaitSql(sql`waiting_since`)}
       ORDER BY waiting_since ASC
@@ -137,6 +156,7 @@ export async function getLeadReport(p: { startDate?: string; endDate?: string })
     conversionPct: newLeads === 0 ? null : oneDecimal((Number(t.won_now) / newLeads) * 100),
     avgDaysToClose: t.avg_days === null ? null : Number(t.avg_days),
     daily: daily.rows.map((r) => ({ day: r.day, newLeads: Number(r.new_leads), contacted: Number(r.contacted) })),
+    dailyByBrand: dailyBrand.rows.map((r) => ({ day: r.day, kertas_supreme: Number(r.kertas_supreme), imperial_indopack: Number(r.imperial_indopack) })),
     funnel: funnelOut,
     lostReasons: reasons.rows.map((r) => ({ reason: r.reason, count: Number(r.n) })),
     unreplied: unreplied.rows.map((r) => ({

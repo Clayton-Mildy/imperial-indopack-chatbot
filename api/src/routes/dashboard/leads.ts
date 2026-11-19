@@ -6,11 +6,13 @@ import {
   LeadsExportQuerySchema,
   LeadsQuerySchema,
   LeadsSummaryQuerySchema,
+  LeadsBrandSummaryQuerySchema,
   PatchLeadBodySchema,
 } from '../../domain/schemas.js';
 import {
   listLeads,
   getCampaignSummary,
+  getBrandSummary,
   patchLead,
   LEAD_ALREADY_OPEN,
   upsertLeadFromImport,
@@ -18,6 +20,7 @@ import {
   getLeadById,
   listLeadOrders,
 } from '../../repositories/leads.js';
+import { getLeadDetailExtras } from '../../services/leadDetailExtras.js';
 import { getLeadReport } from '../../repositories/leadReport.js';
 import { listLeadEvents } from '../../repositories/leadEvents.js';
 import { importLeadsFromXlsx, InvalidXlsxError } from '../../services/leadImport.js';
@@ -60,6 +63,15 @@ export async function leadRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ data: await getCampaignSummary(query.data), error: null });
   });
 
+  // GET /api/v1/leads/brand-summary - per-brand lead performance. Static route, before /:id.
+  app.get('/api/v1/leads/brand-summary', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const query = LeadsBrandSummaryQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
+    }
+    return reply.send({ data: await getBrandSummary(query.data), error: null });
+  });
+
   // GET /api/v1/leads/report - the numbers behind the daily "Ringkasan" page, in one call.
   // Registered before /:id so "report" is never read as a lead id.
   app.get('/api/v1/leads/report', { preHandler: [apiKeyAuth] }, async (request, reply) => {
@@ -96,12 +108,13 @@ export async function leadRoutes(app: FastifyInstance): Promise<void> {
     if (!lead) {
       return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
     }
-    const [events, previousLead, orders] = await Promise.all([
+    const [events, previousLead, orders, extras] = await Promise.all([
       listLeadEvents(lead.id),
       lead.previousLeadId ? getLeadById(lead.previousLeadId) : Promise.resolve(null),
       listLeadOrders(lead.id),
+      getLeadDetailExtras(lead),
     ]);
-    return reply.send({ data: { lead, events, previousLead, orders }, error: null });
+    return reply.send({ data: { lead, events, previousLead, orders, extras }, error: null });
   });
 
   app.patch<{ Params: { id: string } }>(

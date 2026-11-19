@@ -154,11 +154,15 @@ const lastMessageExpr = sql<{ body: string; role: string; senderName: string | n
 // The PO form LINK reaching the customer. While the link setting is still the placeholder the bot
 // sends CANNED_PO_FORM_FROM_TEAM instead - a promise that the team will send the form - under the
 // same source, so that line is told apart by its fixed text, as closeSilentLeads does.
+// Shared with the lead detail (services/leadDetailExtras), so the inbox and the lead agree. Needs the
+// `messages` row aliased `m`.
+export const PO_FORM_LINK_ROW_SQL = sql`m.metadata->>'source' = ${MESSAGE_SOURCE.poForm}
+    AND m.body <> ${CANNED_PO_FORM_FROM_TEAM}`;
+
 const poFormSentAtExpr = sql<Date | null>`(
   SELECT MAX(m.created_at) FROM messages m
   WHERE m.conversation_id = conversations.id
-    AND m.metadata->>'source' = ${MESSAGE_SOURCE.poForm}
-    AND m.body <> ${CANNED_PO_FORM_FROM_TEAM}
+    AND ${PO_FORM_LINK_ROW_SQL}
 )`;
 
 /** A LIKE pattern for `s` anywhere, taken literally: %, _ and \ escaped with the ESCAPE character \. */

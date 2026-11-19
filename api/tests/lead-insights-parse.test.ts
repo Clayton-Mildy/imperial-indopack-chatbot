@@ -44,6 +44,11 @@ function modelSays(text: string) {
 describe('reading the model answer', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('reads di_bawah_minimum as a lost reason', async () => {
+    modelSays('{"lead_kind":"lead","stage":"lost","lost_reason":"di_bawah_minimum"}');
+    expect((await extractLeadInsights('Pelanggan: kurang dari minimum ya'))?.lost_reason).toBe('di_bawah_minimum');
+  });
+
   it('keeps every good field when one value is the wrong shape', async () => {
     modelSays('{"is_sales_conversation": true, "lead_temperature": "warm", "name": "Budi", "business_name": null, "brands": "kertas_supreme", "items": [{"product": "Box", "qty": "300"}]}');
     expect(await extractLeadInsights('Pelanggan: box 300 ya')).toEqual({

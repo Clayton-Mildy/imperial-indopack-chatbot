@@ -1177,6 +1177,7 @@ export async function routeInboundBaileysMessage(payload: BaileysInboundPayload)
       // Kept so a quote is auditable after the turn: it is used live and then discarded, which
       // is why nobody could tell whether Chakra forwards it. jsonb, so no migration.
       ...(payload.quotedWaMessageId && { quotedWaMessageId: payload.quotedWaMessageId }),
+      ...(payload.referral && { referral: { sourceType: payload.referral.sourceType ?? null, sourceId: payload.referral.sourceId ?? null, headline: payload.referral.headline ?? null } }),
       ...(lateMs > LATE_DELIVERY_MS && { deliveredLateMs: lateMs }),
       ...(isImage && { attachmentType: 'image', mimeType: payload.media?.mimeType ?? 'image/jpeg', ...(inboundMediaUrl && { mediaUrl: inboundMediaUrl }) }),
       ...(isDocument && { attachmentType: 'document', filename: documentName, ...(inboundMediaUrl && { mediaUrl: inboundMediaUrl }) }),

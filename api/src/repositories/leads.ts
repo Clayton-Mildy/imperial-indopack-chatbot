@@ -19,6 +19,7 @@ import type {
   PaginationParams,
 } from '../domain/types.js';
 import { ORGANIC_CAMPAIGN } from '../domain/types.js';
+import { BRAND_SLUGS } from '../domain/brands.js';
 import { CANNED_PO_FORM_FROM_TEAM } from '../domain/constants.js';
 
 // ─── date bounds ───────────────────────────────────────────────────────────
@@ -427,6 +428,13 @@ export async function listLeads(
         )`,
         sql`exists (
           select 1 from jsonb_each_text(coalesce(${contactProfiles.profile}, '{}'::jsonb)) kv
+          where kv.value ilike ${pattern}
+        )`,
+        // The business name, and the item lines (product, size, print ...) the customer asked for.
+        sql`${contactProfiles.profile}->>'business_name' ilike ${pattern}`,
+        sql`exists (
+          select 1 from jsonb_array_elements(case when jsonb_typeof(${leads.items}) = 'array' then ${leads.items} else '[]'::jsonb end) it,
+            jsonb_each_text(case when jsonb_typeof(it) = 'object' then it else '{}'::jsonb end) kv
           where kv.value ilike ${pattern}
         )`
       )!
@@ -1298,5 +1306,44 @@ export async function applyLeadOrderSnapshot(
       });
     }
     await tx.update(leads).set({ brands, items, updatedAt: new Date() }).where(eq(leads.id, leadId));
+  });
+}
+
+export interface BrandPerformance {
+  brand: BrandSlug;
+  leads: number;
+  chats: number;
+  won: number;
+  lost: number;
+  /** round(won / leads * 100); null when there are no leads. */
+  winPct: number | null;
+}
+
+/** Per-brand lead performance for new leads in the (WIB-day) range; a two-brand lead counts in both. */
+export async function getBrandSummary(params: { startDate?: string; endDate?: string }): Promise<BrandPerformance[]> {
+  const db = getDb();
+  const start = params.startDate ? wibDayStart(params.startDate) : null;
+  const end = params.endDate ? wibDayStart(params.endDate) : null;
+  if (end) end.setUTCDate(end.getUTCDate() + 1);
+
+  const result = await db.execute<{ brand: string; leads: number; chats: number; won: number; lost: number }>(sql`
+    SELECT b.brand AS brand,
+           count(*)::int AS leads,
+           count(l.contact_id)::int AS chats,
+           count(*) FILTER (WHERE l.status = 'won')::int AS won,
+           count(*) FILTER (WHERE l.status = 'lost')::int AS lost
+    FROM leads l
+    CROSS JOIN LATERAL unnest(l.brands) AS b(brand)
+    WHERE l.kind = 'lead'
+      ${start ? sql`AND l.submitted_at >= ${start.toISOString()}::timestamptz` : sql``}
+      ${end ? sql`AND l.submitted_at < ${end.toISOString()}::timestamptz` : sql``}
+    GROUP BY b.brand
+  `);
+  const byBrand = new Map(result.rows.map((r) => [r.brand, r]));
+  return BRAND_SLUGS.map((brand) => {
+    const r = byBrand.get(brand);
+    const n = Number(r?.leads ?? 0);
+    const won = Number(r?.won ?? 0);
+    return { brand, leads: n, chats: Number(r?.chats ?? 0), won, lost: Number(r?.lost ?? 0), winPct: n === 0 ? null : Math.round((won / n) * 100) };
   });
 }

@@ -31,6 +31,10 @@ export const BaileysInboundPayloadSchema = z.object({
   toPhoneNumberId: z.string().nullish(),
   // wamid of the message the customer replied/quoted to (WhatsApp reply feature).
   quotedWaMessageId: z.string().nullish(),
+  // Click-to-WhatsApp ad the customer came from (Meta's messages[].referral); absent for a direct chat.
+  referral: z
+    .object({ sourceType: z.string().nullish(), sourceId: z.string().nullish(), headline: z.string().nullish() })
+    .nullish(),
   messageKey: z.object({
     remoteJid: z.string(),
     fromMe: z.boolean(),
@@ -311,7 +315,7 @@ const ReportDay = z
   });
 
 export const LeadReportQuerySchema = z
-  .object({ startDate: ReportDay.optional(), endDate: ReportDay.optional() })
+  .object({ startDate: ReportDay.optional(), endDate: ReportDay.optional(), brand: z.enum(BRAND_SLUGS).optional() })
   .refine((q) => {
     // Resolve the defaults the way getLeadReport does (end = WIB today), then check the range can
     // be served: year >= 2000, start <= end, at most 366 days apart. A future end is fine (zeros).
@@ -358,4 +362,9 @@ export const PatchLeadBodySchema = LeadCampaignFieldsSchema.extend({
 // without one: a campaign that isn't tied to a submission id can never reach a conversation.
 export const AddCampaignBodySchema = LeadCampaignFieldsSchema.extend({
   requestId: z.string().uuid(),
+});
+
+export const LeadsBrandSummaryQuerySchema = z.object({
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
 });
