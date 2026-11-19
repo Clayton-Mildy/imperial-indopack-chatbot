@@ -29,9 +29,23 @@ export interface OrderItem {
 
 const BRAND_SLUGS: readonly string[] = ['imperial_indopack', 'kertas_supreme'];
 
+// A size written inside the product name: "Box Ivory 22x22x7", "box ivory 22 x 22 x 7 cm".
+const SIZE_IN_NAME_RE = /\s*\b\d+(?:[.,]\d+)?(?:\s*[x×*]\s*\d+(?:[.,]\d+)?)+(?:\s*cm)?\b/i;
+
+/** The product name and size of an item, with a size the model wrote into the name moved to `size`. */
+function nameAndSize(i: OrderItem): { product: string; size: string } {
+  const product = str(i.product);
+  let size = str(i.size);
+  const m = SIZE_IN_NAME_RE.exec(product);
+  if (!m) return { product, size };
+  if (!size) size = m[0].trim();
+  return { product: product.replace(SIZE_IN_NAME_RE, '').replace(/\s+/g, ' ').trim(), size };
+}
+
 /** Identity of an item across turns: the same product in the same size, however it is spelled. */
 export function itemKey(i: OrderItem): string {
-  return `${str(i.product).toLowerCase()}|${normalizeSize(str(i.size))}`;
+  const { product, size } = nameAndSize(i);
+  return `${product.toLowerCase()}|${normalizeSize(size)}`;
 }
 
 /** A trimmed non-empty string; finite numbers become strings; anything else is ''. */
@@ -65,6 +79,12 @@ export function sanitizeItem(raw: Record<string, unknown>): OrderItem {
   for (const k of ['product', 'size', 'gsm', 'print'] as const) {
     const v = str(raw[k]);
     if (v) out[k] = v;
+  }
+  // "Box Ivory 22x22x7" in the name and no size: one item, so the size goes where the key looks for it.
+  if (out.product) {
+    const ns = nameAndSize(out);
+    if (ns.product) out.product = ns.product;
+    if (ns.size) out.size = ns.size;
   }
   const qty = parseQty(raw.qty);
   if (qty !== undefined) out.qty = qty;
