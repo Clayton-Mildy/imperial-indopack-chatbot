@@ -127,15 +127,15 @@ describe('parseTemplateRows', () => {
     ]);
   });
 
-  it('a blank key poisons every variant matching the filled keys, under any brand', () => {
+  // (One product name under two brands is now a row error of its own: see the brand-clash test below.)
+  it('a blank key poisons every variant matching the filled keys', () => {
     const p = parseTemplateRows([
       HEADER,
       ROW(BRAND, PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'ya'),
-      ROW('Imperial Indopack', PRODUCT, SIZE, 20, 'rim', 150000, 'rim', 'ya'),
       ROW(BRAND, PRODUCT, '40 x 40 cm', 5, 'rim', 1, 'rim', 'ya'),
       ROW('', PRODUCT, SIZE, 10, 'rim', 165000, 'rim', 'ya'),
     ]);
-    expect(p.errors.map((e) => e.row)).toEqual([5]);
+    expect(p.errors.map((e) => e.row)).toEqual([4]);
     expect(p.variants.map((v) => v.size)).toEqual(['40 x 40 cm']);
   });
 
@@ -199,6 +199,38 @@ describe('parseTemplateRows', () => {
       ROW(BRAND, PRODUCT, '30x40', 5, 'rim', 195000, 'rim', 'tidak'),
     ]);
     expect(apart.variants).toHaveLength(2);
+  });
+
+  // Products are matched by name on apply, so one name under both brands would silently merge under the
+  // first brand (and on apply the last brand would win). The clash is a row error naming the brand the
+  // file already used, and it poisons that product: none of its rows import, under either brand.
+  it('one product name under both brands: a row error naming the first brand, and the product is left out', () => {
+    const BOX = 'Box Contoh Serbaguna';
+    const p = parseTemplateRows([
+      HEADER,
+      ROW(BRAND, BOX, '30x30', 5, 'rim', 185000, 'rim', 'tidak'),
+      ROW('Imperial Indopack', BOX, '30x30', 1000, 'pcs', 2500, 'pcs', 'tidak'),
+      ROW('Imperial Indopack', BOX.toLowerCase(), '20x20', 1000, 'pcs', 2000, 'pcs', 'tidak'),
+      ROW(BRAND, BOX, '40x40', 5, 'rim', 195000, 'rim', 'tidak'),
+      ROW(BRAND, PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'tidak'),
+    ]);
+    expect(p.errors).toEqual([
+      { row: 3, message: `Produk "${BOX}" sudah dipakai untuk Kertas Supreme di file ini.` },
+      { row: 4, message: `Produk "${BOX.toLowerCase()}" sudah dipakai untuk Kertas Supreme di file ini.` },
+    ]);
+    // Neither brand's rows of the clashing product import; the other product does.
+    expect(p.variants.map((v) => [v.brand, v.product, v.size])).toEqual([[BRAND, PRODUCT, SIZE]]);
+    expect(p).toMatchObject({ totalRows: 5, validRows: 3 });
+  });
+
+  it('the same brand written two ways is not a clash', () => {
+    const p = parseTemplateRows([
+      HEADER,
+      ROW(BRAND, PRODUCT, '30x30', 5, 'rim', 185000, 'rim', 'tidak'),
+      ROW('KERTAS SUPREME', PRODUCT, '40x40', 5, 'rim', 195000, 'rim', 'tidak'),
+    ]);
+    expect(p.errors).toEqual([]);
+    expect(p.variants).toHaveLength(2);
   });
 
   it('caps the error list at 50 while the row counts stay exact', () => {

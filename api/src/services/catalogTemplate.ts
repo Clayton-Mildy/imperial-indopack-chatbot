@@ -12,6 +12,7 @@ import { formatProductSpec, parseProductSpec } from '../domain/productSpec.js';
 import { normalizeSize } from '../domain/orderProfile.js';
 import { normalizeHeader } from './leadImport.js';
 import { BRAND_NAME, brandSlugOfName } from '../domain/brands.js';
+import type { BrandSlug } from '../domain/orderProfile.js';
 
 export const TEMPLATE_SHEET = 'Katalog';
 export const TEMPLATE_COLUMNS = [
@@ -88,6 +89,10 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
   // Per variant, each tier's threshold in pcs -> how the first row wrote it.
   const seenTiers = new Map<string, string>();
   const failed = new Set<string>();
+  // The import matches products by name, so one name is one product with one brand. Product name
+  // (lowercased) -> the brand the file first gave it; a product written under both brands is left out.
+  const productBrand = new Map<string, BrandSlug>();
+  const failedProducts = new Set<string>();
   const blankKeyRows: { brand: string | null; product: string | null; size: string | null }[] = [];
 
   for (let i = 1; i < rows.length; i++) {
@@ -117,6 +122,15 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
     const bad = (message: string) => { err(row, message); failed.add(key); };
 
     if (!brandSlug) { bad(`Merek "${brandRaw}" tidak dikenal. Isi ${brandNames}.`); continue; }
+    // Without this the rows merged under the first brand and, on apply, the last brand won.
+    const productKey = product.toLowerCase();
+    const firstBrand = productBrand.get(productKey);
+    if (firstBrand === undefined) productBrand.set(productKey, brandSlug);
+    else if (firstBrand !== brandSlug) {
+      err(row, `Produk "${product}" sudah dipakai untuk ${BRAND_NAME[firstBrand]} di file ini.`);
+      failedProducts.add(productKey);
+      continue;
+    }
 
     const minQty = number(cell('Min Qty'));
     if (!Number.isInteger(minQty) || minQty <= 0) { bad(`Min Qty "${text(cell('Min Qty')) ?? ''}" bukan angka bulat lebih dari 0.`); continue; }
@@ -161,7 +175,9 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
         (!b.size || normalizeSize(b.size) === normalizeSize(v.size))
     );
   out.validRows = out.totalRows - errorRows.size;
-  out.variants = [...groups].filter(([k, v]) => !failed.has(k) && !poisoned(v)).map(([, v]) => v);
+  out.variants = [...groups]
+    .filter(([k, v]) => !failed.has(k) && !failedProducts.has(v.product.toLowerCase()) && !poisoned(v))
+    .map(([, v]) => v);
   return out;
 }
 
