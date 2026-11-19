@@ -7,7 +7,7 @@ import { testDbRefusal } from './setup/test-db-refusal.js'
 const url = (db: string) => `postgresql://contoh:contoh@localhost:5432/${db}`
 
 describe('testDbRefusal', () => {
-  it.each(['imperial_indopack', 'imperial_indopack_qa', 'contoh_test', 'IMPERIAL_INDOPACK_QA'])(
+  it.each(['imperial_indopack', 'imperial_indopack_qa', 'imperial_indopack_test', 'IMPERIAL_INDOPACK_QA'])(
     'allows %s with the capture transport',
     (db) => {
       expect(testDbRefusal({ DATABASE_URL: url(db), WHATSAPP_TRANSPORT: 'capture' })).toBeNull()
@@ -23,19 +23,13 @@ describe('testDbRefusal', () => {
     expect(refusal).toMatch(/WHATSAPP_TRANSPORT=capture/)
   })
 
-  it.each(['imperial_indopack_prod', 'postgres', 'imperial', 'imperial_indopack_live', 'qa', 'test', 'contoh_testing'])(
+  it.each(['imperial_indopack_prod', 'postgres', 'imperial', 'imperial_indopack_live', 'qa', 'test', 'contoh_test', 'other_app', 'other_app_test', 'other_app_qa'])(
     'refuses database %s and says why',
     (db) => {
       const refusal = testDbRefusal({ DATABASE_URL: url(db), WHATSAPP_TRANSPORT: 'capture' })
-      expect(refusal).toMatch(/imperial_indopack/)
-      expect(refusal).toMatch(/_qa/)
-      expect(refusal).toMatch(/_test/)
+      expect(refusal).toMatch(/imperial_indopack, imperial_indopack_qa, imperial_indopack_test/)
     },
   )
-
-  it.each(['legacy_test', 'imperial_indopack_qa?application_name=legacy', 'LEGACY_qa'])('still refuses anything Legacy: %s', (db) => {
-    expect(testDbRefusal({ DATABASE_URL: url(db), WHATSAPP_TRANSPORT: 'capture' })).toMatch(/Legacy/)
-  })
 
   it.each([undefined, '', 'not a url', 'postgresql://localhost:5432/'])('refuses a missing or unreadable DATABASE_URL %j', (dbUrl) => {
     expect(testDbRefusal({ DATABASE_URL: dbUrl, WHATSAPP_TRANSPORT: 'capture' })).toMatch(/DATABASE_URL/)

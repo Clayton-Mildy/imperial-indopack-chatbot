@@ -78,7 +78,7 @@ Run with `npx tsx scripts/<name>.ts` (or `node dist-scripts/<name>.js` on the de
 | Script | Does |
 |---|---|
 | `migrate.ts` | Applies pending migrations with the runtime migrator (no drizzle-kit needed) |
-| `load-demo-catalog.ts` | The demo catalog above (`--purge` removes it); refuses a `legacy` database |
+| `load-demo-catalog.ts` | The demo catalog above (`--purge` removes it); refuses any database other than this project's local ones |
 | `seed.ts` | First dashboard admin and API key |
 | `seed-default-prompt.ts` | `app_settings.default_prompt_sections` — the AI's default prompt |
 | `reseed-prompt-defaults.ts` | Syncs the shipped prompt to the defaults and every number's snapshot, keeping staff edits (`--force` replaces them); warns about an Identity that does not name Imperial Indopack |

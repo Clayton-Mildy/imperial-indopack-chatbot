@@ -11,11 +11,14 @@ import { Pool } from 'pg';
 import { createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import * as schema from '../src/db/schema.js';
+import { LOCAL_DB_NAMES, isLocalProjectDb } from '../src/domain/localDatabase.js';
 
 async function seedLocal() {
   const connectionString = process.env['DATABASE_URL'];
   if (!connectionString) throw new Error('DATABASE_URL is required');
-  if (/legacy/i.test(connectionString)) throw new Error('Refusing to seed a database whose URL matches /legacy/i');
+  if (!isLocalProjectDb(connectionString)) {
+    throw new Error(`Refusing to seed: the database must be one of ${LOCAL_DB_NAMES.join(', ')}`);
+  }
   const apiKey = process.env['SEED_API_KEY'] ?? '';
   if (apiKey.length < 32) throw new Error('SEED_API_KEY is required (at least 32 characters)');
 

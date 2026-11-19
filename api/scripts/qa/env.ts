@@ -1,10 +1,11 @@
 import 'dotenv/config';
+import { databaseName } from '../../src/domain/localDatabase.js';
 
-/** The QA database URL, or exit 1. Must end in _qa and never match /legacy/i. */
+/** The QA database URL, or exit 1. Must name exactly this project's QA database, imperial_indopack_qa. */
 export function requireQaDatabaseUrl(): string {
   const url = process.env['QA_DATABASE_URL'] ?? '';
-  if (!url || !/_qa(\?.*)?$/.test(url) || /legacy/i.test(url)) {
-    console.error('QA_DATABASE_URL must be set, must end in _qa and must not match /legacy/i. Refusing to start.');
+  if (databaseName(url) !== 'imperial_indopack_qa') {
+    console.error('QA_DATABASE_URL must point at the database imperial_indopack_qa. Refusing to start.');
     process.exit(1);
   }
   return url;

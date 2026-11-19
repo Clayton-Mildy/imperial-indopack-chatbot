@@ -7,11 +7,14 @@
  */
 import 'dotenv/config';
 import { loadDemoCatalog, purgeDemoCatalog } from '../src/services/demoCatalog.js';
+import { LOCAL_DB_NAMES, isLocalProjectDb } from '../src/domain/localDatabase.js';
 
 async function main() {
   const url = process.env['DATABASE_URL'];
   if (!url) throw new Error('DATABASE_URL is required');
-  if (/legacy/i.test(url)) throw new Error('Refusing to touch a database whose URL matches /legacy/i');
+  if (!isLocalProjectDb(url)) {
+    throw new Error(`Refusing to touch the catalog: the database must be one of ${LOCAL_DB_NAMES.join(', ')}`);
+  }
 
   if (process.argv.includes('--purge')) {
     const r = await purgeDemoCatalog();
