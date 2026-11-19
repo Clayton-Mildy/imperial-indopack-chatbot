@@ -24,7 +24,7 @@ Do this before touching the real WhatsApp number. Needs Node 24 and Postgres 17 
    same value as `SEED_API_KEY` without printing it:
    `sed -i '' "s|^API_SECRET_KEY=.*|API_SECRET_KEY=$(grep '^SEED_API_KEY=' api/.env | cut -d= -f2-)|" dashboard/.env.local`
    (macOS; on Linux drop the `''` after `-i`).
-3. `cd api && npm run catalog:demo` loads a DEMO catalog (product names end with `(CONTOH)`, fake prices).
+4. `cd api && npm run catalog:demo` loads a DEMO catalog (product names end with `(CONTOH)`, fake prices).
 5. Start both apps, each in its own terminal:
    - `cd api && npm run dev` (API, port 50070)
    - `cd dashboard && npm run dev` (dashboard, port 40070), then open http://localhost:40070/app/login and log in with the admin from step 2
