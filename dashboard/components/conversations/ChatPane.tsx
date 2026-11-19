@@ -123,9 +123,10 @@ function Bubble({ msg, now }: { msg: Message; now: Date }) {
 
   const isCustomer = msg.role === "user";
   const isStaff = !isCustomer && !!msg.senderName;
-  const background = isCustomer ? "#DCEBC6" : isStaff ? "#F0F7E6" : "#ffffff";
-  const border = isStaff ? "1px solid #C9D6BB" : "1px solid transparent";
-  const radius = isCustomer ? "12px 12px 2px 12px" : "12px 12px 12px 2px";
+  // Our side (bot and staff) sits on the right like a WhatsApp sender; the customer on the left.
+  const background = isCustomer ? "#ffffff" : isStaff ? "#EAF2DD" : "#DCEBC6";
+  const border = isCustomer ? "1px solid #E1E7DC" : isStaff ? "1px solid #C9D6BB" : "1px solid transparent";
+  const radius = isCustomer ? "12px 12px 12px 2px" : "12px 12px 2px 12px";
   const source = isCustomer ? null : sourceLabel(msg.metadata, lang);
   const sender = isCustomer ? null : isStaff ? t("conversations.chat.staff", { name: msg.senderName ?? "" }) : t("conversations.chat.bot");
   const hasAttachment = !!msg.metadata?.attachmentType;
@@ -133,7 +134,7 @@ function Bubble({ msg, now }: { msg: Message; now: Date }) {
   return (
     <div
       id={`msg-${msg.id}`}
-      style={{ alignSelf: isCustomer ? "flex-end" : "flex-start", maxWidth: "70%", display: "flex", flexDirection: "column", gap: 3, alignItems: isCustomer ? "flex-end" : "flex-start" }}
+      style={{ alignSelf: isCustomer ? "flex-start" : "flex-end", maxWidth: "70%", display: "flex", flexDirection: "column", gap: 3, alignItems: isCustomer ? "flex-start" : "flex-end" }}
     >
       {sender && (
         <span style={{ fontSize: 11, color: isStaff ? "#586B34" : "#5F6B5A", fontWeight: isStaff ? 600 : 400 }}>

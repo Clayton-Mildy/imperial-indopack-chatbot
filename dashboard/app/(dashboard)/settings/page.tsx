@@ -6,7 +6,6 @@ import { getNumbers } from "@/lib/api/numbers";
 import { getBrandPriceLists } from "@/lib/api/catalog";
 import {
   getBotSettings,
-  getGoLiveIssues,
   getLeadReopenMonths,
   getLeadSilenceDays,
   getPoFormsSetting,
@@ -19,7 +18,6 @@ import { getAiDefault, getChakraSyncStatus } from "@/actions/settingsActions";
 import { AiToggleClient } from "./AiToggleClient";
 import { BotSettingsClient } from "./BotSettingsClient";
 import { ChangePasswordClient } from "./ChangePasswordClient";
-import { GoLiveBanner } from "./GoLiveBanner";
 import { LanguageSelect } from "./LanguageSelect";
 import { LeadSettingsClient } from "./LeadSettingsClient";
 import { OrderingSettingsClient } from "./OrderingSettingsClient";
@@ -38,7 +36,7 @@ function orNull<T>(p: Promise<T>, what: string): Promise<T | null> {
 }
 
 /**
- * Pengaturan (Settings.dc.html): the go-live banner, an in-page nav, and the sections Bot, Pemesanan &
+ * Pengaturan (Settings.dc.html): an in-page nav and the sections Bot, Pemesanan &
  * harga, Leads, Tim & notifikasi, WhatsApp, Instruksi bot and Profil saya. Only admins change anything
  * (the proxy keeps other roles off this page; every action re-checks the role).
  */
@@ -47,14 +45,13 @@ export default async function SettingsPage() {
   const t = await getT();
   const canEdit = (await sessionRole()) === "admin";
 
-  const [bot, poForms, priceLists, reopenMonths, silenceDays, whatsapp, goLive, aiEnabled, chakraSync, promptSections, numbers] = await Promise.all([
+  const [bot, poForms, priceLists, reopenMonths, silenceDays, whatsapp, aiEnabled, chakraSync, promptSections, numbers] = await Promise.all([
     orNull(getBotSettings(), "bot settings"),
     orNull(getPoFormsSetting(), "PO forms"),
     orNull(getBrandPriceLists(), "price lists"),
     orNull(getLeadReopenMonths(), "lead reopen months"),
     orNull(getLeadSilenceDays(), "lead silence days"),
     orNull(getWhatsAppStatus(), "WhatsApp status"),
-    orNull(getGoLiveIssues(), "go-live issues"),
     getAiDefault(),
     getChakraSyncStatus(),
     getPromptDefaults().catch(() => []),
@@ -66,7 +63,6 @@ export default async function SettingsPage() {
   return (
     <>
       <Header title={t("settings.title")} note={t("settings.adminOnly")} />
-      <GoLiveBanner issues={goLive} />
       <main style={{ flex: 1, overflowY: "auto", padding: "24px 32px 32px", display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
         <SettingsNav />
 

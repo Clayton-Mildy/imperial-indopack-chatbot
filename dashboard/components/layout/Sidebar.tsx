@@ -144,7 +144,8 @@ export function Sidebar({ role, userName }: { role: string; userName: string }) 
                     className="flex items-center relative"
                     style={{
                       height: 36,
-                      padding: "0 12px",
+                      // Indented under the section label so items read as menu entries, not headings.
+                      padding: "0 12px 0 22px",
                       gap: 8,
                       borderRadius: 6,
                       marginBottom: 2,

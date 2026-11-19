@@ -14,8 +14,11 @@ Do this before touching the real WhatsApp number. Needs Node 24 and Postgres 17 
 
 1. In `api/.env` set the local overrides listed in `api/.env.example` ("Local dev overrides"):
    `NODE_ENV=development`, `WHATSAPP_TRANSPORT=capture`, `PUBLIC_BASE_URL=http://localhost:50070`,
-   `SEED_API_KEY` (32+ characters, `openssl rand -hex 32`), and either `USE_CLAUDE_CLI=true` with
-   `ANTHROPIC_API_KEY=unused-in-cli-mode`, or a real `ANTHROPIC_API_KEY`.
+   `SEED_API_KEY` (32+ characters, `openssl rand -hex 32`), and the Claude credentials the same way
+   as production: `CLAUDE_CODE_OAUTH_TOKEN_1`, `_2`, `_3`, ... (one `claude setup-token` per account;
+   `_1` serves until its limit, then `_2`, and so on) with `USE_CLAUDE_CLI=false` and any non-empty
+   `ANTHROPIC_API_KEY` (never sent). Without tokens, `USE_CLAUDE_CLI=true` uses your own Claude Code
+   login instead.
 2. `cd api && npm install && npm run db:migrate && npm run seed:local` (admin, API key, a test phone number row).
    Then `npx tsx scripts/seed-default-prompt.ts` once for the default prompt.
    Login: `seed:local` creates the admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` in `api/.env`; if those
@@ -155,7 +158,7 @@ From `api/`. Every `npx tsx scripts/X.ts` below becomes `node dist-scripts/X.js`
      the API is fine).
 
    The tunnel exposes nothing to WhatsApp customers until the Chakra webhook is pointed at it (section 5,
-   webhook step), and the AI stays off until the go-live banner is empty.
+   webhook step), and the AI stays off until every step of section 4 is done.
 6. Log in to the dashboard at `https://bot.example.com/app` with the admin from step 2, open **Pengaturan**, section **Bot**, and turn
    **Balasan otomatis AI** OFF. A fresh database starts with it ON. Leave it OFF until section 7: with it off the
    bot answers nobody, so connecting the number (section 5) cannot let it talk to a customer before it is set up.
@@ -165,8 +168,7 @@ From `api/`. Every `npx tsx scripts/X.ts` below becomes `node dist-scripts/X.js`
 ## 4. Set up the bot (before connecting WhatsApp)
 
 Do all of this before the number is connected (section 5), with **Balasan otomatis AI** still OFF (section 3,
-step 6). Open Pengaturan: the go-live banner at the top lists what is still missing. It must be empty before the
-AI is switched on (section 7).
+step 6). Tick off every step below before the AI is switched on (section 7).
 
 1. **Pengaturan, Pemesanan & harga**: enter both PO form links (https). On a fresh production database they
    are placeholders and the bot will not send a placeholder:
@@ -179,7 +181,7 @@ AI is switched on (section 7).
 3. **Katalog, the real catalog.** The client's workbook only held customer-specific quotes, so there is no
    generic price list yet.
    - If you loaded the demo catalog: `cd api && npm run catalog:demo -- --purge` deletes only the `(CONTOH)`
-     products. The banner flags "Katalog berisi data contoh" until they are gone.
+     products. Until they are gone, customers would be quoted the demo prices.
    - Import the client's generic price list: **Katalog, Import Excel, Unduh template-katalog.xlsx**, fill it
      (one row per price tier), upload it.
    - Upload both brand price-list PDFs under "Daftar harga untuk dikirim bot" (Kertas Supreme and Imperial Indopack, PDF, max 20 MB each).
@@ -190,9 +192,10 @@ AI is switched on (section 7).
    public address from section 3, step 5) and turns on browser notifications (button "Aktifkan
    notifikasi"; it then reads "Notifikasi aktif"). On iPhone it needs iOS 16.4+ and the site added to the
    Home Screen.
-5. Check Pengaturan once more: the go-live banner lists nothing but "Nomor WhatsApp belum terhubung", which
-   clears in section 5. If WhatsApp already reads **Terhubung** here, a number row is already stored (see the
-   database note in section 3).
+5. Check once more: both PO links are real (no "Masih link contoh." hint), Katalog has no `(CONTOH)` products
+   and shows both price-list files, and Pengaturan, WhatsApp reads "Belum terhubung" (it changes in section 5).
+   If WhatsApp already reads **Terhubung** here, a number row is already stored (see the database note in
+   section 3).
 
 ## 5. Connect WhatsApp: ChakraHQ (primary path)
 
@@ -260,7 +263,7 @@ Same rule as section 5: **Balasan otomatis AI** stays OFF until section 7.
 
 ## 7. Switch the AI on and test from a personal phone
 
-Pengaturan: the go-live banner must be empty and WhatsApp must read **Terhubung**. Only then turn **Balasan otomatis
+Every step of section 4 is done and Pengaturan, WhatsApp reads **Terhubung**. Only then turn **Balasan otomatis
 AI** ON (Pengaturan, section **Bot**).
 
 The switch is global and the dashboard has no per-contact AI switch, so from that moment the bot answers every
