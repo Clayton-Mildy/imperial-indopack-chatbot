@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { Pool } from 'pg';
+import { compareGsm } from '../src/domain/gramasi.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/imperial_indopack';
@@ -14,7 +15,7 @@ if (!OPENAI_API_KEY) {
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 
-function buildEmbeddingText(brandName: string, productName: string, productDescription: string | null, variants: Array<{ name: string; description: string | null }>, extra?: { fungsi?: string|null; kata_kunci?: string|null; bahan?: string|null; kelengkapan?: string|null; usp?: string|null; ketebalan?: string|null }): string {
+function buildEmbeddingText(brandName: string, productName: string, productDescription: string | null, variants: Array<{ name: string; description: string | null; gsm?: string | null }>, extra?: { fungsi?: string|null; kata_kunci?: string|null; bahan?: string|null; kelengkapan?: string|null; usp?: string|null; ketebalan?: string|null }): string {
   const parts: string[] = [`Merek: ${brandName}`, `Produk: ${productName}`];
   if (productDescription) parts.push(productDescription);
   if (extra?.fungsi) parts.push(`Fungsi: ${extra.fungsi}`);
@@ -26,6 +27,8 @@ function buildEmbeddingText(brandName: string, productName: string, productDescr
   for (const v of variants) {
     parts.push(v.description ? `${v.name} — ${v.description}` : v.name);
   }
+  const gramasi = [...new Set(variants.map((v) => v.gsm).filter((g): g is string => !!g))].sort(compareGsm);
+  if (gramasi.length > 0) parts.push(`Gramasi: ${gramasi.join(', ')}`);
   return parts.join('\n');
 }
 
@@ -58,7 +61,7 @@ async function main() {
 
   const productIds = productRows.map((p: any) => p.id);
   const { rows: variantRows } = await pool.query(
-    `SELECT product_id, name, description FROM product_variants WHERE product_id = ANY($1)`,
+    `SELECT product_id, name, description, gsm FROM product_variants WHERE product_id = ANY($1)`,
     [productIds]
   );
   const { rows: brandRows } = await pool.query('SELECT id, name FROM brands');
@@ -77,7 +80,7 @@ async function main() {
       brandMap.get(p.brand_id) ?? '',
       p.name,
       p.description,
-      (variantMap.get(p.id) ?? []).map((v: any) => ({ name: v.name, description: v.description })),
+      (variantMap.get(p.id) ?? []).map((v: any) => ({ name: v.name, description: v.description, gsm: v.gsm })),
       { fungsi: p.fungsi, kata_kunci: p.kata_kunci, bahan: p.bahan, kelengkapan: p.kelengkapan, usp: p.usp, ketebalan: p.ketebalan }
     ),
   }));

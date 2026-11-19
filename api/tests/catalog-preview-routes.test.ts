@@ -156,6 +156,25 @@ describe('product preview, price check and brand price lists', () => {
     expect(await getDb().select().from(products).where(eq(products.name, SUPREME_NAME))).toEqual([]);
   });
 
+  it('preview groups sizes under their gramasi exactly as the bot reads them', async () => {
+    const draft = {
+      ...supremeDraft(1),
+      sizes: [
+        { size: '30 x 30 cm', gsm: '300 gsm', tiers: [tier(5, 200000)] },
+        { size: '30 x 30 cm', gsm: '270 gsm', tiers: [tier(5, 185000)] },
+      ],
+    };
+    const p = (await post('/api/v1/catalog/products/preview', { draft })).json().data;
+    expect(p.botText).toContain([
+      '  Gramasi 270 gsm:',
+      '  - Ukuran: 30 x 30 cm',
+      '  • mulai 5 rim (2.500 pcs): Rp 185.000/rim, belum termasuk ongkir',
+      '  Gramasi 300 gsm:',
+      '  - Ukuran: 30 x 30 cm',
+      '  • mulai 5 rim (2.500 pcs): Rp 200.000/rim, belum termasuk ongkir',
+    ].join('\n'));
+  });
+
   it('a shown size is trimmed as the save trims it, a hidden one is listed as typed; a malformed body is a 400', async () => {
     const draft = { ...SUPREME_DRAFT_WITH_EMPTY_35, sizes: [{ size: '  30 x 30 cm ', gsm: null, tiers: [tier(5, 185000)] }, { size: ' 40 x 40 ', gsm: null, tiers: [] }] };
     const p = (await post('/api/v1/catalog/products/preview', { draft })).json().data;

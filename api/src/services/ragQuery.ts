@@ -6,6 +6,7 @@ import { MAX_CATALOG_RAG_RESULTS, REFERENCE_PHOTOS_MARKER } from '../domain/cons
 import { BRAND_NAMES, type BrandSlug } from '../domain/orderProfile.js';
 import { brandsInText } from './catalogDelivery.js';
 import type { Product } from '../domain/types.js';
+import { compareGsm } from '../domain/gramasi.js';
 import { toPcs, type PriceTier } from '../domain/pricing.js';
 
 // ─── OpenAI embedding helper ─────────────────────────────────────────────────
@@ -331,7 +332,14 @@ export function formatProducts(items: Product[]): string {
     if (variants.length === 0) {
       lines.push('  (Produk tidak aktif)');
     } else {
-      for (const v of variants) {
+      // A product with gramasi lists its sizes under a "  Gramasi <gsm>:" header, ascending. The header
+      // starts with spaces and has no "Rp", so the block parsers (aiLayer) and the price check skip it.
+      const hasGramasi = variants.some((v) => v.gsm);
+      const ordered = hasGramasi ? [...variants].sort((a, b) => compareGsm(a.gsm ?? null, b.gsm ?? null)) : variants;
+      let currentGsm: string | null | undefined;
+      for (const v of ordered) {
+        if (hasGramasi && v.gsm && v.gsm !== currentGsm) lines.push(`  Gramasi ${v.gsm}:`);
+        currentGsm = v.gsm ?? null;
         // An out-of-stock variant is listed (customers ask for it) but carries no price lines.
         if (v.stockStatus === 'no_stock') {
           lines.push(`  - Ukuran: ${v.name} [STOK HABIS SEMENTARA]`);

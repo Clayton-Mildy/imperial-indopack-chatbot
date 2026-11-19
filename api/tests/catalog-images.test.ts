@@ -52,6 +52,22 @@ describe('matching a file name to a product or variant', () => {
     expect(matchImageFile('sku-777.webp', index)).toMatchObject({ status: 'matched', target: { id: 'v5' } });
   });
 
+  it('a size under two gramasi indexes to both rows, labelled with the gramasi', () => {
+    const idx = buildImageIndex({
+      products: [{ id: 'p9', name: 'Box Makan Ivory' }],
+      variants: [
+        { id: 'g1', name: '20 x 20 x 7 cm', gsm: '270 gsm', sku: null, productName: 'Box Makan Ivory' },
+        { id: 'g2', name: '20 x 20 x 7 cm', gsm: '300 gsm', sku: null, productName: 'Box Makan Ivory' },
+      ],
+    });
+    const r = matchImageFile('20x20x7 cm.jpg', idx);
+    expect(r.status).toBe('ambiguous');
+    expect(r.status === 'ambiguous' && r.options).toEqual([
+      'Box Makan Ivory / 270 gsm / 20 x 20 x 7 cm',
+      'Box Makan Ivory / 300 gsm / 20 x 20 x 7 cm',
+    ]);
+  });
+
   it('reports a name two rows share instead of guessing', () => {
     const r = matchImageFile('UK 30 X 30.jpg', index);
     expect(r.status).toBe('ambiguous');

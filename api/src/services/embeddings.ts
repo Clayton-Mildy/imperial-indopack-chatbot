@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { compareGsm } from '../domain/gramasi.js';
 
 const OPENAI_MODEL = 'text-embedding-3-small';
 
@@ -6,7 +7,7 @@ function buildEmbeddingText(
   brandName: string,
   productName: string,
   productDescription: string | null,
-  variants: Array<{ name: string; description: string | null }>,
+  variants: Array<{ name: string; description: string | null; gsm?: string | null }>,
   extra?: {
     fungsi?: string | null;
     kataKunci?: string | null;
@@ -27,6 +28,8 @@ function buildEmbeddingText(
   for (const v of variants) {
     parts.push(v.description ? `${v.name} — ${v.description}` : v.name);
   }
+  const gramasi = [...new Set(variants.map((v) => v.gsm).filter((g): g is string => !!g))].sort(compareGsm);
+  if (gramasi.length > 0) parts.push(`Gramasi: ${gramasi.join(', ')}`);
   return parts.join('\n');
 }
 
@@ -79,8 +82,8 @@ async function refreshEmbedding(productId: string): Promise<void> {
       }>('SELECT id, name, description, brand_id, fungsi, kata_kunci, bahan, kelengkapan, usp, ketebalan FROM products WHERE id = $1', [productId]);
       if (!product) return;
 
-      const { rows: variants } = await client.query<{ name: string; description: string | null }>(
-        'SELECT name, description FROM product_variants WHERE product_id = $1 AND is_active = true ORDER BY name',
+      const { rows: variants } = await client.query<{ name: string; description: string | null; gsm: string | null }>(
+        'SELECT name, description, gsm FROM product_variants WHERE product_id = $1 AND is_active = true ORDER BY name',
         [productId]
       );
 

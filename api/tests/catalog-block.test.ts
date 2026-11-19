@@ -57,6 +57,46 @@ describe('catalog block', () => {
     expect(formatProducts([FIXTURE_NO_TIERS])).toContain('  • harga: dihitung tim'));
 });
 
+describe('gramasi in the catalog block', () => {
+  const gv = (id: string, name: string, gsm: string | null, price: number, over: Record<string, unknown> = {}) =>
+    variant({ id, name, gsm, priceTiers: [{ ...tier, priceIdr: price }], ...over });
+
+  it('groups sizes under their gramasi in ascending order', () => {
+    const block = formatProducts([product({ name: 'Box Makan Ivory' }, [
+      gv('a', '20 x 20 x 7 cm', '300 gsm', 3000),
+      gv('b', '20 x 20 x 7 cm', '270 gsm', 2500),
+      gv('c', '25 x 25 x 7 cm', '270 gsm', 2800),
+    ])]);
+    const tierLine = (p: number) => `  • mulai 5 rim (2.500 pcs): Rp ${p.toLocaleString('id-ID')}/pcs, sudah termasuk ongkir`;
+    expect(block).toContain([
+      '  Gramasi 270 gsm:',
+      '  - Ukuran: 20 x 20 x 7 cm',
+      tierLine(2500),
+      '  - Ukuran: 25 x 25 x 7 cm',
+      tierLine(2800),
+      '  Gramasi 300 gsm:',
+      '  - Ukuran: 20 x 20 x 7 cm',
+      tierLine(3000),
+    ].join('\n'));
+    for (const l of block.split('\n').filter((x) => x.includes('Gramasi '))) expect(l).not.toMatch(/Rp|^(Merek|Produk|Kategori): /);
+  });
+
+  it('a product without gramasi renders exactly as before', () => {
+    const block = formatProducts([product({ fungsi: null }, [variant()])]);
+    expect(block).not.toContain('Gramasi');
+    expect(block).toBe([
+      'KATALOG PRODUK RELEVAN:',
+      'Harga per tingkat jumlah. Untuk harga sesuai jumlah pelanggan WAJIB panggil hitung_harga. 1 rim = 500 pcs/lembar.',
+      '',
+      'Merek: Kertas Supreme',
+      'Produk: Kertas Supreme 64 gsm cetak 1 warna',
+      '  - Ukuran: 30 x 30 cm',
+      '  • mulai 5 rim (2.500 pcs): Rp 2.000/pcs, sudah termasuk ongkir',
+      '',
+    ].join('\n'));
+  });
+});
+
 // The catalog search narrows to one brand by the customer's words (catalogDelivery.brandsInText), never
 // by a brand alias table.
 describe('detectBrand', () => {

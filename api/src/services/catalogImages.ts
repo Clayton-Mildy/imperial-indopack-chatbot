@@ -40,7 +40,7 @@ function stripExtension(filename: string): string {
  */
 export function buildImageIndex(rows: {
   products: { id: string; name: string }[];
-  variants: { id: string; name: string; sku: string | null; productName: string }[];
+  variants: { id: string; name: string; gsm?: string | null; sku: string | null; productName: string }[];
 }): Map<string, ImageTarget[]> {
   const index = new Map<string, ImageTarget[]>();
   const add = (key: string, target: ImageTarget) => {
@@ -51,7 +51,7 @@ export function buildImageIndex(rows: {
   };
   for (const p of rows.products) add(imageKey(p.name), { kind: 'product', id: p.id, label: p.name });
   for (const v of rows.variants) {
-    const target: ImageTarget = { kind: 'variant', id: v.id, label: `${v.productName} / ${v.name}` };
+    const target: ImageTarget = { kind: 'variant', id: v.id, label: v.gsm ? `${v.productName} / ${v.gsm} / ${v.name}` : `${v.productName} / ${v.name}` };
     if (v.sku) add(imageKey(v.sku), target);
     add(imageKey(v.name.split(' - ')[0] ?? v.name), target);
     add(imageKey(v.name), target);
@@ -71,7 +71,7 @@ async function loadIndex(): Promise<Map<string, ImageTarget[]>> {
   const [productRows, variantRows] = await Promise.all([
     db.select({ id: products.id, name: products.name }).from(products),
     db
-      .select({ id: productVariants.id, name: productVariants.name, sku: productVariants.sku, productName: products.name })
+      .select({ id: productVariants.id, name: productVariants.name, gsm: productVariants.gsm, sku: productVariants.sku, productName: products.name })
       .from(productVariants)
       .innerJoin(products, eq(products.id, productVariants.productId)),
   ]);
