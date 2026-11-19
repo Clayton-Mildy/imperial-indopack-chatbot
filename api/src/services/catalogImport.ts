@@ -23,7 +23,8 @@ import { recordCatalogChange } from '../repositories/catalogAudit.js';
 import { InvalidXlsxError } from './leadImport.js';
 import { refreshEmbeddingsSequential } from './embeddings.js';
 import { invalidateCatalogCache } from './ragQuery.js';
-import { parseTemplateRows, TEMPLATE_SHEET } from './catalogTemplate.js';
+import { parseTemplateRows, TEMPLATE_SHEET, type TemplateVariant } from './catalogTemplate.js';
+import { sameGsm } from '../domain/gramasi.js';
 import { listTiersByVariant, replaceVariantTiers } from '../repositories/priceTiers.js';
 import { lowestTier, toPcs, type PriceTier } from '../domain/pricing.js';
 
@@ -61,6 +62,35 @@ async function parseWorkbook(buffer: Buffer) {
   return parseTemplateRows((sheet?.data ?? []) as unknown[][]);
 }
 
+/**
+ * A product is all-gramasi or no-gramasi. A product whose file rows disagree with its stored size rows on
+ * that is refused whole: one error naming its first file row, none of its variants applied.
+ */
+function gramasiClashes(
+  variants: TemplateVariant[],
+  storedGsm: (productKey: string) => (string | null)[] | undefined
+): { errors: { row: number; message: string }[]; refused: Set<string> } {
+  const errors: { row: number; message: string }[] = [];
+  const refused = new Set<string>();
+  for (const v of variants) {
+    const key = v.product.toLowerCase();
+    if (refused.has(key)) continue;
+    const stored = storedGsm(key);
+    if (!stored || stored.length === 0) continue;
+    const fileHas = v.gsm !== null;
+    const storedHas = stored.some((g) => g !== null);
+    if (fileHas === storedHas) continue;
+    refused.add(key);
+    errors.push({
+      row: Math.min(...v.tierRows),
+      message: fileHas
+        ? `Produk "${v.product}" di katalog tidak punya gramasi, tapi file ini mengisinya. Tidak ada yang diimpor untuk produk ini.`
+        : `Produk "${v.product}" di katalog punya gramasi, tapi file ini mengosongkannya. Tidak ada yang diimpor untuk produk ini.`,
+    });
+  }
+  return { errors, refused };
+}
+
 const sameTier = (a: PriceTier, b: PriceTier) =>
   a.priceIdr === b.priceIdr && a.priceUnit === b.priceUnit && a.includesDelivery === b.includesDelivery;
 
@@ -89,13 +119,24 @@ export async function previewCatalogImport(buffer: Buffer): Promise<ImportPrevie
   const db = getDb();
   const productRows = await db.select({ id: products.id, name: products.name }).from(products);
   const productIds = new Map(productRows.map((p) => [p.name.toLowerCase(), p.id]));
-  const variantRows = await db.select({ id: productVariants.id, productId: productVariants.productId, name: productVariants.name }).from(productVariants);
+  const variantRows = await db.select({ id: productVariants.id, productId: productVariants.productId, name: productVariants.name, gsm: productVariants.gsm }).from(productVariants);
   const tierMap = await listTiersByVariant(variantRows.map((v) => v.id), db);
+
+  const clash = gramasiClashes(parsed.variants, (k) => {
+    const id = productIds.get(k);
+    return id === undefined ? undefined : variantRows.filter((r) => r.productId === id).map((r) => r.gsm);
+  });
+  if (clash.refused.size > 0) {
+    const dropped = parsed.variants.filter((v) => clash.refused.has(v.product.toLowerCase())).reduce((n, v) => n + v.tiers.length, 0);
+    preview.errors = [...preview.errors, ...clash.errors].sort((a, b) => a.row - b.row);
+    preview.validRows = Math.max(0, preview.validRows - dropped);
+  }
 
   const newProducts = new Set<string>();
   const newSizes = new Set<string>();
   let changedRows = 0;
   for (const v of parsed.variants) {
+    if (clash.refused.has(v.product.toLowerCase())) continue;
     const productKey = v.product.toLowerCase();
     const productId = productIds.get(productKey);
     if (productId === undefined) {
@@ -103,9 +144,9 @@ export async function previewCatalogImport(buffer: Buffer): Promise<ImportPrevie
       changedRows += v.tiers.length;
       continue;
     }
-    const existing = variantRows.find((r) => r.productId === productId && normalizeSize(r.name) === normalizeSize(v.size));
+    const existing = variantRows.find((r) => r.productId === productId && sameGsm(r.gsm, v.gsm) && normalizeSize(r.name) === normalizeSize(v.size));
     if (!existing) {
-      newSizes.add(`${productKey}\u0000${normalizeSize(v.size)}`);
+      newSizes.add(`${productKey}\u0000${v.gsm ?? ''}\u0000${normalizeSize(v.size)}`);
       changedRows += v.tiers.length;
       continue;
     }
@@ -158,7 +199,16 @@ export async function importCatalogFromXlsx(
     const after = new Map<string, ProductInput>();
     const created = new Set<string>();
 
+    const storedSizes = await tx.select({ productId: productVariants.productId, gsm: productVariants.gsm }).from(productVariants);
+    const clash = gramasiClashes(parsed.variants, (k) => {
+      const id = productMap.get(k);
+      return id === undefined ? undefined : storedSizes.filter((r) => r.productId === id).map((r) => r.gsm);
+    });
+    for (const e of clash.errors) result.errors.push({ row: e.row, reason: e.message });
+    result.skipped += clash.errors.length;
+
     for (const v of parsed.variants) {
+      if (clash.refused.has(v.product.toLowerCase())) continue;
       let brandId = brandMap.get(v.brand.toLowerCase());
       if (!brandId) {
         const [row] = await tx.insert(brands).values({ name: v.brand }).returning({ id: brands.id });
@@ -206,10 +256,10 @@ export async function importCatalogFromXlsx(
       // The smallest-quantity tier's price, the rule the product editor uses too.
       const basePrice = lowestTier(v.tiers)!.priceIdr;
       const sizeRows = await tx
-        .select({ id: productVariants.id, name: productVariants.name })
+        .select({ id: productVariants.id, name: productVariants.name, gsm: productVariants.gsm })
         .from(productVariants)
         .where(eq(productVariants.productId, productId));
-      const existing = sizeRows.find((r) => normalizeSize(r.name) === normalizeSize(v.size));
+      const existing = sizeRows.find((r) => sameGsm(r.gsm, v.gsm) && normalizeSize(r.name) === normalizeSize(v.size));
       let variantId: string;
       if (existing) {
         variantId = existing.id;
@@ -221,7 +271,7 @@ export async function importCatalogFromXlsx(
       } else {
         const [row] = await tx
           .insert(productVariants)
-          .values({ productId, name: v.size, priceIdr: String(basePrice), isActive: true })
+          .values({ productId, name: v.size, gsm: v.gsm, priceIdr: String(basePrice), isActive: true })
           .returning({ id: productVariants.id });
         variantId = row!.id;
         result.variantsCreated++;

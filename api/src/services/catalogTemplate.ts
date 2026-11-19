@@ -1,7 +1,7 @@
 /**
  * The catalog Excel template: ONE SHEET ("Katalog"), ONE ROW PER PRICE TIER.
  *
- * Rows sharing Merek + Produk + Ukuran form one variant; each row adds a quantity tier to it.
+ * Rows sharing Merek + Produk + Gramasi + Ukuran form one variant; each row adds a quantity tier to it.
  * Pure on purpose (rows in, rows out) so catalogImport / catalogExport only add the xlsx and
  * database layers.
  */
@@ -9,6 +9,7 @@
 import type { Product } from '../domain/types.js';
 import { toPcs, type PriceTier, type QtyUnit } from '../domain/pricing.js';
 import { formatProductSpec, parseProductSpec } from '../domain/productSpec.js';
+import { normalizeGsm } from '../domain/gramasi.js';
 import { normalizeSize } from '../domain/orderProfile.js';
 import { normalizeHeader } from './leadImport.js';
 import { BRAND_NAME, brandSlugOfName } from '../domain/brands.js';
@@ -25,6 +26,9 @@ export interface TemplateVariant {
   brand: string;
   product: string;
   size: string;
+  /** Gramasi of this size row, canonical ("300 gsm"); null when the product has none. */
+  gsm: string | null;
+  /** Cetak / Finishing only; Gramasi lives in `gsm`. */
   description: string | null;
   fungsi: string | null;
   tiers: PriceTier[];
@@ -93,6 +97,9 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
   // (lowercased) -> the brand the file first gave it; a product written under both brands is left out.
   const productBrand = new Map<string, BrandSlug>();
   const failedProducts = new Set<string>();
+  // Product-level columns (Cetak, Finishing, Kegunaan) and whether Gramasi is filled, as the product's first
+  // row wrote them; a later row that differs is an error and the product is left out.
+  const productFacts = new Map<string, { cetak: string | null; finishing: string | null; kegunaan: string | null; hasGsm: boolean }>();
   const blankKeyRows: { brand: string | null; product: string | null; size: string | null }[] = [];
 
   for (let i = 1; i < rows.length; i++) {
@@ -115,8 +122,9 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
       continue;
     }
 
-    // Identity as the import applies it: by product name and normalised size ("30x30" is "30 x 30 cm").
-    const key = `${product.toLowerCase()}\u0000${normalizeSize(size)}`;
+    // Identity as the import applies it: by product name, gramasi and normalised size ("30x30" is "30 x 30 cm").
+    const gsm = normalizeGsm(text(cell('Gramasi')));
+    const key = `${product.toLowerCase()}\u0000${gsm ?? ''}\u0000${normalizeSize(size)}`;
     // A bad row poisons its whole variant: importing the rest would replace its tiers with a
     // partial set, silently dropping the tier the bad row was meant to carry.
     const bad = (message: string) => { err(row, message); failed.add(key); };
@@ -130,6 +138,33 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
       err(row, `Produk "${product}" sudah dipakai untuk ${BRAND_NAME[firstBrand]} di file ini.`);
       failedProducts.add(productKey);
       continue;
+    }
+
+    // Cetak, Finishing and Kegunaan belong to the product, so every row of it must say the same.
+    const cetak = text(cell('Cetak'));
+    const finishing = text(cell('Finishing'));
+    const kegunaan = text(cell('Kegunaan'));
+    const facts = productFacts.get(productKey);
+    if (!facts) productFacts.set(productKey, { cetak, finishing, kegunaan, hasGsm: gsm !== null });
+    else {
+      // A blank cell says nothing (a later row may leave it empty); only two different values clash.
+      const differs = (a: string | null, b: string | null) => a !== null && b !== null && a.toLowerCase() !== b.toLowerCase();
+      const column = differs(facts.cetak, cetak) ? 'Cetak' : differs(facts.finishing, finishing) ? 'Finishing' : differs(facts.kegunaan, kegunaan) ? 'Kegunaan' : null;
+      if (column) {
+        err(row, `${column} berbeda dari baris lain untuk produk "${product}".`);
+        failedProducts.add(productKey);
+        continue;
+      }
+      facts.cetak ??= cetak;
+      facts.finishing ??= finishing;
+      facts.kegunaan ??= kegunaan;
+      if (facts.hasGsm !== (gsm !== null)) {
+        err(row, gsm === null
+          ? `Gramasi kosong, padahal baris lain produk "${product}" punya gramasi.`
+          : `Gramasi terisi, padahal baris lain produk "${product}" tidak punya gramasi.`);
+        failedProducts.add(productKey);
+        continue;
+      }
     }
 
     const minQty = number(cell('Min Qty'));
@@ -159,8 +194,7 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
 
     let variant = groups.get(key);
     if (!variant) {
-      const description = formatProductSpec({ gsm: text(cell('Gramasi')), print: text(cell('Cetak')), finishing: text(cell('Finishing')) });
-      variant = { brand, product, size, description, fungsi: text(cell('Kegunaan')), tiers: [], tierRows: [] };
+      variant = { brand, product, size, gsm, description: null, fungsi: null, tiers: [], tierRows: [] };
       groups.set(key, variant);
     }
     const note = text(cell('Catatan'));
@@ -177,7 +211,11 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
   out.validRows = out.totalRows - errorRows.size;
   out.variants = [...groups]
     .filter(([k, v]) => !failed.has(k) && !failedProducts.has(v.product.toLowerCase()) && !poisoned(v))
-    .map(([, v]) => v);
+    .map(([, v]) => {
+      // The product's merged Cetak / Finishing / Kegunaan, the same for all of its size rows.
+      const f = productFacts.get(v.product.toLowerCase())!;
+      return { ...v, description: formatProductSpec({ gsm: null, print: f.cetak, finishing: f.finishing }), fungsi: f.kegunaan };
+    });
   return out;
 }
 
@@ -185,12 +223,12 @@ export function parseTemplateRows(rows: unknown[][]): ParsedTemplate {
 export function buildTemplateRows(products: Product[]): unknown[][] {
   const rows: unknown[][] = [[...TEMPLATE_COLUMNS]];
   for (const p of products) {
-    // "Gramasi: 64 gsm · Finishing: x" back into its three columns; unknown parts are dropped.
+    // "Cetak: x · Finishing: y" back into its columns; unknown parts are dropped. Gramasi is per size row.
     const spec = parseProductSpec(p.description);
     for (const v of p.variants ?? []) {
       for (const t of v.priceTiers ?? []) {
         rows.push([
-          p.brand?.name ?? '', p.name, v.name, spec.gsm, spec.print, spec.finishing, p.fungsi,
+          p.brand?.name ?? '', p.name, v.name, v.gsm ?? null, spec.print, spec.finishing, p.fungsi,
           t.minQty, t.qtyUnit, t.priceIdr, t.priceUnit, t.includesDelivery ? 'ya' : 'tidak', t.note ?? null,
         ]);
       }

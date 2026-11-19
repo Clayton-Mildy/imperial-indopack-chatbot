@@ -44,13 +44,14 @@ describe('parseTemplateRows', () => {
     expect(parseTemplateRows([['Nama Produk', 'Harga']]).errors[0]!.message).toMatch(/template/i);
   });
 
-  it('joins Gramasi, Cetak and Finishing into the description and drops empty parts', () => {
+  it('joins Cetak and Finishing into the description, drops empty parts and keeps Gramasi on the size row', () => {
     const p = parseTemplateRows([
       HEADER,
       ROW(BRAND, PRODUCT, SIZE, 5, 'rim', 185000, 'rim', 'ya', { gramasi: '64 gsm', finishing: 'laminasi', kegunaan: 'Bungkus makanan' }),
     ]);
     expect(p.variants[0]).toMatchObject({
-      description: 'Gramasi: 64 gsm · Finishing: laminasi',
+      gsm: '64 gsm',
+      description: 'Finishing: laminasi',
       fungsi: 'Bungkus makanan',
     });
     expect(p.variants[0]!.tiers[0]!.includesDelivery).toBe(true);
@@ -99,11 +100,11 @@ describe('parseTemplateRows', () => {
   });
 
   const FIXTURE = {
-    id: 'p1', name: PRODUCT, description: 'Gramasi: 64 gsm · Cetak: 1 warna', fungsi: 'Bungkus nasi',
+    id: 'p1', name: PRODUCT, description: 'Cetak: 1 warna', fungsi: 'Bungkus nasi',
     brand: { name: BRAND },
     variants: [
       {
-        name: SIZE,
+        name: SIZE, gsm: '64 gsm',
         priceTiers: [
           { minQty: 5, qtyUnit: 'rim', priceIdr: 185000, priceUnit: 'rim', includesDelivery: false },
           { minQty: 10, qtyUnit: 'rim', priceIdr: 165000, priceUnit: 'rim', includesDelivery: true, note: 'gratis ongkir' },
@@ -116,8 +117,8 @@ describe('parseTemplateRows', () => {
   it('round-trips build -> parse', () => {
     expect(parseTemplateRows(buildTemplateRows([FIXTURE])).variants).toEqual([
       {
-        brand: BRAND, product: PRODUCT, size: SIZE,
-        description: 'Gramasi: 64 gsm · Cetak: 1 warna', fungsi: 'Bungkus nasi',
+        brand: BRAND, product: PRODUCT, size: SIZE, gsm: '64 gsm',
+        description: 'Cetak: 1 warna', fungsi: 'Bungkus nasi',
         tierRows: [2, 3],
         tiers: [
           { minQty: 5, qtyUnit: 'rim', priceIdr: 185000, priceUnit: 'rim', includesDelivery: false },
@@ -125,6 +126,55 @@ describe('parseTemplateRows', () => {
         ],
       },
     ]);
+  });
+
+  it('round-trips build -> parse with two gramasi', () => {
+    const tier = (priceIdr: number) => [{ minQty: 5, qtyUnit: 'rim', priceIdr, priceUnit: 'rim', includesDelivery: false }];
+    const two = {
+      id: 'p2', name: 'Box Contoh', description: 'Cetak: 1 warna', fungsi: null, brand: { name: BRAND },
+      variants: [
+        { name: '20 x 20 cm', gsm: '270 gsm', priceTiers: tier(100000) },
+        { name: '20 x 20 cm', gsm: '300 gsm', priceTiers: tier(120000) },
+      ],
+    } as unknown as Product;
+    const rows = buildTemplateRows([two]);
+    expect(rows.slice(1).map((r) => r[3])).toEqual(['270 gsm', '300 gsm']);
+    expect(rows.slice(1).map((r) => r[4])).toEqual(['1 warna', '1 warna']);
+    const parsed = parseTemplateRows(rows);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.variants.map((v) => [v.gsm, v.tiers[0]!.priceIdr])).toEqual([['270 gsm', 100000], ['300 gsm', 120000]]);
+  });
+
+  it('groups rows by product, gramasi and size', () => {
+    const p = parseTemplateRows([
+      HEADER,
+      ROW(BRAND, 'Box Contoh', '20x20', 5, 'rim', 100000, 'rim', 'tidak', { gramasi: '300' }),
+      ROW(BRAND, 'Box Contoh', '20 x 20 cm', 10, 'rim', 90000, 'rim', 'tidak', { gramasi: '300 gsm' }),
+      ROW(BRAND, 'Box Contoh', '20 x 20 cm', 5, 'rim', 80000, 'rim', 'tidak', { gramasi: '270 gsm' }),
+    ]);
+    expect(p.errors).toEqual([]);
+    expect(p.variants.map((v) => [v.gsm, v.tiers.length])).toEqual([['300 gsm', 2], ['270 gsm', 1]]);
+  });
+
+  it('a product whose rows disagree on Cetak is refused, naming the row', () => {
+    const p = parseTemplateRows([
+      HEADER,
+      ROW(BRAND, 'Box Contoh', SIZE, 5, 'rim', 100000, 'rim', 'tidak', { cetak: '1 warna' }),
+      ROW(BRAND, 'Box Contoh', '40 x 40 cm', 5, 'rim', 120000, 'rim', 'tidak', { cetak: '2 warna' }),
+      ROW(BRAND, 'Produk Lain Contoh', SIZE, 5, 'rim', 50000, 'rim', 'tidak'),
+    ]);
+    expect(p.errors).toEqual([{ row: 3, message: 'Cetak berbeda dari baris lain untuk produk "Box Contoh".' }]);
+    expect(p.variants.map((v) => v.product)).toEqual(['Produk Lain Contoh']);
+  });
+
+  it('blank and filled Gramasi in one product are refused', () => {
+    const p = parseTemplateRows([
+      HEADER,
+      ROW(BRAND, 'Box Contoh', SIZE, 5, 'rim', 100000, 'rim', 'tidak', { gramasi: '300' }),
+      ROW(BRAND, 'Box Contoh', '40 x 40 cm', 5, 'rim', 120000, 'rim', 'tidak'),
+    ]);
+    expect(p.errors).toEqual([{ row: 3, message: 'Gramasi kosong, padahal baris lain produk "Box Contoh" punya gramasi.' }]);
+    expect(p.variants).toEqual([]);
   });
 
   // (One product name under two brands is now a row error of its own: see the brand-clash test below.)

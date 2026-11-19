@@ -172,7 +172,7 @@ describe('runPriceTool - product match', () => {
 // "Produk: <name> — <description>"; every imported product's description is its spec columns. Copying the
 // line returned TIDAK_ADA_DI_KATALOG, and Pricing rule (d) handed an in-catalog item to the team.
 describe('runPriceTool - the product name as the catalog block prints it', () => {
-  // The description the real import writes: the Gramasi / Cetak columns of the template row.
+  // The description the real import writes: the Cetak / Finishing columns of the template row (Gramasi is per size row).
   const imported = parseTemplateRows([
     [...TEMPLATE_COLUMNS],
     ['Kertas Supreme', SUPREME.name, '30 x 30 cm', '64 gsm', '1 warna', null, null, 5, 'rim', 185000, 'rim', 'tidak', null],
@@ -181,7 +181,7 @@ describe('runPriceTool - the product name as the catalog block prints it', () =>
   const produkLine = formatProducts([product]).split('\n').find((l) => l.startsWith('Produk: '))!.slice('Produk: '.length);
 
   it('prices the whole "Produk:" line copied from the block, description and all', async () => {
-    expect(produkLine).toBe(`${SUPREME.name} — Gramasi: 64 gsm · Cetak: 1 warna`);
+    expect(produkLine).toBe(`${SUPREME.name} — Cetak: 1 warna`);
     expect((await runPriceTool({ ...SUPREME_INPUT, product: produkLine }, [product, SUPREME_2, IVORY_BOX])).text).toMatch(/^HARGA: Kertas Supreme 64 gsm cetak 1 warna /);
   });
 

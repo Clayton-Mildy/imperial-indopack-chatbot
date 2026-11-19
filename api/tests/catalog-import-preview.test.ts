@@ -163,6 +163,14 @@ describe('catalog import preview and apply', () => {
     expect(p).toMatchObject({ newProducts: 0, newSizes: 1, changedPrices: 0, unchanged: 0, validRows: 1, totalRows: 1 });
   });
 
+  it('a new gramasi of an existing size counts as a new size', async () => {
+    const NAME = `${P}Gramasi Baru`;
+    const g = (gramasi: string, price: number) => [BRAND, NAME, SIZE, gramasi, null, null, null, 5, 'rim', price, 'rim', 'tidak', null];
+    await importCatalogFromXlsx(await xlsxOf([g('270', 100000)]));
+    const p = await previewCatalogImport(await xlsxOf([g('270 gsm', 100000), g('300', 120000)]));
+    expect(p).toMatchObject({ newProducts: 0, newSizes: 1, changedPrices: 0, unchanged: 1, validRows: 2, totalRows: 2, errors: [] });
+  });
+
   it('two spellings of one size in a file merge: no tier lost, one variant, one size counted', async () => {
     const NAME = `${P}Dua Ejaan`;
     const file = () => xlsxOf([row(NAME, 5, 'rim', 185000, { size: '30x30' }), row(NAME, 10, 'rim', 165000, { size: '30 x 30 cm' })]);
