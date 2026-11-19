@@ -54,7 +54,7 @@ const ANDI = {
   items: [{ product: 'Box Ivory', print: 'full color', size: '22x22x7', qty: 5000, qty_unit: 'pcs', has_design: true }],
 };
 
-const conv = { id: '', bare: '', gramasi: '' };
+const conv = { id: '', bare: '', gramasi: '', missing: '' };
 
 async function cleanup() {
   const db = getDb();
@@ -95,6 +95,12 @@ beforeAll(async () => {
   await db.insert(contactProfiles).values({ contactId: gr!.id, profile: { items: [{ product: 'Kotak Gramasi Contoh', size: '20x20x7', qty: 500, qty_unit: 'pcs' }] } });
   const [g] = await db.insert(conversations).values({ contactId: gr!.id, phoneNumberId: number!.id, status: 'active' }).returning();
   conv.gramasi = g!.id;
+
+  // A gramasi the product does not sell.
+  const [ms] = await db.insert(contacts).values({ waId: `${PREFIX}6281200007054`, displayName: 'Contoh WA Gramasi Lain' }).returning();
+  await db.insert(contactProfiles).values({ contactId: ms!.id, profile: { items: [{ product: 'Kotak Gramasi Contoh', size: '20x20x7', gsm: '400', qty: 500, qty_unit: 'pcs' }] } });
+  const [m2] = await db.insert(conversations).values({ contactId: ms!.id, phoneNumberId: number!.id, status: 'active' }).returning();
+  conv.missing = m2!.id;
 
   // Nothing collected, no lead, no files.
   const [bare] = await db.insert(contacts).values({ waId: `${PREFIX}6281200007052`, displayName: 'Contoh WA Kosong' }).returning();
@@ -138,6 +144,12 @@ describe('getOrderPanel', () => {
     ]);
     // Both sizes exist, so the size row is not flagged.
     expect(panel.details.find((d) => d.key === 'size')).not.toHaveProperty('note');
+  });
+
+  it('a gramasi the catalog does not sell is flagged out of catalog with no nearest', async () => {
+    const panel = (await getOrderPanel(conv.missing))!;
+    expect(panel.nearest).toEqual([]);
+    expect(panel.details.find((d) => d.key === 'size')).toMatchObject({ note: { kind: 'out_of_catalog' } });
   });
 
   it('a chat with nothing collected: six empty rows, no lead, no files, no notes', async () => {

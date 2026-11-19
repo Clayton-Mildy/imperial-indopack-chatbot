@@ -81,6 +81,9 @@ export function nearestCatalogItems(item: OrderItem, catalog: Product[]): Neares
   }
   const wanted = normalizeGsm(item.gsm);
   const chosen = wanted ? [...groups.keys()].find((k) => sameGsm(k, wanted)) : undefined;
+  // A gramasi the product does not sell has no match (never another gramasi's price); a product
+  // with no gramasi rows keeps its one group, the gramasi then lives in the name.
+  if (wanted && chosen === undefined && [...groups.keys()].some((k) => k !== null)) return [];
   const keys = (chosen !== undefined ? [chosen] : [...groups.keys()]).sort(compareGsm);
 
   const matches: NearestMatch[] = [];

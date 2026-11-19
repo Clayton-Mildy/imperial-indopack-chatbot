@@ -157,6 +157,11 @@ describe('nearestCatalogItems with gramasi', () => {
   it('a no-gramasi product gives one match with gsm null', () =>
     expect(nearestCatalogItems({ product: 'box ivory', size: '21x14x5' }, BOXES).map((m) => m.gsm)).toEqual([null]));
 
-  it('a gramasi the product does not have falls back to every gramasi', () =>
-    expect(nearestCatalogItems({ product: 'box makan ivory', size: '20x20x7', gsm: '400' }, [GRAMASI])).toHaveLength(2));
+  it('a gramasi the product does not sell has no match, never another gramasi', () =>
+    expect(nearestCatalogItems({ product: 'box makan ivory', size: '20x20x7', gsm: '350 gsm' }, [
+      { ...GRAMASI, variants: GRAMASI.variants!.filter((v) => v.gsm !== '350 gsm').concat(variant('p-gr', '20 x 20 x 7 cm', [T(5, 1900)], { gsm: '270 gsm' })) },
+    ])).toEqual([]));
+
+  it('an item with gsm on a product without gramasi rows still matches (the gramasi is in the name)', () =>
+    expect(nearestCatalogItems({ product: 'box ivory', size: '21x14x5', gsm: '270' }, BOXES).map((m) => m.gsm)).toEqual([null]));
 });

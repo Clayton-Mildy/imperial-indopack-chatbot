@@ -89,6 +89,7 @@ describe('lead detail extras', () => {
         { product: 'Box Gramasi Contoh', size: '20x20x7', gsm: '350', qty: 10, qty_unit: 'rim' },
         { product: 'Box Gramasi Contoh', size: '20x20x7', gsm: '300 gsm', qty: 10, qty_unit: 'rim' },
         { product: 'Box Gramasi Contoh', size: '20x20x7', qty: 10, qty_unit: 'rim' },
+        { product: 'Box Gramasi Contoh', size: '20x20x7', gsm: '400', qty: 10, qty_unit: 'rim' },
       ],
     }, [
       { role: 'user', at: '2020-04-05T09:00:00', body: 'halo' },
@@ -129,6 +130,8 @@ describe('lead detail extras', () => {
     expect(x.quotedPrices[1]).toMatchObject({ unitPriceIdr: 150_000 });
     // No gramasi chosen and two exist: no single price to show.
     expect(x.quotedPrices[2]).toBeNull();
+    // A gramasi the product does not sell is never given another gramasi's price.
+    expect(x.quotedPrices[3]).toBeNull();
   });
 
   it('direct source without a referral, and the placeholder PO line is not a form sent', async () => {
