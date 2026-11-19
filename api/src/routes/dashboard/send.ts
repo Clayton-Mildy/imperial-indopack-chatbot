@@ -59,8 +59,9 @@ export async function sendRoutes(app: FastifyInstance): Promise<void> {
     });
 
     // Same rule as an agent replying in Chakra's inbox: whoever answers owns the conversation,
-    // and the AI stops. Also clears an `escalated` badge - someone has picked this up.
-    await markHumanTakeover(conversationId, senderName ?? 'Tim CS').catch(() => { });
+    // and the AI stops. Also clears an `escalated` badge - someone has picked this up - and takes a
+    // resolved chat back, or the customer's next message would reopen it to the bot.
+    await markHumanTakeover(conversationId, senderName ?? 'Tim CS', { includeResolved: true }).catch(() => { });
 
     return reply.send({ data: message, error: null });
   });

@@ -10,11 +10,18 @@ import { NO_SIGNALS, classifyHandoff } from '../domain/handoff.js';
  *
  * Idempotent by status check, which matters because chakraSync replays: an agent who sends five
  * messages must not produce five system notes, and a takeover must not re-fire on every sync.
- * `resolved` is left alone - that is a deliberate end state, not something to downgrade.
+ * By default `resolved` is left alone - a deliberate end state that a late-syncing phone reply must
+ * not undo. A staff send from the dashboard (typed reply, quick-send) passes `includeResolved`: the
+ * sender is picking the chat back up, and left resolved the customer's next message would reopen it
+ * to the bot over them.
  */
-export async function markHumanTakeover(conversationId: string, agent: string): Promise<boolean> {
+export async function markHumanTakeover(
+  conversationId: string,
+  agent: string,
+  opts: { includeResolved?: boolean } = {},
+): Promise<boolean> {
   const conv = await findConversationById(conversationId);
-  if (!conv || conv.status === 'needs_human' || conv.status === 'resolved') return false;
+  if (!conv || conv.status === 'needs_human' || (conv.status === 'resolved' && !opts.includeResolved)) return false;
 
   // The bot's hand-off reason and category stay on the chat (the Perlu Tim banner keeps reading
   // them), and the queue shows who picked it up. A chat taken over before any hand-off says so, and

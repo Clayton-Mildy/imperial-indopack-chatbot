@@ -125,7 +125,8 @@ export async function quickSend(conversationId: string, action: QuickSendAction,
     sent.push({ messageId: row.id, kind: item.kind, status });
   }
 
-  // Once the batch is out, so the takeover note follows the last item; not when nothing went.
-  if (sent.some((s) => s.status === 'sent')) await markHumanTakeover(conversationId, staffName).catch(() => { });
+  // Once the batch is out, so the takeover note follows the last item; not when nothing went. A
+  // resolved chat is taken back too: the sender holds it now.
+  if (sent.some((s) => s.status === 'sent')) await markHumanTakeover(conversationId, staffName, { includeResolved: true }).catch(() => { });
   return { ok: true, sent };
 }

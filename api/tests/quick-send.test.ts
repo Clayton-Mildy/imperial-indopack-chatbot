@@ -449,6 +449,20 @@ describe('POST /api/v1/conversations/:id/quick-send - reference photos', () => {
     expect(await noteIsLast(conv.id)).toBe(true);
   });
 
+  // The sender holds the chat afterwards: left resolved, the customer's next message would reopen it
+  // to the bot over the staff member who just picked it back up.
+  it('a send on a resolved chat takes it over: needs_human, held by the sender', async () => {
+    const conv = await chat('85');
+    await getDb().update(conversations).set({ status: 'resolved' }).where(eq(conversations.id, conv.id));
+
+    expect((await quickSend(conv.id, { kind: 'reference_photos', productId: ids.productTwo })).statusCode).toBe(200);
+    const after = await statusOf(conv.id);
+    expect(after.status).toBe('needs_human');
+    expect(after.assignedAgent).toBe(STAFF);
+    expect(after.escalationReason).toBe(`Dibalas langsung oleh ${STAFF}`);
+    expect(await noteIsLast(conv.id)).toBe(true);
+  });
+
   it('at most three photos go', async () => {
     const conv = await chat('70');
     expect((await quickSend(conv.id, { kind: 'reference_photos', productId: ids.productFour })).statusCode).toBe(200);

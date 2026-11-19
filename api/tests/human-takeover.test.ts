@@ -79,11 +79,28 @@ describe('markHumanTakeover', () => {
     expect(mockInsertMessage).not.toHaveBeenCalled();
   });
 
-  // `resolved` is a deliberate end state; a late-syncing agent message must not reopen it.
-  it('leaves a resolved conversation alone', async () => {
+  // `resolved` is a deliberate end state; a late-syncing agent message (chakraSync) must not reopen it.
+  it('leaves a resolved conversation alone by default', async () => {
     mockFindConversationById.mockResolvedValue({ ...CONV, status: 'resolved' });
 
     expect(await markHumanTakeover('conv-1', 'Tim CS')).toBe(false);
+    expect(mockUpdateConversationStatus).not.toHaveBeenCalled();
+  });
+
+  // A staff send from the dashboard (typed reply, quick-send) is the sender picking the chat back up:
+  // left resolved, the customer's next message would reopen it to the bot over that staff member.
+  it('a dashboard staff send takes a resolved conversation over: needs_human, held by the sender', async () => {
+    mockFindConversationById.mockResolvedValue({ ...CONV, status: 'resolved' });
+
+    expect(await markHumanTakeover('conv-1', 'Admin Rina', { includeResolved: true })).toBe(true);
+    expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-1', 'needs_human', 'Dibalas langsung oleh Admin Rina', 'Admin Rina', 'lainnya');
+    expect(mockInsertMessage.mock.calls[0]![0]).toMatchObject({ conversationId: 'conv-1', role: 'system_note' });
+  });
+
+  it('a dashboard staff send is still idempotent on a chat already held', async () => {
+    mockFindConversationById.mockResolvedValue({ ...CONV, status: 'needs_human' });
+
+    expect(await markHumanTakeover('conv-1', 'Admin Rina', { includeResolved: true })).toBe(false);
     expect(mockUpdateConversationStatus).not.toHaveBeenCalled();
   });
 
