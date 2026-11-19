@@ -222,3 +222,12 @@ describe('tool and field text', () => {
     expect(all).toMatch(/Ucapan terima kasih atas daftar harga[^\n]*no_reply/);
   });
 });
+
+describe('first reply and custom size rules', () => {
+  it('the first reply always introduces the bot, even to a direct price question', () => {
+    expect(section('Rules')).toMatch(/Balasan PERTAMA di percakapan SELALU memperkenalkan dirimu[^.]*PENGATURAN BOT[\s\S]*langsung pertanyaan harga/);
+  });
+  it('a size not in the catalog is custom: no nearest size offered, also on the first message', () => {
+    expect(section('Pricing')).toMatch(/JANGAN menawarkan ukuran terdekat sebagai pengganti[\s\S]*pesan PERTAMA/);
+  });
+});

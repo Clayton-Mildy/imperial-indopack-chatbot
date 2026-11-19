@@ -96,6 +96,18 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    id: 'first_reply_intro',
+    title: 'The first reply to a direct price question still greets and introduces the bot',
+    async run(c) {
+      const r = await c.say('berapa harga kertas supreme 30x30 12 rim?');
+      return [
+        got(r),
+        check('the reply greets (halo / selamat)', anyText(r, /\b(halo|hai|selamat)\b/i)),
+        check('the reply names the bot or the brand (Admin / Kertas Supreme)', anyText(r, /\badmin\b|kertas supreme/i)),
+      ];
+    },
+  },
+  {
     id: 'between_tiers',
     title: 'Box between tiers',
     async run(c) {
