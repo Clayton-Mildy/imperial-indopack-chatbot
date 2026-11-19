@@ -23,7 +23,7 @@ import type { BaileysInboundPayload } from '../domain/schemas.js';
 import type { AIResponse, PhoneNumber, PromptSections } from '../domain/types.js';
 import { notifyStaff } from './staffNotify.js';
 import { mergeOrderFacts, orderDetailsSummary } from '../domain/orderProfile.js';
-import { PO_FORM_KINDS, poFormsForOrder, type PoFormKind } from '../domain/poForms.js';
+import { PO_FORM_KINDS, poFormsForOrder, updateSaysHasDesign, type PoFormKind } from '../domain/poForms.js';
 import { claudeTokensExhausted } from './claude.js';
 import { getConfig } from '../config.js';
 import { NO_SIGNALS, classifyHandoff, type HandoffCategory, type HandoffSignals } from '../domain/handoff.js';
@@ -281,6 +281,8 @@ interface TeamFollowUp {
   poForm?: string | null;
   /** The team sends design examples: CANNED_DESIGN_EXAMPLES_FROM_TEAM follows the reply and its photos. */
   examples?: boolean;
+  /** The customer sent a logo/design and the reply acknowledged it: the team checks the design (spec 7.6). */
+  design?: boolean;
 }
 
 function teamFollowUp(r: AIResponse, customerText: string, po?: { teamReason: string | null } | null): TeamFollowUp {
@@ -330,6 +332,7 @@ async function linesStillPending(conversationId: string, lines: string[]): Promi
   return pending;
 }
 
+const DESIGN_RECEIVED_REASON = 'Pelanggan mengirim logo/desain - mohon dicek tim';
 const DESIGN_EXAMPLES_REASON = 'Contoh desain diminta - pelanggan belum punya desain dan produknya belum punya foto contoh, mohon kirimkan contoh desain';
 
 /**
@@ -348,7 +351,7 @@ const onlyFixedLines = (r: AIResponse): boolean =>
   !r.message && r.confidence !== 'low' && Boolean(r.sendPoForm || r.examplesForTeam);
 
 /** Anything in the follow-up the team has to act on. */
-const needsTeam = (f: TeamFollowUp): boolean => f.total || f.size || Boolean(f.poForm) || Boolean(f.examples);
+const needsTeam = (f: TeamFollowUp): boolean => f.total || f.size || Boolean(f.poForm) || Boolean(f.examples) || Boolean(f.design);
 
 /** The reply as sent: the model's answer, plus the team's promise for each thing it left to them. Empty for a fixed-lines-only turn. */
 function replyText(r: AIResponse, f: TeamFollowUp = { total: Boolean(r.totalForTeam), size: false }): string {
@@ -364,6 +367,7 @@ function teamFollowUpReason(f: TeamFollowUp): string {
     f.size ? 'Pelanggan menanyakan ukuran/panjang yang tidak ada di data katalog - mohon diinfokan tim' : '',
     f.poForm ?? '',
     f.examples ? DESIGN_EXAMPLES_REASON : '',
+    f.design ? DESIGN_RECEIVED_REASON : '',
   ].filter(Boolean).join('; ');
 }
 
@@ -373,7 +377,7 @@ function teamFollowUpReason(f: TeamFollowUp): string {
  * turn's signals and the reason - a size the catalog lacks, priced not_in_catalog, is harga_custom.
  */
 function teamFollowUpCategory(f: TeamFollowUp, signals: HandoffSignals): HandoffCategory {
-  if (f.examples) return 'desain_masuk';
+  if (f.examples || f.design) return 'desain_masuk';
   if (f.poForm) return 'lainnya';
   return classifyHandoff(signals, teamFollowUpReason(f));
 }
@@ -910,6 +914,8 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   // and inside the turn, before the next one starts (M2).
   await saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
   const { followUp, poForm } = await onceOnlyFollowUp(conv, aiResponse, body);
+  // A design the customer just sent is the team's to check, after the bot has acknowledged it.
+  if (updateSaysHasDesign(aiResponse.profileUpdate)) followUp.design = true;
   if (needsTeam(followUp)) await handToTeam(conv, body, followUp, teamFollowUpCategory(followUp, signals));
   else if (conv.status === 'escalated') notifyEscalatedTurnAnswered(conv.id, body);
   const reply = replyText(aiResponse, followUp);

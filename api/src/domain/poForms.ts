@@ -26,3 +26,13 @@ export function poFormsForOrder(facts: Record<string, unknown>): PoFormKind[] {
   if (designs.length > 0 && designs.every((d) => !d)) return ['plano'];
   return [...PO_FORM_KINDS];
 }
+
+/**
+ * True when a profile_update says the customer HAS a design (an item's has_design, or the order-level one).
+ * The photo turn reads it: a customer who sent an image and has a design just sent it, so the team checks it.
+ */
+export function updateSaysHasDesign(update: Record<string, unknown> | undefined | null): boolean {
+  if (!update) return false;
+  const items = (Array.isArray(update.items) ? update.items : []).filter(isRecord).map(sanitizeItem);
+  return update.has_design === true || items.some((i) => i.has_design === true);
+}
