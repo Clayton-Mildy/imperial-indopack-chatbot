@@ -171,6 +171,19 @@ describe('catalog import preview and apply', () => {
     expect(p).toMatchObject({ newProducts: 0, newSizes: 1, changedPrices: 0, unchanged: 1, validRows: 2, totalRows: 2, errors: [] });
   });
 
+  it('a product whose file rows and stored rows disagree on gramasi is refused in the preview, both ways', async () => {
+    const WITH = `${P}Stok Gramasi`;
+    const WITHOUT = `${P}Stok Tanpa`;
+    const g = (name: string, gramasi: string | null, price: number) => [BRAND, name, SIZE, gramasi, null, null, null, 5, 'rim', price, 'rim', 'tidak', null];
+    await importCatalogFromXlsx(await xlsxOf([g(WITH, '300', 100000), g(WITHOUT, null, 100000)]));
+    // 4 rows: stored-with-gramasi given blank, stored-without given gramasi, plus one fresh product.
+    const p = await previewCatalogImport(await xlsxOf([g(WITH, null, 90000), g(WITHOUT, '300', 90000), g(`${P}Segar`, null, 50000)]));
+    expect(p.errors.map((e) => e.row)).toEqual([2, 3]);
+    expect(p.errors[0]!.message).toContain(WITH);
+    expect(p.errors[1]!.message).toContain(WITHOUT);
+    expect(p).toMatchObject({ newProducts: 1, newSizes: 0, changedPrices: 0, validRows: 1, totalRows: 3 });
+  });
+
   it('two spellings of one size in a file merge: no tier lost, one variant, one size counted', async () => {
     const NAME = `${P}Dua Ejaan`;
     const file = () => xlsxOf([row(NAME, 5, 'rim', 185000, { size: '30x30' }), row(NAME, 10, 'rim', 165000, { size: '30 x 30 cm' })]);

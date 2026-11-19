@@ -107,6 +107,18 @@ describe('importCatalogFromXlsx with the Imperial template', () => {
     expect(all).toHaveLength(1);
   });
 
+  it('a file with blank Gramasi for a stored product with gramasi is refused, and nothing of it is written', async () => {
+    const NAME = `${P}Punya Gramasi`;
+    await importCatalogFromXlsx(await xlsxOf([row(NAME, 5, 'rim', 100000, { gramasi: '300' })]));
+    const r = await importCatalogFromXlsx(await xlsxOf([row(NAME, 5, 'rim', 90000)]));
+    expect(r.errors).toEqual([{ row: 2, reason: expect.stringContaining(NAME) }]);
+    expect(r).toMatchObject({ variantsCreated: 0, variantsUpdated: 0 });
+    const { v } = await variantOf(NAME);
+    expect(v.gsm).toBe('300 gsm');
+    expect(Number(v.priceIdr)).toBe(100000);
+    expect(await getDb().select().from(productVariants).where(eq(productVariants.productId, v.productId))).toHaveLength(1);
+  });
+
   it('leaves products that are not in the file untouched,', async () => {
     await importCatalogFromXlsx(await xlsxOf([row(OTHER, 5, 'rim', 99000)]));
     const before = await variantOf(OTHER);
@@ -124,7 +136,7 @@ describe('importCatalogFromXlsx with the Imperial template', () => {
     expect((await listTiersByVariant([v.id])).get(v.id)).toHaveLength(1);
   });
 
-  it('blank Gramasi/Kegunaan leave description and fungsi alone; size matches case-insensitively', async () => {
+  it('blank Kegunaan leaves description and fungsi alone; size and gramasi match case-insensitively', async () => {
     const NAME = `${P}Teks Bebas`;
     const db = getDb();
     await importCatalogFromXlsx(await xlsxOf([row(NAME, 5, 'rim', 100000, { gramasi: '80 gsm', kegunaan: 'Untuk apa saja' })]));
