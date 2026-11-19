@@ -144,11 +144,12 @@ describe('catalog import preview and apply', () => {
 
   it('without a staff name the history actor is Sistem; an unchanged re-import writes no history; a name matches case-insensitively', async () => {
     const a = await app();
-    const before0 = (await historyOf(EXISTING)).length;
     await post(a, await xlsxOf([row(EXISTING.toUpperCase(), 10, 'rim', 150000, { size: '30X30' }), row(EXISTING, 20, 'rim', 130000)]));
-    const added = (await historyOf(EXISTING)).slice(before0);
+    // historyOf has no order (a bare select), so pick rows by what they say, not by position. The earlier
+    // test's import carries a staff name, and the setup import is 'created', so one row is ours.
+    const added = (await historyOf(EXISTING)).filter((h) => h.changeType === 'imported' && h.actorName === 'Sistem');
     expect(added).toHaveLength(1);
-    expect(added[0]).toMatchObject({ changeType: 'imported', actorName: 'Sistem' });
+    expect(added[0]!.diff).toEqual([{ kind: 'tier_price', size: SIZE, minQty: 20, qtyUnit: 'rim', priceUnit: 'rim', from: 140000, to: 130000 }]);
     const all = await getDb().select().from(products).where(ilike(products.name, `${EXISTING}`));
     expect(all).toHaveLength(1);
     const before = (await historyOf(EXISTING)).length;
