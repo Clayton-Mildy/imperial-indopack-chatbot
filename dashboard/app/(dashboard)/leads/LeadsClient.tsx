@@ -332,6 +332,7 @@ export function LeadsClient({
             <thead>
               <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
                 <th style={{ ...thStyle, width: 100 }}>{t("leads.col.chatStarted")}</th>
+                <th style={{ ...thStyle, width: 140 }}>{t("leads.col.lastChat")}</th>
                 <th style={thStyle}>{t("leads.col.customer")}</th>
                 <th style={thStyle}>{t("leads.col.company")}</th>
                 <th style={thStyle}>{t("leads.col.brand")}</th>
@@ -339,7 +340,6 @@ export function LeadsClient({
                 <th style={thStyle}>{t("leads.col.items")}</th>
                 <th style={{ ...thStyle, width: 150 }}>{t("leads.col.status")}</th>
                 <th style={{ ...thStyle, width: 90 }}>{t("leads.col.totalOrders")}</th>
-                <th style={{ ...thStyle, width: 150 }}>{t("leads.col.lastChat")}</th>
               </tr>
             </thead>
             <tbody>
@@ -352,6 +352,18 @@ export function LeadsClient({
                   <tr key={lead.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                     <td style={{ ...tdStyle, fontSize: 12, color: "#334155", whiteSpace: "nowrap" }}>
                       {formatDateL(started, lang, { day: "2-digit", month: "short" })}
+                    </td>
+                    <td style={{ ...tdStyle, fontSize: 12 }} suppressHydrationWarning>
+                      <div style={{ color: lead.lastChatAt ? "#334155" : "#94A3B8", whiteSpace: "nowrap" }}>
+                        {lead.lastChatAt ? relativeTime(lead.lastChatAt, now, lang) : t("leads.noChat")}
+                      </div>
+                      {lead.waitingSince && (
+                        <div style={{ fontSize: 11, color: "#92400E", marginTop: 2 }}>
+                          {t("leads.tag.waiting", {
+                            wait: formatWait((now.getTime() - new Date(lead.waitingSince).getTime()) / 60000, lang),
+                          })}
+                        </div>
+                      )}
                     </td>
                     <td style={tdStyle}>
                       {/* The lead's own page (proxy.ts lets marketing in there). */}
@@ -439,18 +451,6 @@ export function LeadsClient({
                       }}
                     >
                       {lead.totalOrders}
-                    </td>
-                    <td style={{ ...tdStyle, fontSize: 12 }} suppressHydrationWarning>
-                      <div style={{ color: lead.lastChatAt ? "#334155" : "#94A3B8" }}>
-                        {lead.lastChatAt ? relativeTime(lead.lastChatAt, now, lang) : t("leads.noChat")}
-                      </div>
-                      {lead.waitingSince && (
-                        <div style={{ fontSize: 11, color: "#92400E", marginTop: 2 }}>
-                          {t("leads.tag.waiting", {
-                            wait: formatWait((now.getTime() - new Date(lead.waitingSince).getTime()) / 60000, lang),
-                          })}
-                        </div>
-                      )}
                     </td>
                   </tr>
                 );

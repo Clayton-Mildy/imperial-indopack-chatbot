@@ -22,7 +22,13 @@ describe("leads tabs", () => {
 
   it("passes the shared filters through and omits empty ones", () => {
     const q = leadsQueryForTab("all", { page: 3, startDate: "2026-11-01", endDate: "", status: "won", search: "" });
-    expect(q).toEqual({ page: 3, startDate: "2026-11-01", status: "won" });
+    expect(q).toEqual({ page: 3, startDate: "2026-11-01", status: "won", sort: "last_chat" });
+  });
+
+  it("sorts by the newest chat, except Belum Dibalas (longest wait first)", () => {
+    expect(leadsQueryForTab("kertas_supreme", { page: 1 }).sort).toBe("last_chat");
+    expect(leadsQueryForTab("followup", { page: 1 }).sort).toBe("last_chat");
+    expect(leadsQueryForTab("unreplied", { page: 1 })).not.toHaveProperty("sort");
   });
 });
 
