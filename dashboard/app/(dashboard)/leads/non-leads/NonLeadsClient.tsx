@@ -7,6 +7,7 @@ import type { Lead } from "@/types/api";
 import { updateLead } from "@/actions/leadActions";
 import { useT, useLang } from "@/lib/i18n/LangProvider";
 import { formatDate, type TKey } from "@/lib/i18n/core";
+import { CUSTOMER_MESSAGE_KEYS } from "@/lib/leads/redact";
 
 const TABS: { key: string; labelKey: TKey }[] = [
   { key: "all", labelKey: "nonLeads.tab.all" },
@@ -24,7 +25,8 @@ const SET_BY_KEY: Record<string, TKey> = {
 };
 
 const NAME_KEYS = ["nama", "name", "nama_lengkap"];
-const MESSAGE_KEYS = ["apa_yang_anda_butuhkan"];
+// Shared with stripCustomerText, so the read-only role never receives what this column shows.
+const MESSAGE_KEYS = CUSTOMER_MESSAGE_KEYS;
 
 const thStyle: React.CSSProperties = {
   padding: "10px 12px",
@@ -65,7 +67,7 @@ function formatPhone(raw: string): string {
   return raw.startsWith("+") ? raw : `+${digits}`;
 }
 
-function pick(bag: Record<string, unknown>, keys: string[]): string | null {
+function pick(bag: Record<string, unknown>, keys: readonly string[]): string | null {
   for (const key of keys) {
     const value = bag[key];
     if (typeof value === "string" && value.trim()) return value.trim();

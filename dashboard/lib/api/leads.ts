@@ -10,6 +10,7 @@ import type {
   LeadReport,
   LeadStatus,
   LostReason,
+  OrderItem,
 } from "@/types/api";
 
 export interface LeadsQuery {
@@ -89,6 +90,8 @@ export async function patchLead(
     totalOrders?: number;
     kind?: LeadKind;
     lostReason?: LostReason | null;
+    brands?: BrandSlug[];
+    items?: OrderItem[];
     staffId?: string;
   }
 ): Promise<void> {

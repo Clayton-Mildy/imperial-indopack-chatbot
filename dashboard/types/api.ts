@@ -280,6 +280,9 @@ export interface Lead {
   /** Which brands the customer asked about, Kertas Supreme first. */
   brands: BrandSlug[];
   items: OrderItem[];
+  /** Brands/items lock: non-null once staff edited them - the AI's lead pass then leaves both alone. */
+  orderFieldsSetAt: string | null;
+  orderFieldsSetBy: string | null;
   /** Contact name and business name from the AI-extracted profile. */
   name: string | null;
   company: string | null;
@@ -355,11 +358,32 @@ export interface LeadOrder {
   createdAt: string;
 }
 
+/** The price the bot quoted for one item (api/src/services/leadDetailExtras.ts). */
+export interface QuotedPrice {
+  unitPriceIdr: number;
+  priceUnit: "rim" | "pcs";
+  totalIdr: number;
+  at: string;
+}
+
+/** The lead detail's extras, read from the contact's chat since the lead began (api/src/services/leadDetailExtras.ts). */
+export interface LeadDetailExtras {
+  /** A click-to-WhatsApp ad (with the ad's headline when known) or a direct chat. */
+  source: { kind: "ad" | "direct"; headline: string | null };
+  /** When the bot last sent the PO form link; null = never. */
+  poFormSentAt: string | null;
+  /** Minutes from first contact to Won; null unless won. */
+  closingMinutes: number | null;
+  /** One per `lead.items` entry, in the same order; null = no quote for that item. */
+  quotedPrices: (QuotedPrice | null)[];
+}
+
 export interface LeadDetail {
   lead: LeadWithContact;
   events: LeadEvent[];
   previousLead: Lead | null;
   orders: LeadOrder[];
+  extras: LeadDetailExtras;
 }
 
 export interface LeadReport {

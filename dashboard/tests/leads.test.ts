@@ -5,7 +5,7 @@ import { BrandTags } from "@/components/BrandTag";
 import type { BrandSlug } from "@/lib/brands";
 import { leadsQueryForTab } from "@/lib/leads/tabs";
 import { itemLine } from "@/lib/leads/items";
-import { stripCustomerText } from "@/lib/leads/redact";
+import { CUSTOMER_MESSAGE_KEYS, stripCustomerText } from "@/lib/leads/redact";
 
 describe("leads tabs", () => {
   it("maps tabs to API filters", () => {
@@ -63,5 +63,22 @@ describe("stripCustomerText", () => {
   it("removes the customer's text from every row", () => {
     const rows = [{ id: "a", outcomeEvidence: "kutipan", firstMessage: "halo" }];
     expect(stripCustomerText(rows)).toEqual([{ id: "a", outcomeEvidence: null, firstMessage: null }]);
+  });
+
+  it("removes the form message the Bukan Lead Pesan column falls back to, and keeps the rest of the form", () => {
+    const rows = [
+      {
+        id: "a",
+        outcomeEvidence: null,
+        firstMessage: "halo",
+        payload: { nama: "Contoh Dewi", apa_yang_anda_butuhkan: "kertas nasi 10 rim" },
+      },
+    ];
+    expect(stripCustomerText(rows)).toEqual([
+      { id: "a", outcomeEvidence: null, firstMessage: null, payload: { nama: "Contoh Dewi" } },
+    ]);
+    for (const key of CUSTOMER_MESSAGE_KEYS) {
+      expect(stripCustomerText([{ ...rows[0]!, payload: { [key]: "x" } }])[0]!.payload).toEqual({});
+    }
   });
 });

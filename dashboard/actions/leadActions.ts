@@ -7,7 +7,8 @@ import { createLog } from "@/lib/api/activityLogs";
 import { isReadOnly } from "@/lib/session";
 import { ApiError } from "@/lib/api/client";
 import { getT } from "@/lib/i18n";
-import type { LeadCampaignFields, LeadKind, LeadStatus, LostReason } from "@/types/api";
+import type { BrandSlug } from "@/lib/brands";
+import type { LeadCampaignFields, LeadKind, LeadStatus, LostReason, OrderItem } from "@/types/api";
 
 // Must stay in step with STATUS_OPTIONS in app/(dashboard)/leads/LeadsClient.tsx - this copy
 // is what the activity log sentence reads.
@@ -27,6 +28,9 @@ export async function updateLead(
     totalOrders?: number;
     kind?: LeadKind;
     lostReason?: LostReason | null;
+    /** Staff's brands and item lines replace the AI's, and lock both against its lead pass. */
+    brands?: BrandSlug[];
+    items?: OrderItem[];
   }
 ): Promise<{ ok: boolean; error?: string }> {
   const t = await getT();
@@ -60,7 +64,9 @@ export async function updateLead(
             ? `jenis lead menjadi "${updates.kind}"`
             : updates.lostReason !== undefined
               ? `alasan kalah lead`
-              : `nilai deal lead`;
+              : updates.items !== undefined || updates.brands !== undefined
+                ? `barang dan merek lead`
+                : `nilai deal lead`;
   createLog({
     message: `${agentName} mengubah ${what}`,
     performedBy: agentName,
