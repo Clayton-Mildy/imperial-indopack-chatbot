@@ -509,6 +509,8 @@ describe('detectCourierMessage', () => {
     'jne ada paket',
     'pick up paket a.n. Budi',
     'ini paket untuk gudang, penerimanya siapa ya?',
+    'Paket untuk gudang Jatinegara, penerimanya siapa kak?',
+    'Paket untuk gudang Jatinegara',
   ])('courier: %s', (m) => expect(detectCourierMessage(m)).toBe(true));
   it.each([
     'saya ambil 10 ya kak',
@@ -519,6 +521,7 @@ describe('detectCourierMessage', () => {
     'grabfood bisa pakai paper bag ini?',
     'saya mau ambil barangnya besok di toko bisa?',
     'kirim paket ke gudang kami di Bekasi bisa kak?',
+    'ada paket untuk toko baru buka?', 'paket buat kantor ada kak?', 'paket untuk toko kue berapa?', 'mau paket untuk toko saya',
   ])('a buyer: %s', (m) => expect(detectCourierMessage(m)).toBe(false));
 });
 
@@ -539,6 +542,7 @@ describe('detectNonSalesTopic', () => {
     'bisa transfer ke rekening mana kak?', 'saya kerja di katering, butuh box nasi', 'karyawan saya mau ambil barang besok di toko',
     // code review 2026-10-13
     'saya lihat dari shopee kak, box ini ada?', 'shopee nya apa kak?', 'grab bisa kirim ke Bekasi kak?', 'jne bisa kak kirimnya?',
+    'ada paket untuk toko baru buka?', 'paket buat kantor ada kak?', 'paket untuk toko kue berapa?',
     'saya cari kerja sama untuk jadi agen', 'di shopee kemarin harganya lebih murah kak',
   ])('a buyer: %s', (m) => expect(detectNonSalesTopic(m)).toBeNull());
 });

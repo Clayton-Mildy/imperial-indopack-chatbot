@@ -227,6 +227,9 @@ describe('first reply and custom size rules', () => {
   it('the first reply always introduces the bot, even to a direct price question', () => {
     expect(section('Rules')).toMatch(/Balasan PERTAMA di percakapan SELALU memperkenalkan dirimu[^.]*PENGATURAN BOT[\s\S]*langsung pertanyaan harga/);
   });
+  it('a complaint as first message: apology first, introduction after', () => {
+    expect(section('Rules')).toMatch(/keluhan[^.]*awali dengan permintaan maaf[^.]*lebih dulu, baru perkenalan singkat[\s\S]*jangan membuka balasan keluhan dengan sapaan penjualan/);
+  });
   it('a size not in the catalog is custom: no nearest size offered, also on the first message', () => {
     expect(section('Pricing')).toMatch(/JANGAN menawarkan ukuran terdekat sebagai pengganti[\s\S]*pesan PERTAMA/);
   });

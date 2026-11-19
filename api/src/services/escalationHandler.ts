@@ -329,12 +329,19 @@ const COURIER_SELF_ID_RE = new RegExp([
   String.raw`(?:^|\n)\s*(?:saya\s+)?(?:${COURIERS})\s*[.!]*\s*(?:$|\n)`,
   String.raw`\b(?:${COURIERS})\b[^\n]{0,30}\b(?:paket|pesanan|orderan|ambil|jemput|pick\s*-?\s*up)\b`,
   String.raw`\b(?:dari|driver|abang|bang|mas)\s+(?:${COURIERS})\b`,
-  String.raw`\bpaket\s+(?:untuk|buat)\s+(?:gudang|kantor|pabrik|toko)\b|\bpenerima(?:nya)?\s+(?:paket\s+)?siapa\b`,
+  String.raw`\bpenerima(?:nya)?\s+(?:paket\s+)?siapa\b`,
   String.raw`\b(?:saya|ini)\s+kurir\b|\bkurir\s+(?:${COURIERS}|${MARKETPLACES})\b`,
 ].join('|'), 'i');
 const PICKUP_RE = /\b(?:ambil|jemput|pick\s*-?\s*up)\s+(?:pesanan|paket|orderan|barang\s+pesanan)\b/i;
 
+// "paket untuk gudang ..." is a courier line, but "paket" is also a bundle: "ada paket untuk toko baru
+// buka?", "paket buat kantor ada kak?" are buyers. So it counts only with no buy verb/noun and no
+// product, price or availability word.
+const PAKET_FOR_PLACE_RE = /\bpaket\s+(?:untuk|buat)\s+(?:gudang|kantor|pabrik|toko)\b/i;
+const BUNDLE_WORD_RE = /\b(?:harga|berapa|ukuran|stok|ready|ada|diskon|promo|murah|isi|pcs|bundle|hemat|usaha|baru)\b/i;
+
 export function detectCourierMessage(message: string): boolean {
+  if (PAKET_FOR_PLACE_RE.test(message) && !wantsToBuy(message) && !BUNDLE_WORD_RE.test(message)) return true;
   return COURIER_SELF_ID_RE.test(message) || PICKUP_RE.test(message);
 }
 

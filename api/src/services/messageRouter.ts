@@ -662,7 +662,6 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
       const reason = withExamplesAsked(aiResponse.escalationReason
         ?? (ppnAsked ? 'Pertanyaan PPN/pajak — kebijakan pajak hanya dari tim' : 'Low confidence'), aiResponse);
       const category = classifyHandoff(signals, reason);
-    if (!nonSales && isNonSalesReason(aiResponse.escalationReason)) void tagNonSalesLead(conv.contactId, reason, kindFromNonSalesReason(reason)).catch((err) => console.error('[leads] tag non-sales failed:', err));
       // The model's own "BUKAN PEMBELI" hand-off, when no keyword detector named the topic: tag the lead from its reason.
       if (!nonSales && isNonSalesReason(aiResponse.escalationReason)) void tagNonSalesLead(conv.contactId, reason, kindFromNonSalesReason(reason)).catch((err) => console.error('[leads] tag non-sales failed:', err));
       // Already handed to the team — no second escalation, but never dead silence either:
