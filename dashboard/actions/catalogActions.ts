@@ -56,18 +56,20 @@ export async function priceCheckAction(input: {
   size: string;
   qty: number;
   unit: "rim" | "pcs";
-}): Promise<{ ok: true; text: string; call: PriceToolCall } | { ok: false; error: string }> {
+  gramasi?: string;
+}): Promise<{ ok: true; text: string; calls: PriceToolCall[] } | { ok: false; error: string }> {
   const t = await getT();
   const product = typeof input?.product === "string" ? input.product.trim() : "";
   const size = typeof input?.size === "string" ? input.size.trim() : "";
   const qty = Number(input?.qty);
+  const gramasi = typeof input?.gramasi === "string" ? input.gramasi.trim() : "";
   const unit = input?.unit === "rim" || input?.unit === "pcs" ? input.unit : null;
   if (!product || !size || !unit || !Number.isFinite(qty) || qty <= 0) {
     return { ok: false, error: t("catalog.check.invalid") };
   }
   try {
-    const { text, call } = await checkPrice({ product, size, qty, unit });
-    return { ok: true, text, call };
+    const { text, calls } = await checkPrice({ product, size, qty, unit, ...(gramasi ? { gramasi } : {}) });
+    return { ok: true, text, calls };
   } catch {
     return { ok: false, error: t("catalog.check.failed") };
   }

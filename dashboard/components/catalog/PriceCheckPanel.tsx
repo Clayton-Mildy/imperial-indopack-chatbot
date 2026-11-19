@@ -32,7 +32,10 @@ function parseQty(raw: string): number {
   return s === "" ? NaN : Number(s);
 }
 
-type Result = { ok: true; text: string; call: PriceToolCall } | { ok: false; error: string };
+type Result = { ok: true; text: string; calls: PriceToolCall[] } | { ok: false; error: string };
+
+/** One size however many gramasi rows carry it: "30 x 30 cm" and "30x30" are the same size. */
+const sizeKey = (s: string): string => s.toLowerCase().replace(/[×*]/g, "x").replace(/cm/g, "").replace(/,/g, ".").replace(/\s+/g, "");
 
 /** The Katalog "Cek harga" panel: hitung_harga itself, so staff see exactly what a customer would be told. */
 export function PriceCheckPanel({ products }: { products: CatalogProduct[] }) {
@@ -40,8 +43,15 @@ export function PriceCheckPanel({ products }: { products: CatalogProduct[] }) {
   const lang = useLang();
   const [productId, setProductId] = useState(products[0]?.id ?? "");
   const product = products.find((p) => p.id === productId) ?? products[0];
-  const [sizeId, setSizeId] = useState(product?.sizes[0]?.id ?? "");
-  const size = product?.sizes.find((s) => s.id === sizeId) ?? product?.sizes[0];
+  const sizeNames = product ? [...new Map(product.sizes.map((s) => [sizeKey(s.size), s.size])).values()] : [];
+  const [sizeName0, setSizeName0] = useState(sizeNames[0] ?? "");
+  const sizeName = sizeNames.find((n) => sizeKey(n) === sizeKey(sizeName0)) ?? sizeNames[0] ?? "";
+  const rows = product?.sizes.filter((s) => sizeKey(s.size) === sizeKey(sizeName)) ?? [];
+  // The gramasi this size comes in; empty for a product without any. Left blank, the bot lists them all.
+  const gramasiOptions = [...new Set(rows.map((s) => s.gsm).filter((g): g is string => !!g))];
+  const [gramasi0, setGramasi0] = useState("");
+  const gramasi = gramasiOptions.includes(gramasi0) ? gramasi0 : "";
+  const size = rows.find((s) => s.gsm === gramasi) ?? rows[0];
   const lowest = size ? byPcs(size.tiers)[0] : undefined;
   const [qtyText, setQtyText] = useState(lowest ? String(lowest.minQty) : "");
   const [unit, setUnit] = useState<QtyUnit>(lowest?.qtyUnit ?? "rim");
@@ -51,7 +61,6 @@ export function PriceCheckPanel({ products }: { products: CatalogProduct[] }) {
 
   const qty = parseQty(qtyText);
   const productName = product?.name ?? "";
-  const sizeName = size?.size ?? "";
 
   useEffect(() => {
     const request = ++requestRef.current;
@@ -64,7 +73,7 @@ export function PriceCheckPanel({ products }: { products: CatalogProduct[] }) {
     const timer = setTimeout(async () => {
       let res: Result;
       try {
-        res = await priceCheckAction({ product: productName, size: sizeName, qty, unit });
+        res = await priceCheckAction({ product: productName, size: sizeName, qty, unit, ...(gramasi ? { gramasi } : {}) });
       } catch {
         res = { ok: false, error: t("catalog.check.failed") };
       }
@@ -74,13 +83,14 @@ export function PriceCheckPanel({ products }: { products: CatalogProduct[] }) {
       setChecking(false);
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [productName, sizeName, qty, unit, t]);
+  }, [productName, sizeName, gramasi, qty, unit, t]);
 
   function pickProduct(id: string) {
     const next = products.find((p) => p.id === id);
     setProductId(id);
     const firstSize = next?.sizes[0];
-    setSizeId(firstSize?.id ?? "");
+    setSizeName0(firstSize?.size ?? "");
+    setGramasi0("");
     const min = firstSize ? byPcs(firstSize.tiers)[0] : undefined;
     if (min) {
       setQtyText(String(min.minQty));
@@ -134,14 +144,29 @@ export function PriceCheckPanel({ products }: { products: CatalogProduct[] }) {
             <label htmlFor="cp-size" style={label}>
               {t("catalog.check.size")}
             </label>
-            <select id="cp-size" value={size?.id ?? ""} onChange={(e) => setSizeId(e.target.value)} style={control}>
-              {product.sizes.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.size}
+            <select id="cp-size" value={sizeName} onChange={(e) => setSizeName0(e.target.value)} style={control}>
+              {sizeNames.map((n) => (
+                <option key={n} value={n}>
+                  {n}
                 </option>
               ))}
             </select>
           </div>
+          {gramasiOptions.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label htmlFor="cp-gramasi" style={label}>
+                {t("catalog.check.gramasi")}
+              </label>
+              <select id="cp-gramasi" value={gramasi} onChange={(e) => setGramasi0(e.target.value)} style={control}>
+                <option value="">{t("catalog.check.allGramasi")}</option>
+                {gramasiOptions.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <label htmlFor="cp-qty" style={label}>
@@ -170,10 +195,16 @@ export function PriceCheckPanel({ products }: { products: CatalogProduct[] }) {
           <div aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {checking && !result && <span style={{ fontSize: 12, color: "#5F6B5A" }}>{t("catalog.check.checking")}</span>}
             {result && !result.ok && <span style={{ fontSize: 12.5, color: "#B91C1C" }}>{result.error}</span>}
-            {result?.ok && (
-              <Outcome call={result.call} amount={amount} dim={checking} />
-            )}
-            {result?.ok && result.call.outcome === "quote" && lowest && top && (
+            {result?.ok &&
+              result.calls.map((call, i) => (
+                <div key={call.gsm ?? i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {result.calls.length > 1 && call.gsm && (
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#1F2421" }}>{call.gsm}</span>
+                  )}
+                  <Outcome call={call} amount={amount} dim={checking} />
+                </div>
+              ))}
+            {result?.ok && result.calls.length === 1 && result.calls[0]!.outcome === "quote" && lowest && top && (
               <span style={{ fontSize: 12, color: "#5F6B5A", lineHeight: 1.5 }}>
                 {t("catalog.check.belowMin", { min: amount(lowest.minQty, lowest.qtyUnit) })}{" "}
                 {t("catalog.check.aboveTop", { top: amount(top.minQty, top.qtyUnit) })}

@@ -596,6 +596,8 @@ export const id = {
   "catalog.check.subtitle": "Sama persis dengan yang akan dijawab bot",
   "catalog.check.product": "Produk",
   "catalog.check.size": "Ukuran",
+  "catalog.check.gramasi": "Gramasi",
+  "catalog.check.allGramasi": "(semua gramasi)",
   "catalog.check.qty": "Jumlah",
   "catalog.check.unit": "Satuan",
   "catalog.check.noProducts": "Belum ada produk aktif.",

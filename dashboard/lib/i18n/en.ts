@@ -595,6 +595,8 @@ export const en: Record<keyof typeof id, string> = {
   "catalog.check.subtitle": "Exactly what the bot would answer",
   "catalog.check.product": "Product",
   "catalog.check.size": "Size",
+  "catalog.check.gramasi": "Gramasi",
+  "catalog.check.allGramasi": "(all gramasi)",
   "catalog.check.qty": "Quantity",
   "catalog.check.unit": "Unit",
   "catalog.check.noProducts": "No active products yet.",

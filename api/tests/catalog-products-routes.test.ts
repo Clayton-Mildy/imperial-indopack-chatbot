@@ -224,7 +224,7 @@ describe('product editor routes', () => {
 
   it('deactivating hides the product from the bot at once', async () => {
     expect(await getFullCatalogBlock()).toContain(NAME);
-    expect((await runPriceTool(priceQuery)).call.outcome).toBe('quote');
+    expect((await runPriceTool(priceQuery)).calls[0]!.outcome).toBe('quote');
     const searched = async () => (await searchActiveProducts({ keywords: ['qa_editor__kertas'] })).map((p) => p.id);
     expect(await searched()).toContain(id);
 
@@ -232,7 +232,7 @@ describe('product editor routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().data.isActive).toBe(false);
     expect(await getFullCatalogBlock()).not.toContain(NAME);
-    expect((await runPriceTool({ product: NAME, size: '30x30', qty: 5, unit: 'rim' })).call.outcome).toBe('not_in_catalog');
+    expect((await runPriceTool({ product: NAME, size: '30x30', qty: 5, unit: 'rim' })).calls[0]!.outcome).toBe('not_in_catalog');
     expect(await searched()).not.toContain(id); // the RAG and photo-match search skip it too
 
     expect((await get(id)).history[0]).toMatchObject({ changeType: 'deactivated', changes: [{ kind: 'active', to: false }] });
@@ -245,13 +245,13 @@ describe('product editor routes', () => {
     const on = await patch(`/api/v1/catalog/products/${id}/active`, { isActive: true, staffId: '00000000-0000-4000-8000-000000000000', staffName: 'Admin QA' });
     expect(on.statusCode).toBe(200);
     expect(await getFullCatalogBlock()).toContain(NAME);
-    expect((await runPriceTool(priceQuery)).call.outcome).toBe('quote');
+    expect((await runPriceTool(priceQuery)).calls[0]!.outcome).toBe('quote');
 
     const res = await app.inject({ method: 'DELETE', url: `/api/v1/catalog/products/${id}?staffName=Admin%20QA` });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ data: { sizes: 2, tiers: 4 }, error: null });
     expect(await getFullCatalogBlock()).not.toContain(NAME);
-    expect((await runPriceTool(priceQuery)).call.outcome).toBe('not_in_catalog');
+    expect((await runPriceTool(priceQuery)).calls[0]!.outcome).toBe('not_in_catalog');
 
     expect((await app.inject({ method: 'GET', url: `/api/v1/catalog/products/${id}` })).statusCode).toBe(404);
     const db = getDb();

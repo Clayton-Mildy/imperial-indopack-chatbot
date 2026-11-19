@@ -867,10 +867,10 @@ async function priceToolResult(block: Anthropic.ToolUseBlock, tally: PriceTally)
       content: `Input ${PRICE_TOOL_NAME} tidak valid (${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}). Kirim product, size, qty (angka) dan unit ("rim" atau "pcs").`,
     };
   }
-  const { text, figures: returned, call } = await runPriceTool(parsed.data);
+  const { text, figures: returned, calls } = await runPriceTool(parsed.data);
   tally.ran = true;
   tally.figures.push(...returned);
-  tally.calls.push(call);
+  tally.calls.push(...calls);
   return { type: 'tool_result', tool_use_id: block.id, content: text };
 }
 
@@ -1106,10 +1106,10 @@ async function callViaAgentSDK(systemPrompt: string, messages: ChatMessage[]): P
       async ({ url }) => ({ content: [{ type: 'text' as const, text: await resolveLink(url) }] })
     ),
     tool(PRICE_TOOL_NAME, PRICE_TOOL_DESC, PriceToolInput.shape, async (input) => {
-      const { text, figures: returned, call } = await runPriceTool(input);
+      const { text, figures: returned, calls } = await runPriceTool(input);
       tally.ran = true;
       tally.figures.push(...returned);
-      tally.calls.push(call);
+      tally.calls.push(...calls);
       return { content: [{ type: 'text' as const, text }] };
     }),
     respondTool,

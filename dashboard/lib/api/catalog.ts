@@ -58,8 +58,8 @@ export async function deleteCatalogProduct(id: string, actor: StaffActor): Promi
 }
 
 /** hitung_harga over the bot's live catalog: exactly what a customer would be told. */
-export async function checkPrice(input: PriceToolInput): Promise<{ text: string; call: PriceToolCall }> {
-  const envelope = await apiFetch<{ text: string; call: PriceToolCall }>("/catalog/price-check", {
+export async function checkPrice(input: PriceToolInput): Promise<{ text: string; calls: PriceToolCall[] }> {
+  const envelope = await apiFetch<{ text: string; calls: PriceToolCall[] }>("/catalog/price-check", {
     method: "POST",
     body: JSON.stringify(input),
   });

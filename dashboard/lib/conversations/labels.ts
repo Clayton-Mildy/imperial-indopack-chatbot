@@ -56,28 +56,29 @@ const tierQty = (t: PriceTier, lang: Lang): string => `${formatNumber(t.minQty, 
  */
 export function toolLine(c: PriceToolCall, lang: Lang): string {
   const size = sizeText(c.input.size ?? "");
+  const gsm = c.gsm ?? "";
   const qty = Number.isFinite(c.input.qty) ? `${formatNumber(c.input.qty, lang)} ${c.input.unit ?? ""}`.trim() : "";
   const q = c.quote;
   let what: string[];
   let result: string;
   if (c.outcome === "quote" && q?.kind === "quote") {
-    what = [size, qty];
+    what = [size, gsm, qty];
     result = translate(lang, "conversations.tool.quote", {
       price: rupiahDigits(q.unitPriceIdr),
       unit: q.tier.priceUnit,
       total: rupiahDigits(q.totalIdr),
     });
   } else if (c.outcome === "below_minimum") {
-    what = [size, qty];
+    what = [size, gsm, qty];
     result =
       q?.kind === "below_minimum"
         ? translate(lang, "conversations.tool.belowMin", { min: tierQty(q.minimum, lang) })
         : translate(lang, "conversations.tool.belowMinPlain");
   } else if (c.outcome === "above_top_tier") {
-    what = [size, qty];
+    what = [size, gsm, qty];
     result = translate(lang, "conversations.tool.aboveTop");
   } else {
-    what = [size];
+    what = [size, gsm];
     result = translate(lang, "conversations.tool.notInCatalog");
   }
   return ["hitung_harga", ...what.filter(Boolean)].join(" · ") + ` → ${result}`;

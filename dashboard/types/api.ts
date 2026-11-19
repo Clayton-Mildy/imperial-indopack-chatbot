@@ -271,6 +271,8 @@ export interface PriceToolInput {
   size: string;
   qty: number;
   unit: QtyUnit;
+  /** Left out: the result lists every gramasi of the size. */
+  gramasi?: string;
 }
 
 export type PriceOutcome = "quote" | "below_minimum" | "above_top_tier" | "not_in_catalog";

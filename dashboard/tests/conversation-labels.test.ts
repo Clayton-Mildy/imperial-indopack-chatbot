@@ -131,6 +131,10 @@ describe("toolLine", () => {
       toolLine(CALL({ outcome: "above_top_tier", input: { size: "30x30", qty: 900, unit: "rim" }, quote: { kind: "above_top_tier", top: RIM_TIER(100, 150000) } }), "id")
     ).toBe("hitung_harga · 30×30 · 900 rim → di atas tingkat teratas");
   });
+  it("shows the gramasi of the call", () => {
+    expect(toolLine({ ...QUOTE_CALL_12_RIM, gsm: "300 gsm" }, "id")).toBe("hitung_harga · 30×30 · 300 gsm · 12 rim → Rp 165.000/rim, total Rp 1.980.000");
+    expect(toolLine(CALL({ outcome: "not_in_catalog", gsm: "300 gsm", input: { size: "22x22x7" } }), "id")).toBe("hitung_harga · 22×22×7 · 300 gsm → tidak ada di katalog");
+  });
   it("speaks English too", () => expect(toolLine(CALL({ outcome: "not_in_catalog", input: { size: "22x22x7" } }), "en")).toBe("hitung_harga · 22×22×7 → not in the catalog"));
 });
 

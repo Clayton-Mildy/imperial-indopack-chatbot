@@ -235,12 +235,14 @@ describe('product preview, price check and brand price lists', () => {
 
     const res = await post('/api/v1/catalog/price-check', { product: SUPREME_NAME, size: '30x30', qty: 12, unit: 'rim' });
     expect(res.statusCode).toBe(200);
-    const { text, call } = res.json().data;
+    const { text, calls } = res.json().data;
+    const call = calls[0];
+    expect(calls).toHaveLength(1);
     expect(text).toMatch(/^HARGA:/);
     expect(call.outcome).toBe('quote');
     expect(call.quote.totalIdr).toBe(1980000);
     expect(call.productName).toBe(SUPREME_NAME);
-    expect(Object.keys(res.json().data).sort()).toEqual(['call', 'text']);
+    expect(Object.keys(res.json().data).sort()).toEqual(['calls', 'text']);
   });
 
   it('price check reads the live catalog: a switched-off product is not priced', async () => {
@@ -248,7 +250,7 @@ describe('product preview, price check and brand price lists', () => {
     expect(off.statusCode).toBe(200);
     const res = await post('/api/v1/catalog/price-check', { product: SUPREME_NAME, size: '30x30', qty: 12, unit: 'rim' });
     expect(res.json().data.text).toMatch(/^TIDAK_ADA_DI_KATALOG:/);
-    expect(res.json().data.call.outcome).toBe('not_in_catalog');
+    expect(res.json().data.calls[0].outcome).toBe('not_in_catalog');
     expect((await post('/api/v1/catalog/price-check', { product: SUPREME_NAME, size: '30x30', qty: 12, unit: 'lusin' })).statusCode).toBe(400);
   });
 

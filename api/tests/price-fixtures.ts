@@ -63,6 +63,13 @@ export const IVORY_BOX = product('p-ii1', 'Box Ivory 270 gsm cetak full color', 
   variant({ id: 'v-ii1-20', productId: 'p-ii1', name: '20x20x7,5', priceTiers: IVORY_TIERS }),
 ]);
 
+// One product, one size, two gramasi: 270 gsm at the Ivory tiers, 300 gsm Rp 500 per pcs above them.
+export const BOX_GRAMASI = product('p-ii2', 'Box Makan Ivory (CONTOH)', II, [
+  variant({ id: 'v-ii2-300', productId: 'p-ii2', name: '20x20x7', gsm: '300 gsm', priceTiers: IVORY_TIERS.map((t) => ({ ...t, priceIdr: t.priceIdr + 500 })) }),
+  variant({ id: 'v-ii2-270', productId: 'p-ii2', name: '20x20x7', gsm: '270 gsm', priceTiers: IVORY_TIERS }),
+]);
+export const BOX_GRAMASI_INPUT = { product: 'Box Makan Ivory (CONTOH)', size: '20x20x7', qty: 8, unit: 'rim' as const };
+
 export const CATALOG: Product[] = [SUPREME, SUPREME_2, IVORY_BOX];
 
 export const SUPREME_INPUT = { product: 'kertas supreme 64 gsm cetak 1 warna', size: '30 x 30 cm', qty: 12, unit: 'rim' as const };

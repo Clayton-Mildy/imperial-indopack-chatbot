@@ -138,12 +138,12 @@ export async function catalogPreviewRoutes(app: FastifyInstance): Promise<void> 
     return reply.send({ data: previewProduct(draft, stored), error: null });
   });
 
-  // POST /api/v1/catalog/price-check  { product, size, qty, unit } - hitung_harga itself, over the
+  // POST /api/v1/catalog/price-check  { product, size, qty, unit, gramasi? } - hitung_harga itself, over the
   // bot's live (active-only, cached) catalog, so staff see exactly what a customer would be told.
   app.post('/api/v1/catalog/price-check', { preHandler: [apiKeyAuth] }, async (request, reply) => {
     const body = PriceToolInput.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
-    const { text, call } = await runPriceTool(body.data);
-    return reply.send({ data: { text, call }, error: null });
+    const { text, calls } = await runPriceTool(body.data);
+    return reply.send({ data: { text, calls }, error: null });
   });
 }

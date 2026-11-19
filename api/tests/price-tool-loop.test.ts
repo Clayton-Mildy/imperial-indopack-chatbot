@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { BOX_TOTAL, BOX_UNIT, SUPREME_INPUT } from './price-fixtures.js';
+import { BOX_GRAMASI, BOX_GRAMASI_INPUT, BOX_TOTAL, BOX_UNIT, SUPREME_INPUT } from './price-fixtures.js';
 
 const mockCreate = vi.fn();
 const mockIsDevMode = vi.fn(() => false);
@@ -24,13 +24,13 @@ vi.mock('../src/services/claude.js', () => ({
   logUsageLine: vi.fn(),
 }));
 vi.mock('../src/services/ragQuery.js', async () => {
-  const { CATALOG } = await import('./price-fixtures.js');
+  const { CATALOG, BOX_GRAMASI } = await import('./price-fixtures.js');
   return {
     // Names only: enough for the judge to see a named product, no figures for the price checks.
     // One reference photo line, for the photo-url filter.
     getFullCatalogBlock: vi.fn(async () => 'Merek: Kertas Supreme\nProduk: Kertas Supreme 64 gsm cetak 1 warna\n[FOTO REFERENSI TERSEDIA] /uploads/ref/ks1.jpg\n  - Ukuran: 30 x 30 cm\n'),
     buildCatalogContext: vi.fn(async () => ''),
-    getCatalogProducts: vi.fn(async () => CATALOG),
+    getCatalogProducts: vi.fn(async () => [...CATALOG, BOX_GRAMASI]),
   };
 });
 const PLACEHOLDER_URLS = { cetak: 'https://forms.gle/REPLACE-ME', plano: 'https://forms.gle/REPLACE-ME' };
@@ -95,6 +95,16 @@ describe('API path', () => {
     expect(supreme!.content).toContain('Rp 1.980.000');
     expect(box).toMatchObject({ tool_use_id: 't2' });
     expect(box!.content).toContain('Rp 9.000.000');
+  });
+
+  it('a several-gramasi call returns all quote figures to the tally', async () => {
+    mockCreate
+      .mockResolvedValueOnce(toolTurn(priceCall('t1', BOX_GRAMASI_INPUT)))
+      .mockResolvedValueOnce(respondTurn());
+    const result = await callAIWithHistory(HISTORY, 'box makan ivory 20x20x7 8 rim berapa?');
+    expect(toolResults(mockCreate.mock.calls[1]![0])[0]!.content).toMatch(/^HARGA: .*per gramasi:/);
+    expect(result.toolFigures).toEqual([2000, 8_000_000, 2500, 10_000_000]);
+    expect(result.priceCalls?.map((c) => c.gsm)).toEqual(['270 gsm', '300 gsm']);
   });
 
   it('offers the tools in the cached order: web_search, resolve_link, hitung_harga, respond_to_customer', async () => {
