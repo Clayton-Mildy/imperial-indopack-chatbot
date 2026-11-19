@@ -3,7 +3,8 @@
 WhatsApp AI sales agent for Imperial Indopack.
 
 `api/` is the Fastify + Drizzle + Postgres backend that holds the chatbot: WhatsApp webhook ->
-`messageRouter` -> `aiLayer` (Claude) -> reply. A staff dashboard (`dashboard/`) is not copied yet.
+`messageRouter` -> `aiLayer` (Claude) -> reply. `dashboard/` is the Next.js staff dashboard (conversations,
+catalog, leads, settings). To connect the real WhatsApp number and test, follow [`docs/go-live.md`](docs/go-live.md).
 
 ## Origin
 
@@ -25,6 +26,13 @@ cp .env.example .env     # fill DATABASE_URL, API_SECRET_KEY, ANTHROPIC_API_KEY,
 npm run db:migrate
 npm run db:seed          # first admin + API key
 npx tsx scripts/seed-default-prompt.ts   # the default prompt
-npm run dev              # API on :50050 (PORT in .env)
+npm run dev              # API on :50070 (PORT in .env)
 npm test
+```
+
+Dashboard (second terminal; open http://localhost:40070/app/login):
+
+```sh
+cd api && npm run dev         # API, port 50070
+cd dashboard && npm run dev   # dashboard, port 40070
 ```
