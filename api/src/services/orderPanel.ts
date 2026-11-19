@@ -13,7 +13,7 @@ import { findConversationById, listCustomerFileMessages, teamNotesOf, type TeamN
 import { getContactProfile } from '../repositories/contactProfiles.js';
 import { findCurrentLeadForContact } from '../repositories/leads.js';
 import { getCatalogProducts } from './ragQuery.js';
-import { nearestCatalogItem, type NearestMatch } from './nearestCatalog.js';
+import { nearestCatalogItems, type NearestMatch } from './nearestCatalog.js';
 
 export type { TeamNotes } from '../repositories/conversations.js';
 
@@ -64,7 +64,11 @@ export async function getOrderPanel(conversationId: string): Promise<OrderPanel 
   const facts = profileFacts(profile?.profile);
   const items = (Array.isArray(facts.items) ? facts.items : []).filter(isRecord).map(sanitizeItem);
   const sized = items.filter((i) => i.size);
-  const matches = sized.map((i) => nearestCatalogItem(i, catalog));
+  const matches = sized.flatMap((i) => {
+    const found = nearestCatalogItems(i, catalog);
+    // An item with no match at all still flags the size row: the catalog has nothing for it.
+    return found.length > 0 ? found : [null];
+  });
   const files = fileRows.map(customerFile);
 
   // The size row is flagged when any item with a size has no exact catalog size; the design row

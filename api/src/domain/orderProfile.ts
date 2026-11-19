@@ -3,6 +3,8 @@
  * items. Stored in contact_profiles.profile (`brands`, `items`) and on leads.
  */
 
+import { gsmAfterName } from './gramasi.js'; // gramasi.ts also imports normalizeSize from here; both use the other only inside functions
+
 /** The two brands, as stored. */
 export type BrandSlug = 'imperial_indopack' | 'kertas_supreme';
 
@@ -153,7 +155,7 @@ export function mergeOrderFacts(existing: Record<string, unknown>, patch: Record
 function itemLine(i: OrderItem): string {
   const parts: string[] = [];
   i = sanitizeItem(i as Record<string, unknown>); // stored data may predate validation
-  const name = [i.product, i.gsm && !(i.product ?? '').toLowerCase().includes(i.gsm.toLowerCase()) ? `${i.gsm} gsm` : '']
+  const name = [i.product, gsmAfterName(i.product, i.gsm)]
     .filter(Boolean).join(' ');
   if (name || i.print) parts.push([name, i.print ? `cetak ${i.print}` : ''].filter(Boolean).join(' '));
   if (i.size) parts.push(normalizeSize(i.size));

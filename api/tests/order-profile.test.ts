@@ -95,6 +95,14 @@ describe('orderDetailsSummary', () => {
   });
   it('does not throw on legacy stored items', () =>
     expect(orderDetailsSummary({ items: [{ gsm: 64, qty: {} }, { product: 7, size: 30 }] })).toBe('Barang: 64 gsm\nBarang: 7, 30'));
+  it('orderDetailsSummary writes 300 gsm once whatever the stored spelling', () => {
+    for (const gsm of ['300', '300gsm', '300 gsm', '300 GSM', 300]) {
+      expect(orderDetailsSummary({ items: [{ product: 'Box Contoh', gsm, size: '20x20x7' }] })).toBe('Barang: Box Contoh 300 gsm, 20x20x7');
+    }
+    // The product name already says it, in any spelling.
+    expect(orderDetailsSummary({ items: [{ product: 'Box Makan Ivory 300 gsm', gsm: '300', size: '20x20x7' }] })).toBe('Barang: Box Makan Ivory 300 gsm, 20x20x7');
+    expect(orderDetailsSummary({ items: [{ product: 'Box Makan Ivory 300gsm', gsm: '300 gsm' }] })).toBe('Barang: Box Makan Ivory 300gsm');
+  });
   it('lists several items on their own lines', () =>
     expect(orderDetailsSummary({ items: [SUPREME_30, BOX_20] }).split('\n')).toHaveLength(2));
 });

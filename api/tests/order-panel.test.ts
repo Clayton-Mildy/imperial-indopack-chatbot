@@ -28,6 +28,8 @@ const BOXES: Product[] = [{
   usp: null, kataKunci: null, kelengkapan: null, bahan: null, ketebalan: null, imageUrl: null, isActive: true,
   createdAt: TS, updatedAt: TS, variants: [variant('21 x 7 x 5 cm'), variant('21 x 14 x 5 cm')], referenceImageUrls: [],
 }];
+const gsmVariant = (gsm: string, price: number): ProductVariant => ({ ...variant('20 x 20 x 7 cm'), id: `vg-${gsm}`, productId: 'p-gr', gsm, priceTiers: [T(5, price)] });
+BOXES.push({ ...BOXES[0]!, id: 'p-gr', name: 'Kotak Gramasi Contoh', variants: [gsmVariant('350 gsm', 2300), gsmVariant('300 gsm', 2100)] });
 vi.mock('../src/services/ragQuery.js', async () => ({
   ...(await vi.importActual<typeof import('../src/services/ragQuery.js')>('../src/services/ragQuery.js')),
   getCatalogProducts: async () => BOXES,
@@ -52,7 +54,7 @@ const ANDI = {
   items: [{ product: 'Box Ivory', print: 'full color', size: '22x22x7', qty: 5000, qty_unit: 'pcs', has_design: true }],
 };
 
-const conv = { id: '', bare: '' };
+const conv = { id: '', bare: '', gramasi: '' };
 
 async function cleanup() {
   const db = getDb();
@@ -88,6 +90,12 @@ beforeAll(async () => {
     await db.insert(messages).values({ conversationId: conv.id, role: r.role, body: r.body, metadata: r.metadata, createdAt: ago(r.minAgo) });
   }
 
+  // An item without a gramasi, for a product sold in two.
+  const [gr] = await db.insert(contacts).values({ waId: `${PREFIX}6281200007053`, displayName: 'Contoh WA Gramasi' }).returning();
+  await db.insert(contactProfiles).values({ contactId: gr!.id, profile: { items: [{ product: 'Kotak Gramasi Contoh', size: '20x20x7', qty: 500, qty_unit: 'pcs' }] } });
+  const [g] = await db.insert(conversations).values({ contactId: gr!.id, phoneNumberId: number!.id, status: 'active' }).returning();
+  conv.gramasi = g!.id;
+
   // Nothing collected, no lead, no files.
   const [bare] = await db.insert(contacts).values({ waId: `${PREFIX}6281200007052`, displayName: 'Contoh WA Kosong' }).returning();
   const [b] = await db.insert(conversations).values({ contactId: bare!.id, phoneNumberId: number!.id, status: 'active' }).returning();
@@ -120,6 +128,16 @@ describe('getOrderPanel', () => {
     expect(panel.teamNotes).toEqual({ text: '', updatedAt: null, updatedBy: null });
     // Has a design: the PO form staff are offered first is cetak (poFormsForOrder).
     expect(panel.suggestedPoForms).toEqual(['cetak']);
+  });
+
+  it('lists both gramasi of the nearest size', async () => {
+    const panel = (await getOrderPanel(conv.gramasi))!;
+    expect(panel.nearest.map((m) => [m.gsm, m.variantName, m.exact])).toEqual([
+      ['300 gsm', '20 x 20 x 7 cm', true],
+      ['350 gsm', '20 x 20 x 7 cm', true],
+    ]);
+    // Both sizes exist, so the size row is not flagged.
+    expect(panel.details.find((d) => d.key === 'size')).not.toHaveProperty('note');
   });
 
   it('a chat with nothing collected: six empty rows, no lead, no files, no notes', async () => {

@@ -5,6 +5,7 @@
  * the rows. Pure: the profile is jsonb the model wrote, so every field is read defensively.
  */
 
+import { gsmAfterName } from './gramasi.js';
 import { sanitizeItem, type BrandSlug, type OrderItem } from './orderProfile.js';
 import { BRAND_SLUGS } from './brands.js';
 import { PCS_PER_RIM, type QtyUnit } from './pricing.js';
@@ -32,8 +33,7 @@ export function formatItemQty(qty: number, unit: QtyUnit): string {
 /** 'Box Ivory, cetak full color'; the gsm is added when the product name does not already say it. No product, no model. */
 function itemModel(i: OrderItem): string {
   if (!i.product) return '';
-  const gsm = i.gsm?.replace(/\s*gsm$/i, '');
-  const withGsm = gsm && !i.product.toLowerCase().includes(gsm.toLowerCase()) ? `${i.product} ${gsm} gsm` : i.product;
+  const withGsm = [i.product, gsmAfterName(i.product, i.gsm)].filter(Boolean).join(' ');
   return i.print ? `${withGsm}, cetak ${i.print}` : withGsm;
 }
 

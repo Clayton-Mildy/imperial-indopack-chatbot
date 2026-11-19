@@ -53,3 +53,15 @@ export function gramasiOfSize(product: Product, size: string): string[] {
   }
   return [...found].sort(compareGsm);
 }
+
+/**
+ * The gramasi to print after a product name: '300 gsm', or '' when there is none or the product name
+ * already says it ('Box Makan Ivory 300 gsm', '...300gsm'). Old items carry the gramasi in the name.
+ */
+export function gsmAfterName(product: string | null | undefined, gsm: string | number | null | undefined): string {
+  const g = normalizeGsm(gsm);
+  if (!g) return '';
+  const name = (product ?? '').toLowerCase().replace(/(\d)\s*gsm/g, '$1 gsm');
+  const escaped = g.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\d.,])${escaped}(?![\\p{L}\\d])`, 'u').test(name) ? '' : g;
+}

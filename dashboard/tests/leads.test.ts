@@ -36,6 +36,16 @@ describe("item lines", () => {
     );
   });
 
+  it("shows the gramasi between the name and the quantity", () => {
+    expect(itemLine({ product: "Box Contoh", size: "20x20x7", gsm: "300", qty: 2500, qty_unit: "pcs" }, "id")).toBe(
+      "Box Contoh 20×20×7 · 300 gsm · 2.500 pcs"
+    );
+    // The product name already says it: once.
+    expect(itemLine({ product: "Box Makan Ivory 300 gsm", size: "20x20x7", gsm: "300 gsm", qty: 1, qty_unit: "pcs" }, "id")).toBe(
+      "Box Makan Ivory 300 gsm 20×20×7 · 1 pcs"
+    );
+  });
+
   it("says the quantity is missing", () => {
     expect(itemLine({ product: "Box ivory", size: "21x14x5" }, "id")).toBe("Box ivory 21×14×5 · jumlah belum ada");
     expect(itemLine({ product: "Box ivory", size: "21x14x5" }, "en")).toBe("Box ivory 21×14×5 · quantity not set");

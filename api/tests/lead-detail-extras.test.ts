@@ -22,6 +22,8 @@ const CATALOG: Product[] = [{
     priceTiers: [{ minQty: 5, qtyUnit: 'rim', priceIdr: 185_000, priceUnit: 'rim', includesDelivery: false }, { minQty: 10, qtyUnit: 'rim', priceIdr: 165_000, priceUnit: 'rim', includesDelivery: false }],
   }],
 } as unknown as Product];
+const gv = (gsm: string, id: string) => ({ ...CATALOG[0]!.variants![0]!, id, productId: 'p-gr', name: '20x20x7', gsm });
+CATALOG.push({ ...CATALOG[0]!, id: 'p-gr', name: 'Box Gramasi Contoh', variants: [gv('300 gsm', 'g300'), gv('350 gsm', 'g350')] });
 vi.mock('../src/services/ragQuery.js', () => ({ getCatalogProducts: async () => CATALOG }));
 
 const { leadRoutes } = await import('../src/routes/dashboard/leads.js');
@@ -79,6 +81,19 @@ describe('lead detail extras', () => {
       // Sent again later, but the provider refused it ('saved'): it never reached the customer.
       { role: 'assistant', at: '2020-04-01T09:12:00', body: 'ini formnya https://forms.example/x', metadata: { source: 'po_form' }, status: 'saved' },
     ]);
+    // The same size in two gramasi, quoted at different prices: each item takes its own gramasi's quote.
+    const gcall = (gsm: string, unit: number) => ({ ...call('20x20x7', 'quote', unit), productId: 'p-gr', productName: 'Box Gramasi Contoh', gsm });
+    await mk('GSM', {
+      status: 'quoted', submittedAt: wib('2020-04-05T09:00:00'),
+      items: [
+        { product: 'Box Gramasi Contoh', size: '20x20x7', gsm: '350', qty: 10, qty_unit: 'rim' },
+        { product: 'Box Gramasi Contoh', size: '20x20x7', gsm: '300 gsm', qty: 10, qty_unit: 'rim' },
+        { product: 'Box Gramasi Contoh', size: '20x20x7', qty: 10, qty_unit: 'rim' },
+      ],
+    }, [
+      { role: 'user', at: '2020-04-05T09:00:00', body: 'halo' },
+      { role: 'assistant', at: '2020-04-05T09:02:00', body: 'harga', metadata: { priceCalls: [gcall('300 gsm', 150_000), gcall('350 gsm', 170_000)] } },
+    ]);
     await mk('DIRECT', { status: 'new', submittedAt: wib('2020-04-02T09:00:00') }, [
       { role: 'user', at: '2020-04-02T09:00:00', body: 'halo' },
       { role: 'assistant', at: '2020-04-02T09:01:00', body: CANNED_PO_FORM_FROM_TEAM, metadata: { source: 'po_form' }, status: 'sent' },
@@ -106,6 +121,14 @@ describe('lead detail extras', () => {
     expect(x.quotedPrices).toHaveLength(2);
     expect(x.quotedPrices[0]).toMatchObject({ unitPriceIdr: 165_000, priceUnit: 'rim', totalIdr: 1_650_000 });
     expect(x.quotedPrices[1]).toBeNull();
+  });
+
+  it("a quoted price is matched to the item's gramasi", async () => {
+    const x = await get('GSM');
+    expect(x.quotedPrices[0]).toMatchObject({ unitPriceIdr: 170_000 });
+    expect(x.quotedPrices[1]).toMatchObject({ unitPriceIdr: 150_000 });
+    // No gramasi chosen and two exist: no single price to show.
+    expect(x.quotedPrices[2]).toBeNull();
   });
 
   it('direct source without a referral, and the placeholder PO line is not a form sent', async () => {

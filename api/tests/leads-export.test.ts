@@ -131,6 +131,11 @@ describe('buildLeadsSheet', () => {
     expect(cell({}, 'Merek')).toBeNull();
   });
 
+  it('an item gsm of "300 gsm" exports once', () => {
+    expect(cell({ items: [{ product: 'Box Contoh', gsm: '300 gsm', size: '10x10x5', qty: 100, qty_unit: 'pcs' }] }, 'Barang')).toBe('Box Contoh 300 gsm 10x10x5 x 100 pcs');
+    expect(cell({ items: [{ product: 'Box Contoh', gsm: '300', size: '10x10x5' }] }, 'Barang')).toBe('Box Contoh 300 gsm 10x10x5');
+  });
+
   it('keeps rupiah and counts as real numbers, not formatted text', () => {
     // Excel must be able to sum these; a "Rp 450.000" string cannot be summed.
     expect(cell({ dealValueIdr: 450000 }, 'nilai_deal_idr')).toEqual({

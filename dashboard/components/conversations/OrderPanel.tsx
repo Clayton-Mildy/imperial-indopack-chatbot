@@ -173,9 +173,9 @@ export function OrderPanel({ conversationId, panel }: { conversationId: string; 
               panel.nearest.map((m, i) => {
                 const price = nearestPriceLine(m, lang);
                 return (
-                  <div key={`${m.productId}-${m.variantName}-${i}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <div key={`${m.productId}-${m.variantName}-${m.gsm ?? ""}-${i}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     <span>
-                      {m.productName} · {sizeText(m.variantName)}
+                      {m.productName} · {sizeText(m.variantName)}{m.gsm ? ` · ${m.gsm}` : ""}
                     </span>
                     {(price || !m.exact) && (
                       <span style={{ fontSize: 12, color: "#5F6B5A" }}>

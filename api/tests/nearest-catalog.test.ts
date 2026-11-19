@@ -7,9 +7,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseSizeDims, nearestCatalogItem } from '../src/services/nearestCatalog.js';
+import { parseSizeDims, nearestCatalogItems } from '../src/services/nearestCatalog.js';
 import type { Product, ProductVariant } from '../src/domain/types.js';
+import type { OrderItem } from '../src/domain/orderProfile.js';
 import type { PriceTier } from '../src/domain/pricing.js';
+
+/** The single match of a one-match lookup (null when none). */
+const nearest = (item: OrderItem, catalog: Product[]) => nearestCatalogItems(item, catalog)[0] ?? null;
 
 const TS = '2026-01-01T00:00:00.000Z';
 
@@ -56,71 +60,103 @@ describe('parseSizeDims', () => {
   });
 });
 
-describe('nearestCatalogItem', () => {
+describe('nearestCatalogItems', () => {
   it('22x22x7 is nearest to 21 x 14 x 5 cm, not exact, at the 10-rim tier for 5000 pcs', () =>
-    expect(nearestCatalogItem({ product: 'box ivory full color', size: '22x22x7', qty: 5000, qty_unit: 'pcs' }, BOXES))
+    expect(nearest({ product: 'box ivory full color', size: '22x22x7', qty: 5000, qty_unit: 'pcs' }, BOXES))
       .toMatchObject({ variantName: '21 x 14 x 5 cm', exact: false, tier: { minQty: 10, priceIdr: 1500 } }));
 
   it('names the product and keeps the item it was asked for', () => {
     const item = { product: 'box ivory full color', size: '22x22x7', qty: 5000, qty_unit: 'pcs' as const };
-    expect(nearestCatalogItem(item, BOXES)).toMatchObject({
+    expect(nearest(item, BOXES)).toMatchObject({
       item, productId: 'p-ivory', productName: 'Box Ivory 270 gsm cetak full color',
       quote: { kind: 'quote', unitPriceIdr: 1500, totalIdr: 7_500_000 },
     });
   });
 
   it('30 x 30 cm matches 30x30 exactly', () =>
-    expect(nearestCatalogItem({ product: 'kertas supreme', size: '30 x 30 cm', qty: 10, qty_unit: 'rim' }, [SUPREME, ...BOXES]))
+    expect(nearest({ product: 'kertas supreme', size: '30 x 30 cm', qty: 10, qty_unit: 'rim' }, [SUPREME, ...BOXES]))
       .toMatchObject({ productId: 'p-ks', variantName: '30x30', exact: true, tier: { minQty: 10, priceIdr: 165_000 } }));
 
   it('a two-dimension size never matches a box', () =>
-    expect(nearestCatalogItem({ product: 'box ivory', size: '30x30', qty: 5000, qty_unit: 'pcs' }, BOXES)).toBeNull());
+    expect(nearest({ product: 'box ivory', size: '30x30', qty: 5000, qty_unit: 'pcs' }, BOXES)).toBeNull());
 
   it('no shared word gives null', () =>
-    expect(nearestCatalogItem({ product: 'plastik klip', size: '21 x 14 x 5' }, BOXES)).toBeNull());
+    expect(nearest({ product: 'plastik klip', size: '21 x 14 x 5' }, BOXES)).toBeNull());
 
   it('no size, or a size with no numbers, gives null', () => {
-    expect(nearestCatalogItem({ product: 'box ivory', qty: 5000, qty_unit: 'pcs' }, BOXES)).toBeNull();
-    expect(nearestCatalogItem({ product: 'box ivory', size: 'besar' }, BOXES)).toBeNull();
+    expect(nearest({ product: 'box ivory', qty: 5000, qty_unit: 'pcs' }, BOXES)).toBeNull();
+    expect(nearest({ product: 'box ivory', size: 'besar' }, BOXES)).toBeNull();
   });
 
   it('the most shared words win; a tie goes to the name that sorts first', () => {
     const kraft = product('p-kraft', 'Box Kraft cetak 1 warna', ['21 x 14 x 5 cm'], [T(5, 1200)]);
     const coklat = product('p-coklat', 'Box Coklat cetak 1 warna', ['21 x 14 x 5 cm'], [T(5, 1300)]);
     // 'box kraft' shares two words with Box Kraft, one with the others.
-    expect(nearestCatalogItem({ product: 'box kraft', size: '21x14x5' }, [...BOXES, coklat, kraft])?.productId).toBe('p-kraft');
+    expect(nearest({ product: 'box kraft', size: '21x14x5' }, [...BOXES, coklat, kraft])?.productId).toBe('p-kraft');
     // 'box' alone: one word each, so the first name alphabetically (Box Coklat < Box Ivory < Box Kraft).
-    expect(nearestCatalogItem({ product: 'box', size: '21x14x5' }, [kraft, ...BOXES, coklat])?.productId).toBe('p-coklat');
+    expect(nearest({ product: 'box', size: '21x14x5' }, [kraft, ...BOXES, coklat])?.productId).toBe('p-coklat');
   });
 
   it('one-letter words do not count', () =>
-    expect(nearestCatalogItem({ product: 'x', size: '21x14x5' }, BOXES)).toBeNull());
+    expect(nearest({ product: 'x', size: '21x14x5' }, BOXES)).toBeNull());
 
   it('skips a product switched off and a variant switched off', () => {
     const off = product('p-off', 'Box Ivory 270 gsm cetak full color premium', ['22 x 22 x 7 cm'], [T(5, 900)], { isActive: false });
     const withOffVariant = BOX_IVORY({ sizes: ['21 x 7 x 5 cm'], tiers: [T(5, 1900)] });
     withOffVariant.variants!.push(variant('p-ivory', '22 x 22 x 7 cm', [T(5, 900)], { isActive: false }));
-    expect(nearestCatalogItem({ product: 'box ivory premium', size: '22x22x7' }, [off, withOffVariant]))
+    expect(nearest({ product: 'box ivory premium', size: '22x22x7' }, [off, withOffVariant]))
       .toMatchObject({ productId: 'p-ivory', variantName: '21 x 7 x 5 cm', exact: false });
   });
 
   it('with no quantity there is no quote, and the tier is the lowest one', () =>
-    expect(nearestCatalogItem({ product: 'box ivory', size: '21 x 14 x 5 cm' }, BOXES))
+    expect(nearest({ product: 'box ivory', size: '21 x 14 x 5 cm' }, BOXES))
       .toMatchObject({ exact: true, quote: null, tier: { minQty: 5, priceIdr: 1900 } }));
 
   it('below the minimum: the quote says so and the tier is the lowest one', () =>
-    expect(nearestCatalogItem({ product: 'box ivory', size: '21x14x5', qty: 1000, qty_unit: 'pcs' }, BOXES))
+    expect(nearest({ product: 'box ivory', size: '21x14x5', qty: 1000, qty_unit: 'pcs' }, BOXES))
       .toMatchObject({ quote: { kind: 'below_minimum' }, tier: { minQty: 5, priceIdr: 1900 } }));
 
   // quotePrice prices nothing past the top tier (the team quotes it, "harga khusus dari tim"); the
   // tier shown is the top one - the cheapest catalog price - never the lowest tier's dearest one.
   it('above the top tier: the quote says so and the tier is the top one', () =>
-    expect(nearestCatalogItem({ product: 'kertas supreme', size: '30x30', qty: 12, qty_unit: 'rim' }, [SUPREME]))
+    expect(nearest({ product: 'kertas supreme', size: '30x30', qty: 12, qty_unit: 'rim' }, [SUPREME]))
       .toMatchObject({ quote: { kind: 'above_top_tier', top: { minQty: 10 } }, tier: { minQty: 10, priceIdr: 165_000 } }));
 
   it('a variant with no tiers has no tier', () => {
     const unpriced = product('p-ivory', 'Box Ivory 270 gsm cetak full color', ['21 x 14 x 5 cm'], []);
-    expect(nearestCatalogItem({ product: 'box ivory', size: '21x14x5', qty: 5000, qty_unit: 'pcs' }, [unpriced]))
+    expect(nearest({ product: 'box ivory', size: '21x14x5', qty: 5000, qty_unit: 'pcs' }, [unpriced]))
       .toMatchObject({ quote: { kind: 'no_tiers' }, tier: null });
   });
+});
+
+describe('nearestCatalogItems with gramasi', () => {
+  const sized = (gsm: string, size: string, tiers: PriceTier[]) => variant('p-gr', size, tiers, { gsm });
+  const GRAMASI: Product = product('p-gr', 'Box Makan Ivory', [], [], {
+    variants: [
+      sized('350 gsm', '20 x 20 x 7 cm', [T(5, 2300)]),
+      sized('300 gsm', '20 x 20 x 7 cm', [T(5, 2100)]),
+      sized('300 gsm', '25 x 25 x 8 cm', [T(5, 2600)]),
+      sized('350 gsm', '25 x 25 x 8 cm', [T(5, 2800)]),
+    ],
+  });
+
+  it('an item with gsm matches only that gramasi', () => {
+    const matches = nearestCatalogItems({ product: 'box makan ivory', size: '22x22x7', gsm: '300' }, [GRAMASI]);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ gsm: '300 gsm', variantName: '20 x 20 x 7 cm', exact: false, tier: { priceIdr: 2100 } });
+  });
+
+  it('an item without gsm gets one match per gramasi, ascending', () => {
+    const matches = nearestCatalogItems({ product: 'box makan ivory', size: '20x20x7' }, [GRAMASI]);
+    expect(matches.map((m) => [m.gsm, m.variantName, m.exact])).toEqual([
+      ['300 gsm', '20 x 20 x 7 cm', true],
+      ['350 gsm', '20 x 20 x 7 cm', true],
+    ]);
+  });
+
+  it('a no-gramasi product gives one match with gsm null', () =>
+    expect(nearestCatalogItems({ product: 'box ivory', size: '21x14x5' }, BOXES).map((m) => m.gsm)).toEqual([null]));
+
+  it('a gramasi the product does not have falls back to every gramasi', () =>
+    expect(nearestCatalogItems({ product: 'box makan ivory', size: '20x20x7', gsm: '400' }, [GRAMASI])).toHaveLength(2));
 });

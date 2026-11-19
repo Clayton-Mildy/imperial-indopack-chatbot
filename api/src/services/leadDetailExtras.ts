@@ -7,7 +7,8 @@ import { sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import { PO_FORM_LINK_ROW_SQL } from '../repositories/conversations.js';
 import { getCatalogProducts } from './ragQuery.js';
-import { nearestCatalogItem } from './nearestCatalog.js';
+import { nearestCatalogItems } from './nearestCatalog.js';
+import { sameGsm } from '../domain/gramasi.js';
 import type { Lead } from '../domain/types.js';
 import type { QtyUnit } from '../domain/pricing.js';
 import type { PriceToolCall } from './priceTool.js';
@@ -63,10 +64,14 @@ export async function getLeadDetailExtras(lead: Lead): Promise<LeadDetailExtras>
   if (lead.items.length > 0 && calls.length > 0) {
     const catalog = await getCatalogProducts();
     quotedPrices = lead.items.map((item) => {
-      const m = nearestCatalogItem(item, catalog);
+      // One exact match: the item's gramasi picked it, or the product has only one.
+      const found = nearestCatalogItems(item, catalog);
+      const m = found.length === 1 ? found[0]! : undefined;
       if (!m || !m.exact) return null;
       const hit = calls.find(
-        ({ call }) => call.outcome === 'quote' && call.productName === m.productName && call.variantName === m.variantName && call.quote?.kind === 'quote'
+        ({ call }) =>
+          call.outcome === 'quote' && call.productName === m.productName && call.variantName === m.variantName &&
+          sameGsm(call.gsm ?? null, m.gsm) && call.quote?.kind === 'quote'
       );
       if (!hit || hit.call.quote?.kind !== 'quote') return null;
       const q = hit.call.quote;

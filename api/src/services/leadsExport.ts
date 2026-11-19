@@ -16,6 +16,7 @@
 import writeExcelFile from 'write-excel-file/node';
 import type { Sheet } from 'write-excel-file/node';
 import { campaignOf, listLeads } from '../repositories/leads.js';
+import { normalizeGsm } from '../domain/gramasi.js';
 import { BRAND_NAMES, type OrderItem } from '../domain/orderProfile.js';
 import type { LeadKind, LeadStatus, LeadWithContact, LostReason } from '../domain/types.js';
 
@@ -75,7 +76,7 @@ const STATUS_ID: Record<LeadStatus, string> = {
 };
 
 function itemText(i: OrderItem): string {
-  const name = [i.product, i.gsm ? `${i.gsm} gsm` : '', i.size, i.print ? `cetak ${i.print}` : '']
+  const name = [i.product, normalizeGsm(i.gsm) ?? '', i.size, i.print ? `cetak ${i.print}` : '']
     .filter(Boolean).join(' ');
   const qty = i.qty !== undefined ? `${i.qty} ${i.qty_unit ?? ''}`.trim() : '';
   return [name, qty].filter(Boolean).join(' x ');
