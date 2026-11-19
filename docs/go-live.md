@@ -19,11 +19,14 @@ Do this before touching the real WhatsApp number. Needs Node 24 and Postgres 17 
    Then `npx tsx scripts/seed-default-prompt.ts` once for the default prompt.
    Login: `seed:local` creates the admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` in `api/.env`; if those
    are unset it uses `admin@imperial-indopack.example.com` / `changeme123` (local only).
-3. Dashboard settings, if `dashboard/.env.local` does not exist yet: `cp dashboard/.env.example dashboard/.env.local`.
-   Set `AUTH_SECRET` (`openssl rand -base64 32`; paste the output into the file). Set `API_SECRET_KEY` to the
-   same value as `SEED_API_KEY` without printing it:
-   `sed -i '' "s|^API_SECRET_KEY=.*|API_SECRET_KEY=$(grep '^SEED_API_KEY=' api/.env | cut -d= -f2-)|" dashboard/.env.local`
-   (macOS; on Linux drop the `''` after `-i`).
+3. From the repo root (`cd ..` if you are still in `api/`), if `dashboard/.env.local` does not exist yet:
+   `cp dashboard/.env.example dashboard/.env.local`. Then set the two secrets without printing them (macOS
+   `sed`; on Linux drop the `''` after `-i`):
+   - `sed -i '' "s|^AUTH_SECRET=.*|AUTH_SECRET=$(openssl rand -base64 32 | tr -d '/+=')|" dashboard/.env.local`
+   - `sed -i '' "s|^API_SECRET_KEY=.*|API_SECRET_KEY=$(grep '^SEED_API_KEY=' api/.env | cut -d= -f2-)|" dashboard/.env.local`
+     (the key is the hex string from `openssl rand -hex 32` in step 1; it must equal `SEED_API_KEY`).
+   - Check, no values shown: `grep -c '^API_SECRET_KEY=.\+' dashboard/.env.local` and
+     `grep -c '^AUTH_SECRET=.\+' dashboard/.env.local` must each print `1`.
 4. `cd api && npm run catalog:demo` loads a DEMO catalog (product names end with `(CONTOH)`, fake prices).
 5. Start both apps, each in its own terminal:
    - `cd api && npm run dev` (API, port 50070)
