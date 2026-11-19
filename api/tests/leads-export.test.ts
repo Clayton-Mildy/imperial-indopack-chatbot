@@ -106,6 +106,23 @@ describe('buildLeadsSheet', () => {
     expect(cell({}, 'kebutuhan')).toBeNull();
   });
 
+  // Marketing (read-only) never receives the customer's own words: the dashboard's export proxy asks
+  // for redact, and the kebutuhan column (the form's free-text answer, or what the AI read from the
+  // chat) is left blank. Every other column stays.
+  it('redact: the kebutuhan column is blank, the rest of the row stays', () => {
+    const over = {
+      payload: { nama: 'Contoh Dewi', apa_yang_anda_butuhkan: 'kertas nasi 10 rim', pesan: 'tolong kirim cepat' },
+      contactProfile: { product_sought: 'Kertas bungkus' },
+    };
+    const redacted = buildLeadsSheet([lead(over)], { redact: true })[0]!.data[1] as unknown[];
+    expect(redacted[HEADERS.indexOf('kebutuhan')]).toBeNull();
+    expect(redacted[HEADERS.indexOf('nama')]).toBe('Contoh Dewi');
+    expect(redacted).toHaveLength(HEADERS.length);
+    expect(buildLeadsSheet([lead({ payload: { pesan: 'tolong kirim cepat' } })], { redact: true })[0]!.data[1]).not.toContain('tolong kirim cepat');
+    // Not redacted: unchanged.
+    expect(cell(over, 'kebutuhan')).toBe('kertas nasi 10 rim');
+  });
+
   it('writes brands, items, profile name and company', () => {
     expect(cell({ brands: ['imperial_indopack', 'kertas_supreme'] }, 'Merek')).toBe('Imperial Indopack, Kertas Supreme');
     expect(cell({ items: [{ product: 'Box Nasi', size: '10x10x5', qty: 100, qty_unit: 'pcs' }] }, 'Barang')).toBe('Box Nasi 10x10x5 x 100 pcs');

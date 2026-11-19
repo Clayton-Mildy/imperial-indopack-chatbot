@@ -303,8 +303,9 @@ const LEAD_FILTER_SHAPE = {
 
 export const LeadsQuerySchema = PaginationQuerySchema.extend(LEAD_FILTER_SHAPE);
 
-// No pagination: the export is one file for the whole filtered set.
-export const LeadsExportQuerySchema = z.object(LEAD_FILTER_SHAPE);
+// No pagination: the export is one file for the whole filtered set. redact=1 (set by the dashboard's
+// export proxy for a read-only session) leaves the customer's own text out of the file.
+export const LeadsExportQuerySchema = z.object({ ...LEAD_FILTER_SHAPE, redact: z.enum(['0', '1']).optional() });
 
 // A real calendar day, not just the right shape: "2020-02-30" must be a 400, not a silent roll-over.
 const ReportDay = z

@@ -101,11 +101,18 @@ function wib(date: Date | null): string | null {
   return new Date(date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16).replace('T', ' ');
 }
 
+/** redact: the read-only (marketing) role's file - the customer's own words are left out. */
+export interface LeadsSheetOptions {
+  redact?: boolean;
+}
+
 /**
  * Pure: rows in, sheet out. Kept apart from the DB and the xlsx writer so the flattening
  * is testable without either - same seam as buildCatalogSheets.
+ * Redacted, the kebutuhan column is blank: it is the form's free-text answer (or what the AI read
+ * from the chat), the customer's own text, which the dashboard never shows the read-only role.
  */
-export function buildLeadsSheet(items: LeadWithContact[]): Sheet<Buffer>[] {
+export function buildLeadsSheet(items: LeadWithContact[], opts: LeadsSheetOptions = {}): Sheet<Buffer>[] {
   const rows: Sheet<Buffer>['data'] = [
     HEADERS.map((value) => ({ value, fontWeight: 'bold' as const })),
   ];
@@ -121,7 +128,7 @@ export function buildLeadsSheet(items: LeadWithContact[]): Sheet<Buffer>[] {
       lead.utmMedium,
       lead.utmContent,
       lead.requestId,
-      pick(lead.payload, NEED_KEYS) ?? pick(lead.contactProfile, INTEREST_KEYS),
+      opts.redact ? null : pick(lead.payload, NEED_KEYS) ?? pick(lead.contactProfile, INTEREST_KEYS),
       lead.leadTemperature === 'hot' ? 'Hot' : lead.leadTemperature === 'cold' ? 'Cold' : null,
       STATUS_ID[lead.status] ?? lead.status,
       { value: lead.totalOrders, type: Number, format: '#,##0' },
@@ -144,8 +151,9 @@ export function buildLeadsSheet(items: LeadWithContact[]): Sheet<Buffer>[] {
 
 /** `limit: 0` = every matching row; the paginated list route still caps at 100. */
 export async function buildLeadsWorkbook(
-  filters: Omit<Parameters<typeof listLeads>[0], 'page' | 'limit'>
+  filters: Omit<Parameters<typeof listLeads>[0], 'page' | 'limit'>,
+  opts: LeadsSheetOptions = {}
 ): Promise<Buffer> {
   const { items } = await listLeads({ ...filters, page: 1, limit: 0 });
-  return writeExcelFile(buildLeadsSheet(items)).toBuffer();
+  return writeExcelFile(buildLeadsSheet(items, opts)).toBuffer();
 }

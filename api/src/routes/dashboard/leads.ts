@@ -91,7 +91,8 @@ export async function leadRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
     }
 
-    const workbook = await buildLeadsWorkbook(query.data);
+    const { redact, ...filters } = query.data;
+    const workbook = await buildLeadsWorkbook(filters, { redact: redact === '1' });
     const date = new Date().toISOString().slice(0, 10);
     return reply
       .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
