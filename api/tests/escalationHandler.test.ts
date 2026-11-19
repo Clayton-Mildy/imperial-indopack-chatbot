@@ -508,6 +508,7 @@ describe('detectCourierMessage', () => {
     'kurir shopee mau pickup',
     'jne ada paket',
     'pick up paket a.n. Budi',
+    'ini paket untuk gudang, penerimanya siapa ya?',
   ])('courier: %s', (m) => expect(detectCourierMessage(m)).toBe(true));
   it.each([
     'saya ambil 10 ya kak',
@@ -517,6 +518,7 @@ describe('detectCourierMessage', () => {
     'grab bisa kirim ke Bekasi kak?',
     'grabfood bisa pakai paper bag ini?',
     'saya mau ambil barangnya besok di toko bisa?',
+    'kirim paket ke gudang kami di Bekasi bisa kak?',
   ])('a buyer: %s', (m) => expect(detectCourierMessage(m)).toBe(false));
 });
 

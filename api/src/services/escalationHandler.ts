@@ -329,6 +329,7 @@ const COURIER_SELF_ID_RE = new RegExp([
   String.raw`(?:^|\n)\s*(?:saya\s+)?(?:${COURIERS})\s*[.!]*\s*(?:$|\n)`,
   String.raw`\b(?:${COURIERS})\b[^\n]{0,30}\b(?:paket|pesanan|orderan|ambil|jemput|pick\s*-?\s*up)\b`,
   String.raw`\b(?:dari|driver|abang|bang|mas)\s+(?:${COURIERS})\b`,
+  String.raw`\bpaket\s+(?:untuk|buat)\s+(?:gudang|kantor|pabrik|toko)\b|\bpenerima(?:nya)?\s+(?:paket\s+)?siapa\b`,
   String.raw`\b(?:saya|ini)\s+kurir\b|\bkurir\s+(?:${COURIERS}|${MARKETPLACES})\b`,
 ].join('|'), 'i');
 const PICKUP_RE = /\b(?:ambil|jemput|pick\s*-?\s*up)\s+(?:pesanan|paket|orderan|barang\s+pesanan)\b/i;
