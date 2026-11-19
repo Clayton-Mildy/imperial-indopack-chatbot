@@ -51,6 +51,24 @@ if (only && selected.length !== only.length) {
   process.exit(1);
 }
 
+// A scenario starts from a clean customer: clear whatever an earlier run left for these numbers.
+async function wipeCustomer(customer: string): Promise<void> {
+  const c = sql`(SELECT id FROM contacts WHERE wa_id IN (${customer}, ${customer + '@s.whatsapp.net'}))`;
+  const cv = sql`(SELECT id FROM conversations WHERE contact_id IN ${c})`;
+  const ld = sql`(SELECT id FROM leads WHERE contact_id IN ${c})`;
+  for (const q of [
+    sql`DELETE FROM messages WHERE conversation_id IN ${cv}`,
+    sql`DELETE FROM conversation_reads WHERE conversation_id IN ${cv}`,
+    sql`DELETE FROM lead_events WHERE lead_id IN ${ld}`,
+    sql`DELETE FROM lead_orders WHERE lead_id IN ${ld}`,
+    sql`UPDATE leads SET previous_lead_id = NULL WHERE contact_id IN ${c}`,
+    sql`DELETE FROM leads WHERE contact_id IN ${c}`,
+    sql`DELETE FROM conversations WHERE contact_id IN ${c}`,
+    sql`DELETE FROM contact_profiles WHERE contact_id IN ${c}`,
+    sql`DELETE FROM contacts WHERE wa_id IN (${customer}, ${customer + '@s.whatsapp.net'})`,
+  ]) await db.execute(q);
+}
+
 // ─── per-scenario context ──────────────────────────────────────────────────
 interface Result { id: string; title: string; checks: Check[]; transcript: string[]; state: string[]; error?: string }
 
@@ -166,6 +184,7 @@ const results: Result[] = [];
 for (const { s, n } of selected) {
   const customer = `62812000070${String(n).padStart(2, '0')}`;
   const transcript: string[] = [];
+  await wipeCustomer(customer);
   const ctx = makeCtx(customer, transcript);
   const started = Date.now();
   console.log(`\n== ${s.id} (${customer})`);
