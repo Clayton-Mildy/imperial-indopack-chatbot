@@ -155,10 +155,12 @@ const lastMessageExpr = sql<{ body: string; role: string; senderName: string | n
 // The PO form LINK reaching the customer: one form (cetak or plano) or the one message carrying both.
 // While a form the order needs is still the placeholder the bot sends CANNED_PO_FORM_FROM_TEAM instead
 // - a promise that the team will send the form - under the same source, so that line is told apart by
-// its fixed text, as closeSilentLeads does.
+// its fixed text, as closeSilentLeads does. Only a row the provider took (status 'sent'): a refused send
+// is stored as 'saved' and never reached the customer.
 // Shared with the lead detail (services/leadDetailExtras), so the inbox and the lead agree. Needs the
 // `messages` row aliased `m`.
 export const PO_FORM_LINK_ROW_SQL = sql`m.metadata->>'source' = ${MESSAGE_SOURCE.poForm}
+    AND m.status = 'sent'
     AND m.body <> ${CANNED_PO_FORM_FROM_TEAM}`;
 
 const poFormSentAtExpr = sql<Date | null>`(

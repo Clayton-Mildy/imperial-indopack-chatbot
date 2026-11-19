@@ -45,13 +45,13 @@ describe('lead detail extras', () => {
     await db.execute(sql`DELETE FROM phone_numbers WHERE number = ${`${P}n`}`);
   }
 
-  async function mk(key: string, lead: Partial<typeof leads.$inferInsert>, msgs: { role: 'user' | 'assistant'; at: string; body: string; metadata?: Record<string, unknown> }[]) {
+  async function mk(key: string, lead: Partial<typeof leads.$inferInsert>, msgs: { role: 'user' | 'assistant'; at: string; body: string; metadata?: Record<string, unknown>; status?: 'sent' | 'saved' }[]) {
     const db = getDb();
     const [c] = await db.insert(contacts).values({ waId: `${P}${key}`, displayName: `Contoh ${key}` }).returning();
     const [l] = await db.insert(leads).values({ contactId: c!.id, utmCampaign: P, ...lead }).returning();
     ids[key] = l!.id;
     const [cv] = await db.insert(conversations).values({ contactId: c!.id, phoneNumberId: phoneId }).returning();
-    for (const m of msgs) await db.insert(messages).values({ conversationId: cv!.id, role: m.role, body: m.body, createdAt: wib(m.at), metadata: m.metadata ?? {} });
+    for (const m of msgs) await db.insert(messages).values({ conversationId: cv!.id, role: m.role, body: m.body, createdAt: wib(m.at), metadata: m.metadata ?? {}, status: m.status ?? null });
   }
 
   const quote = (tierPrice: number, total: number) => ({
@@ -74,24 +74,31 @@ describe('lead detail extras', () => {
       { role: 'user', at: '2020-04-01T09:00:00', body: 'halo', metadata: { referral: { sourceType: 'ad', sourceId: '1', headline: 'Kertas Supreme cetak logo' } } },
       { role: 'assistant', at: '2020-04-01T09:02:00', body: 'harga', metadata: { priceCalls: [call('35x35', 'quote', 185_000)] } },
       { role: 'assistant', at: '2020-04-01T09:05:00', body: 'harga lagi', metadata: { priceCalls: [call('35x35', 'below_minimum', 0), call('35x35', 'quote', 165_000)] } },
-      { role: 'assistant', at: '2020-04-01T09:06:00', body: 'tim akan kirim form', metadata: { source: 'po_form' } },
-      { role: 'assistant', at: '2020-04-01T09:10:00', body: 'ini formnya https://forms.example/x', metadata: { source: 'po_form' } },
+      { role: 'assistant', at: '2020-04-01T09:06:00', body: 'tim akan kirim form', metadata: { source: 'po_form' }, status: 'sent' },
+      { role: 'assistant', at: '2020-04-01T09:10:00', body: 'ini formnya https://forms.example/x', metadata: { source: 'po_form' }, status: 'sent' },
+      // Sent again later, but the provider refused it ('saved'): it never reached the customer.
+      { role: 'assistant', at: '2020-04-01T09:12:00', body: 'ini formnya https://forms.example/x', metadata: { source: 'po_form' }, status: 'saved' },
     ]);
     await mk('DIRECT', { status: 'new', submittedAt: wib('2020-04-02T09:00:00') }, [
       { role: 'user', at: '2020-04-02T09:00:00', body: 'halo' },
-      { role: 'assistant', at: '2020-04-02T09:01:00', body: CANNED_PO_FORM_FROM_TEAM, metadata: { source: 'po_form' } },
+      { role: 'assistant', at: '2020-04-02T09:01:00', body: CANNED_PO_FORM_FROM_TEAM, metadata: { source: 'po_form' }, status: 'sent' },
     ]);
     // Design unknown: one message carrying both forms (cetak and plano) is a form sent too.
     await mk('BOTH', { status: 'new', submittedAt: wib('2020-04-03T09:00:00') }, [
       { role: 'user', at: '2020-04-03T09:00:00', body: 'oke saya ambil' },
-      { role: 'assistant', at: '2020-04-03T09:04:00', body: poFormsMessage(['cetak', 'plano'], { cetak: 'https://forms.gle/ContohCetak', plano: 'https://forms.gle/ContohPlano' }), metadata: { source: 'po_form' } },
+      { role: 'assistant', at: '2020-04-03T09:04:00', body: poFormsMessage(['cetak', 'plano'], { cetak: 'https://forms.gle/ContohCetak', plano: 'https://forms.gle/ContohPlano' }), metadata: { source: 'po_form' }, status: 'sent' },
+    ]);
+    // The only PO link went out refused: no form reached the customer.
+    await mk('REFUSED', { status: 'new', submittedAt: wib('2020-04-04T09:00:00') }, [
+      { role: 'user', at: '2020-04-04T09:00:00', body: 'oke saya ambil' },
+      { role: 'assistant', at: '2020-04-04T09:03:00', body: 'ini formnya https://forms.example/x', metadata: { source: 'po_form' }, status: 'saved' },
     ]);
   });
   afterAll(async () => { await cleanup(); await app.close(); });
 
   const get = async (key: string) => (await app.inject({ method: 'GET', url: `/api/v1/leads/${ids[key]}` })).json().data.extras;
 
-  it('ad source, PO time, closing minutes and the quoted price', async () => {
+  it('ad source, PO time (the last form that reached the customer), closing minutes and the quoted price', async () => {
     const x = await get('AD');
     expect(x.source).toEqual({ kind: 'ad', headline: 'Kertas Supreme cetak logo' });
     expect(x.closingMinutes).toBe(18);
@@ -111,5 +118,9 @@ describe('lead detail extras', () => {
 
   it('the both-forms PO message counts as a form sent', async () => {
     expect((await get('BOTH')).poFormSentAt).toBe(wib('2020-04-03T09:04:00').toISOString());
+  });
+
+  it('a PO link the provider refused (saved) is not a form sent', async () => {
+    expect((await get('REFUSED')).poFormSentAt).toBeNull();
   });
 });

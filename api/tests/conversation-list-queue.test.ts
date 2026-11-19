@@ -33,7 +33,7 @@ const PREFIX = '__conv_list_queue__';
 const NOW = Date.now();
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000);
 
-interface Msg { role: string; body: string; minAgo: number; source?: string; senderName?: string }
+interface Msg { role: string; body: string; minAgo: number; source?: string; senderName?: string; status?: 'sent' | 'saved' }
 interface Seed {
   nn: string;
   status: string;
@@ -58,8 +58,10 @@ const SEEDS: Record<'andi' | 'rina' | 'tanpa' | 'lina' | 'aktif' | 'selesai', Se
     nn: '41', status: 'escalated', category: 'harga_custom', displayName: 'Contoh WA Andi', profile: ANDI_PROFILE,
     msgs: [
       { role: 'user', body: 'Halo kak, saya cari box nasi', minAgo: 90 },
-      { role: 'assistant', body: poFormMessage('https://forms.gle/contoh-form-po'), minAgo: 80, source: MESSAGE_SOURCE.poForm },
-      { role: 'assistant', body: CANNED_PO_FORM_FROM_TEAM, minAgo: 70, source: MESSAGE_SOURCE.poForm },
+      { role: 'assistant', body: poFormMessage('https://forms.gle/contoh-form-po'), minAgo: 80, source: MESSAGE_SOURCE.poForm, status: 'sent' },
+      // Sent again, but the provider refused it: stored 'saved', it never reached the customer.
+      { role: 'assistant', body: poFormMessage('https://forms.gle/contoh-form-po'), minAgo: 75, source: MESSAGE_SOURCE.poForm, status: 'saved' },
+      { role: 'assistant', body: CANNED_PO_FORM_FROM_TEAM, minAgo: 70, source: MESSAGE_SOURCE.poForm, status: 'sent' },
       { role: 'assistant', body: 'Baik kak, tim kami cek dulu ya', minAgo: 60, source: 'escalation' },
       { role: 'user', body: 'Kalau ukuran 22x22x7 bisa kak?', minAgo: 50 },
     ],
@@ -124,7 +126,7 @@ beforeAll(async () => {
     id[key] = conv!.id;
     for (const m of s.msgs) {
       await db.insert(messages).values({
-        conversationId: conv!.id, role: m.role, body: m.body, senderName: m.senderName ?? null,
+        conversationId: conv!.id, role: m.role, body: m.body, senderName: m.senderName ?? null, status: m.status ?? null,
         metadata: m.source ? { source: m.source } : null, createdAt: ago(m.minAgo),
       });
     }
@@ -178,7 +180,7 @@ describe('the conversation list', () => {
       phoneNumber: { number: `${PREFIX}n` },
       unread: false,
     });
-    // The link went out 80 minutes ago; the placeholder promise 70 minutes ago is not a PO form.
+    // The link went out 80 minutes ago; the refused resend (75) and the placeholder promise (70) are not a PO form.
     expect(andi.poFormSentAt?.toISOString()).toBe(ago(80).toISOString());
     expect(andi.escalatedAt?.toISOString()).toBe(ago(60).toISOString());
     expect(andi.lastMessageAt.toISOString()).toBe(ago(50).toISOString());
