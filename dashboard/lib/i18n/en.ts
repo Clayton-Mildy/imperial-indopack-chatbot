@@ -133,6 +133,8 @@ export const en: Record<keyof typeof id, string> = {
   "settings.chakra.run": "Sync now",
   "settings.chakra.started": "The sync is running in the background. Reload this page to see the result.",
   "settings.chakra.runFailed": "Could not start the sync. Please try again.",
+  "settings.chakra.cannotRun": "The sync could not be started. Check the ChakraHQ settings.",
+  "settings.chakra.unreachable": "Could not reach the server. Please try again.",
   "settings.prompt.title": "Bot instructions",
   "settings.prompt.desc": "The parts of the instructions the bot reads. Change the text when a business rule changes.",
   "settings.prompt.tryIt": "Try it in Test Prompt →",
@@ -175,6 +177,8 @@ export const en: Record<keyof typeof id, string> = {
   "settings.password.tooShort": "The password must be at least 8 characters.",
   "settings.password.mismatch": "The passwords do not match.",
   "settings.password.error": "Something went wrong. Please try again.",
+  "settings.password.sessionInvalid": "Your session is no longer valid. Please log in again.",
+  "settings.password.saveFailed": "Could not save the password. Please try again.",
   "settings.password.success": "Password changed.",
   "settings.password.save": "Save password",
 

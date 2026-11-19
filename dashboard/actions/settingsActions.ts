@@ -8,6 +8,7 @@ import { sessionRole, sessionStaff } from "@/lib/session";
 import { patchBotSettings, setLeadReopenMonths, setLeadSilenceDays, setPoFormUrl } from "@/lib/api/settings";
 import { getNumbers, patchNumber } from "@/lib/api/numbers";
 import { validatePoUrl } from "@/lib/settings";
+import { getT } from "@/lib/i18n";
 
 // Every write here is admin only, re-checked on the server: a "use server" action is a POST endpoint
 // any signed-in session can call, whatever the page shows. Who made the change comes from the
@@ -185,7 +186,8 @@ export async function getChakraSyncStatus(): Promise<ChakraSyncStatus | null> {
  * long time — so this reports "started", not "finished"; the summary fills in on reload.
  */
 export async function runChakraSync(): Promise<{ ok: boolean; error?: string }> {
-  if (!(await isAdmin())) return { ok: false, error: "Anda tidak memiliki izin untuk melakukan perubahan ini." };
+  const t = await getT();
+  if (!(await isAdmin())) return { ok: false, error: t("settings.err.forbidden") };
 
   let started: boolean;
   try {
@@ -195,10 +197,10 @@ export async function runChakraSync(): Promise<{ ok: boolean; error?: string }> 
     });
     started = envelope.data?.started ?? false;
     if (!started && envelope.data?.reason !== "already_running") {
-      return { ok: false, error: "Sinkronisasi tidak dapat dijalankan. Periksa pengaturan ChakraHQ." };
+      return { ok: false, error: t("settings.chakra.cannotRun") };
     }
   } catch {
-    return { ok: false, error: "Gagal menghubungi server. Silakan coba lagi." };
+    return { ok: false, error: t("settings.chakra.unreachable") };
   }
 
   revalidatePath("/settings");

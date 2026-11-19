@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/client";
 import type { BotSettings, PhoneNumber } from "@/types/api";
 
@@ -24,8 +24,14 @@ vi.mock("@/lib/api/settings", () => ({
   setLeadSilenceDays: vi.fn(),
 }));
 vi.mock("@/lib/api/numbers", () => ({ getNumbers: m.getNumbers, patchNumber: m.patchNumber }));
+// The actions' user-facing messages follow the language switch: English here.
+vi.mock("@/lib/i18n", async () => {
+  const core = await vi.importActual<typeof import("@/lib/i18n/core")>("@/lib/i18n/core");
+  return { ...core, getT: async () => core.makeT("en") };
+});
 
-const { saveBotSettingsAction, savePoFormUrlAction, replaceNumberPromptAction } = await import("@/actions/settingsActions");
+const { saveBotSettingsAction, savePoFormUrlAction, replaceNumberPromptAction, runChakraSync } = await import("@/actions/settingsActions");
+const { en } = await import("@/lib/i18n/en");
 
 const SETTINGS: BotSettings = {
   botName: "Mbak Contoh",
@@ -139,5 +145,27 @@ describe("replaceNumberPromptAction", () => {
     m.patchNumber.mockRejectedValueOnce(new Error("network"));
     expect(await replaceNumberPromptAction(NUMBER.id)).toEqual({ ok: false, error: "failed" });
     expect(m.createLog).not.toHaveBeenCalled();
+  });
+});
+
+describe("runChakraSync", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each(["agent", "marketing", null])("refuses a %s session in the session's language", async (role) => {
+    m.role.mockResolvedValue(role);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await runChakraSync()).toEqual({ ok: false, error: en["settings.err.forbidden"] });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a run the API will not start (not chakra): the settings message in the session's language", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ data: { started: false, reason: "transport_not_chakra" }, error: null })));
+    expect(await runChakraSync()).toEqual({ ok: false, error: en["settings.chakra.cannotRun"] });
+  });
+
+  it("an unreachable API: the server message in the session's language", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("ECONNREFUSED"); }));
+    expect(await runChakraSync()).toEqual({ ok: false, error: en["settings.chakra.unreachable"] });
   });
 });

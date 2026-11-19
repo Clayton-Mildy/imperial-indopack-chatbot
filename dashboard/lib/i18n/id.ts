@@ -134,6 +134,8 @@ export const id = {
   "settings.chakra.run": "Sinkronkan sekarang",
   "settings.chakra.started": "Sinkronisasi berjalan di latar belakang. Muat ulang halaman ini untuk melihat hasilnya.",
   "settings.chakra.runFailed": "Gagal menjalankan. Silakan coba lagi.",
+  "settings.chakra.cannotRun": "Sinkronisasi tidak dapat dijalankan. Periksa pengaturan ChakraHQ.",
+  "settings.chakra.unreachable": "Gagal menghubungi server. Silakan coba lagi.",
   "settings.prompt.title": "Instruksi bot",
   "settings.prompt.desc": "Bagian-bagian instruksi yang dibaca bot. Ubah teksnya bila aturan bisnis berubah.",
   "settings.prompt.tryIt": "Coba di Test Prompt →",
@@ -176,6 +178,8 @@ export const id = {
   "settings.password.tooShort": "Password minimal 8 karakter.",
   "settings.password.mismatch": "Password tidak cocok.",
   "settings.password.error": "Terjadi kesalahan. Coba lagi.",
+  "settings.password.sessionInvalid": "Sesi tidak valid. Silakan login ulang.",
+  "settings.password.saveFailed": "Gagal menyimpan password. Coba lagi.",
   "settings.password.success": "Password berhasil diubah.",
   "settings.password.save": "Simpan password",
 

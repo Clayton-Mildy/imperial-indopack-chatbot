@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { createStaff, patchStaff, deleteStaff } from "@/lib/api/staff";
 import { createLog } from "@/lib/api/activityLogs";
+import { getT } from "@/lib/i18n";
 
 async function requireAdmin(): Promise<boolean> {
   const session = await auth();
@@ -86,8 +87,9 @@ export async function changeOwnPasswordAction(newPassword: string): Promise<{ er
   const userId = session?.user?.id;
   const userName = session?.user?.name ?? "Pengguna";
 
+  const t = await getT();
   if (!userId) {
-    return { error: "Sesi tidak valid. Silakan login ulang." };
+    return { error: t("settings.password.sessionInvalid") };
   }
 
   try {
@@ -102,6 +104,6 @@ export async function changeOwnPasswordAction(newPassword: string): Promise<{ er
 
     return {};
   } catch {
-    return { error: "Gagal menyimpan password. Coba lagi." };
+    return { error: t("settings.password.saveFailed") };
   }
 }
