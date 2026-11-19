@@ -180,6 +180,16 @@ describe('routes', () => {
     expect(exactly.statusCode).toBe(200);
   });
 
+  it('a malformed id is 404 on both routes, never a database error', async () => {
+    const a = await app();
+    const get = await a.inject({ method: 'GET', url: '/api/v1/conversations/bukan-uuid/order-panel' });
+    expect(get.statusCode).toBe(404);
+    expect(get.json()).toEqual({ data: null, error: 'NOT_FOUND' });
+    const patch = await a.inject({ method: 'PATCH', url: '/api/v1/conversations/bukan-uuid/team-notes', payload: { text: 'x', staffName: 'Admin QA' } });
+    expect(patch.statusCode).toBe(404);
+    expect(patch.json()).toEqual({ data: null, error: 'NOT_FOUND' });
+  });
+
   it('refuses a missing staff name, and 404s an unknown conversation', async () => {
     const a = await app();
     const noName = await a.inject({ method: 'PATCH', url: `/api/v1/conversations/${conv.id}/team-notes`, payload: { text: 'x', staffName: '  ' } });

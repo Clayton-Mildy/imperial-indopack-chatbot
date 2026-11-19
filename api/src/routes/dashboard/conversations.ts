@@ -18,6 +18,9 @@ import {
 import { NO_SIGNALS, classifyHandoff } from '../../domain/handoff.js';
 import { getOrderPanel } from '../../services/orderPanel.js';
 
+// A malformed id is a conversation that does not exist, not a database error.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/v1/conversations
   app.get(
@@ -126,7 +129,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     '/api/v1/conversations/:id/order-panel',
     { preHandler: [apiKeyAuth] },
     async (request, reply) => {
-      const panel = await getOrderPanel(request.params.id);
+      const panel = UUID_RE.test(request.params.id) ? await getOrderPanel(request.params.id) : null;
       if (!panel) return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
       return reply.send({ data: panel, error: null });
     }
@@ -137,6 +140,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     '/api/v1/conversations/:id/team-notes',
     { preHandler: [apiKeyAuth] },
     async (request, reply) => {
+      if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
       const body = TeamNotesBodySchema.safeParse(request.body);
       if (!body.success) return reply.code(400).send({ data: null, error: 'VALIDATION_ERROR' });
 

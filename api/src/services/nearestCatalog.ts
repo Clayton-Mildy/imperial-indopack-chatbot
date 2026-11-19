@@ -20,7 +20,11 @@ export interface NearestMatch {
   exact: boolean;
   /** quotePrice for the item's quantity; null when the quantity or its unit is unknown. */
   quote: PriceQuote | null;
-  /** The quote's tier, else the variant's lowest tier; null when the variant has no tiers. */
+  /**
+   * The quote's tier; above the top tier the top one (the cheapest catalog price - the quote says the
+   * team prices it); otherwise (no quantity, below the minimum) the lowest tier. null when the
+   * variant has no tiers.
+   */
   tier: PriceTier | null;
 }
 
@@ -83,6 +87,6 @@ export function nearestCatalogItem(item: OrderItem, catalog: Product[]): Nearest
     variantName: variant.name,
     exact: normalizeSize(variant.name) === normalizeSize(item.size),
     quote,
-    tier: quote?.kind === 'quote' ? quote.tier : lowestTier(tiers) ?? null,
+    tier: quote?.kind === 'quote' ? quote.tier : quote?.kind === 'above_top_tier' ? quote.top : lowestTier(tiers) ?? null,
   };
 }

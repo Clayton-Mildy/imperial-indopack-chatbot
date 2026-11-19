@@ -47,6 +47,22 @@ export function forwardOriginalHost(
   return { ...headers, 'x-forwarded-host': host };
 }
 
+/**
+ * Headers for a file served from the uploads folder. Only what customers sent - anything under
+ * <uploads>/inbound, at any depth, judged by the path inside the uploads folder so a deploy path that
+ * contains an "inbound" folder changes nothing - gets them: nosniff, and a download for anything that
+ * is not a plain photo (see the fastifyStatic registration below). Both separators, for Windows.
+ */
+export function customerFileHeaders(uploadsRoot: string, filePath: string): Record<string, string> {
+  const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const root = `${norm(uploadsRoot)}/`;
+  const file = norm(filePath);
+  if (!file.startsWith(root) || !file.slice(root.length).startsWith('inbound/')) return {};
+  return /\.(jpe?g|png|webp|gif)$/i.test(file)
+    ? { 'X-Content-Type-Options': 'nosniff' }
+    : { 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'attachment' };
+}
+
 export function buildApp() {
   const app = Fastify({
     logger: {
@@ -70,8 +86,9 @@ export function buildApp() {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   });
   void app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } });
+  const uploadsRoot = join(process.cwd(), 'uploads');
   void app.register(fastifyStatic, {
-    root: join(process.cwd(), 'uploads'),
+    root: uploadsRoot,
     prefix: '/uploads/',
     decorateReply: false,
     // uploads/inbound holds what customers sent, under their own file names, on the dashboard's
@@ -79,9 +96,7 @@ export function buildApp() {
     // a page there - it would run the customer's script on the dashboard's origin. Photos still
     // show inline; everything else downloads.
     setHeaders: (res, path) => {
-      if (!/[\\/]inbound[\\/][^\\/]+$/.test(path)) return;
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      if (!/\.(jpe?g|png|webp|gif)$/i.test(path)) res.setHeader('Content-Disposition', 'attachment');
+      for (const [name, value] of Object.entries(customerFileHeaders(uploadsRoot, path))) res.setHeader(name, value);
     },
   });
 

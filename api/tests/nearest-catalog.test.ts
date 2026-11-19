@@ -112,10 +112,11 @@ describe('nearestCatalogItem', () => {
     expect(nearestCatalogItem({ product: 'box ivory', size: '21x14x5', qty: 1000, qty_unit: 'pcs' }, BOXES))
       .toMatchObject({ quote: { kind: 'below_minimum' }, tier: { minQty: 5, priceIdr: 1900 } }));
 
-  // quotePrice prices nothing past the top tier (the team does); the tier shown is then the lowest.
-  it('above the top tier: the quote says so and the tier is the lowest one', () =>
+  // quotePrice prices nothing past the top tier (the team quotes it, "harga khusus dari tim"); the
+  // tier shown is the top one - the cheapest catalog price - never the lowest tier's dearest one.
+  it('above the top tier: the quote says so and the tier is the top one', () =>
     expect(nearestCatalogItem({ product: 'kertas supreme', size: '30x30', qty: 12, qty_unit: 'rim' }, [SUPREME]))
-      .toMatchObject({ quote: { kind: 'above_top_tier', top: { minQty: 10 } }, tier: { minQty: 5, priceIdr: 185_000 } }));
+      .toMatchObject({ quote: { kind: 'above_top_tier', top: { minQty: 10 } }, tier: { minQty: 10, priceIdr: 165_000 } }));
 
   it('a variant with no tiers has no tier', () => {
     const unpriced = product('p-ivory', 'Box Ivory 270 gsm cetak full color', ['21 x 14 x 5 cm'], []);
