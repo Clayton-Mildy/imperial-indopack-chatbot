@@ -68,7 +68,7 @@ a development machine.
   (default `http://127.0.0.1:40070`). That way the PC needs only one public hostname, and it is the same
   host staff open in the browser, so browser notifications (which are tied to the hostname) stay valid.
   Staff open `https://<host>/app`.
-- The WhatsApp webhook needs a public HTTPS URL (section 5). Hosting of the PC or server is still the
+- The WhatsApp webhook needs a public HTTPS URL (section 3, step 5; the webhook itself is section 5). Hosting of the PC or server is still the
   client's choice (spec section 9, item 8).
 
 ## 2. Environment variables
@@ -142,16 +142,30 @@ From `api/`. Every `npx tsx scripts/X.ts` below becomes `node dist-scripts/X.js`
    `api/.env` and `dashboard/.env.local`. It is never shown again.
 3. `npx tsx scripts/seed-default-prompt.ts` stores the AI's default prompt.
 4. `npm run build && npm start` for the API, then `cd dashboard && npm run build && npm start`.
-5. Log in to the dashboard with the admin from step 2, open **Pengaturan**, section **Bot**, and turn
+5. Public HTTPS address (before the first login). `AUTH_URL` (section 2) is `https://bot.example.com/app`, and
+   the dashboard login only works at that address: it rewrites requests to that origin and sets Secure cookies.
+   Create it now:
+   - Create a remote-managed Cloudflare Tunnel (Cloudflare Zero Trust, Networks, Tunnels) with a public
+     hostname such as `bot.example.com` pointing to `http://localhost:50070`. Never use a temporary
+     `trycloudflare.com` address: it changes, and the webhook would break.
+   - In Cloudflare for that hostname: Security, Bots, **Bot Fight Mode OFF**; and no WAF, rate-limit or
+     challenge rule on `/webhook`, `/webhooks/whatsapp` or `/uploads/*`. Chakra and WhatsApp fetch the
+     price-list PDFs and photos from `/uploads/...`; a challenge page makes sends fail silently.
+   - Check: `curl -I https://bot.example.com/uploads/` must not return a Cloudflare challenge page (a 404 from
+     the API is fine).
+
+   The tunnel exposes nothing to WhatsApp customers until the Chakra webhook is pointed at it (section 5,
+   webhook step), and the AI stays off until the go-live banner is empty.
+6. Log in to the dashboard at `https://bot.example.com/app` with the admin from step 2, open **Pengaturan**, section **Bot**, and turn
    **Balasan otomatis AI** OFF. A fresh database starts with it ON. Leave it OFF until section 7: with it off the
    bot answers nobody, so connecting the number (section 5) cannot let it talk to a customer before it is set up.
-6. Every later deploy of new code: `npx tsx scripts/reseed-prompt-defaults.ts` after the new code is in
+7. Every later deploy of new code: `npx tsx scripts/reseed-prompt-defaults.ts` after the new code is in
    place. It updates prompt sections nobody edited and keeps the staff's edits (`--force` would replace them).
 
 ## 4. Set up the bot (before connecting WhatsApp)
 
 Do all of this before the number is connected (section 5), with **Balasan otomatis AI** still OFF (section 3,
-step 5). Open Pengaturan: the go-live banner at the top lists what is still missing. It must be empty before the
+step 6). Open Pengaturan: the go-live banner at the top lists what is still missing. It must be empty before the
 AI is switched on (section 7).
 
 1. **Pengaturan, Pemesanan & harga**: enter both PO form links (https). On a fresh production database they
@@ -173,7 +187,7 @@ AI is switched on (section 7).
      them to customers who have no design yet.
    - Until a real catalog exists the bot hands every price question to the team.
 4. **Admin**: create the staff accounts. Each staff member opens the dashboard on their own phone/PC (at the
-   public address, so once section 5A is done) and turns on browser notifications (button "Aktifkan
+   public address from section 3, step 5) and turns on browser notifications (button "Aktifkan
    notifikasi"; it then reads "Notifikasi aktif"). On iPhone it needs iOS 16.4+ and the site added to the
    Home Screen.
 5. Check Pengaturan once more: the go-live banner lists nothing but "Nomor WhatsApp belum terhubung", which
@@ -184,40 +198,29 @@ AI is switched on (section 7).
 
 Chakra is the BSP between your WhatsApp Business number and this API. Both directions go through it.
 
-Before step 9 (the webhook) check Pengaturan, section **Bot**: **Balasan otomatis AI** must be OFF. From the moment
+Before step 6 (the webhook) check Pengaturan, section **Bot**: **Balasan otomatis AI** must be OFF. From the moment
 the webhook points here, real customers' messages arrive; with the AI off they wait in **Percakapan** for the team
 and the bot sends nothing.
 
-**A. Public HTTPS address**
+**A. API settings** (`api/.env`, never print them)
 
-1. Create a remote-managed Cloudflare Tunnel (Cloudflare Zero Trust, Networks, Tunnels) with a public
-   hostname such as `bot.example.com` pointing to `http://localhost:50070`. Never use a temporary
-   `trycloudflare.com` address: it changes, and the webhook would break.
-2. In Cloudflare for that hostname: Security, Bots, **Bot Fight Mode OFF**; and no WAF, rate-limit or
-   challenge rule on `/webhook`, `/webhooks/whatsapp` or `/uploads/*`. Chakra and WhatsApp fetch the
-   price-list PDFs and photos from `/uploads/...`; a challenge page makes sends fail silently.
-3. Check: `curl -I https://bot.example.com/uploads/` must not return a Cloudflare challenge page (a 404 from
-   the API is fine).
-
-**B. API settings** (`api/.env`, never print them)
-
-4. `WHATSAPP_TRANSPORT=chakra`
-5. `CHAKRA_PLUGIN_ID`: Chakra, WhatsApp setup, the three-dot menu (top right), Copy Plugin Id.
-6. `CHAKRA_ACCESS_TOKEN`: Chakra, API Keys, create key, Access Tokens.
-7. `CHAKRA_WEBHOOK_SECRET`: Chakra, Admin, Team, Secrets.
-8. `PUBLIC_BASE_URL=https://bot.example.com` (https, no trailing slash) and `DASHBOARD_ORIGIN` (the same
+1. `WHATSAPP_TRANSPORT=chakra`
+2. `CHAKRA_PLUGIN_ID`: Chakra, WhatsApp setup, the three-dot menu (top right), Copy Plugin Id.
+3. `CHAKRA_ACCESS_TOKEN`: Chakra, API Keys, create key, Access Tokens.
+4. `CHAKRA_WEBHOOK_SECRET`: Chakra, Admin, Team, Secrets.
+5. `PUBLIC_BASE_URL=https://bot.example.com` (https, no trailing slash) and `DASHBOARD_ORIGIN` (the same
    value when the dashboard rides the `/app` proxy). `NODE_ENV=production`.
 
-**C. Webhook in Chakra**
+**B. Webhook in Chakra**
 
-9. In Chakra, set the pass-through webhook URL to `https://bot.example.com/webhook`. The API serves the same
+6. In Chakra, set the pass-through webhook URL to `https://bot.example.com/webhook`. The API serves the same
    handler on `/webhook` and `/webhooks/whatsapp` (GET for Meta's verification, POST for messages); the two
    are equivalent, `/webhook` is the one to use for Chakra. Chakra signs each message with `X-Chakra-Signature-256`,
    checked against `CHAKRA_WEBHOOK_SECRET`; a wrong secret makes every inbound message be rejected.
 
-**D. Add the number in the dashboard**
+**C. Add the number in the dashboard**
 
-10. Dashboard, **Nomor WhatsApp**, **Tambah Nomor**. Fill the form "Daftarkan Nomor WhatsApp":
+7. Dashboard, **Nomor WhatsApp**, **Tambah Nomor**. Fill the form "Daftarkan Nomor WhatsApp":
     - **Label**: any name, e.g. `CS Utama`.
     - **Nomor Telepon**: the number in `+62...` form.
     - **WABA ID (Meta)**: the WhatsApp Business Account ID.
@@ -228,16 +231,16 @@ and the bot sends nothing.
     Without a number row the API ignores every inbound message and logs
     `[messageRouter] No phone number configured — ignoring inbound message`.
 
-**E. Restart and check**
+**D. Restart and check**
 
-11. Restart the API.
-12. Dashboard, **Pengaturan**, section **WhatsApp**: it must read **Terhubung · ChakraHQ · 1 nomor**. If it says
+8. Restart the API.
+9. Dashboard, **Pengaturan**, section **WhatsApp**: it must read **Terhubung · ChakraHQ · 1 nomor**. If it says
     "Belum terhubung", the text under it names what is missing (one of the three `CHAKRA_*` values, or no number row).
-13. Same section, **Riwayat percakapan ChakraHQ**, press **Sinkronkan sekarang** so the bot learns what staff
+10. Same section, **Riwayat percakapan ChakraHQ**, press **Sinkronkan sekarang** so the bot learns what staff
     already answered from the phone. After that it runs by itself on the interval set above it (field "Ambil
     balasan tim dari HP WhatsApp tiap ... menit"); the bot can talk over a staff reply that arrived on the
     phone less than one interval ago, so keep the interval short.
-14. Optional: set `META_ACCESS_TOKEN` (a system-user token with access to this WhatsApp Business Account) only
+11. Optional: set `META_ACCESS_TOKEN` (a system-user token with access to this WhatsApp Business Account) only
     if customers' photos or documents arrive unreadable. Chakra's media API cannot serve newer files, and this
     token lets the API fetch them from Meta. Without it the bot still answers from the caption.
 
@@ -250,8 +253,8 @@ Same rule as section 5: **Balasan otomatis AI** stays OFF until section 7.
 2. Meta for Developers, your app, WhatsApp, Configuration, Webhook: callback URL
    `https://bot.example.com/webhooks/whatsapp`, Verify token = `META_WEBHOOK_VERIFY_TOKEN`, then subscribe to
    the `messages` field. (The API answers Meta's verification request on both webhook paths.)
-3. Same Cloudflare rules as section 5A.
-4. Add the number on **Nomor WhatsApp** as in section 5D (Phone Number ID is Meta's numeric ID). The form has
+3. Same Cloudflare rules as section 3, step 5.
+4. Add the number on **Nomor WhatsApp** as in section 5C (Phone Number ID is Meta's numeric ID). The form has
    no token field: the API uses `META_ACCESS_TOKEN` from `.env`.
 5. Restart the API; Pengaturan, WhatsApp shows **Terhubung · Meta · 1 nomor**. The Chakra sync box does not appear on meta.
 
@@ -283,7 +286,7 @@ Use a phone that is not the business number, and note down the result of each st
 - **Only staff replies**: Pengaturan, **Balasan otomatis AI** off. The bot stops answering; staff reply from the dashboard.
 - **One product misbehaves**: Katalog, deactivate the product (the bot stops offering it).
 - **Reset a test chat**: send `/new` from a number listed in `RESET_COMMAND_NUMBERS` (restart the API after editing it).
-- **Nothing arrives**: check Pengaturan, WhatsApp first; then the Cloudflare rules (5A), the webhook URL and
-  `CHAKRA_WEBHOOK_SECRET` (5C), the Phone Number ID (5D), and the API log for `No phone number configured`.
+- **Nothing arrives**: check Pengaturan, WhatsApp first; then the Cloudflare rules (section 3, step 5), the webhook URL and
+  `CHAKRA_WEBHOOK_SECRET` (5B), the Phone Number ID (5C), and the API log for `No phone number configured`.
 - **Stuck on a bad prompt edit**: Pengaturan, Instruksi bot, or run `reseed-prompt-defaults.ts --force` to
   put the shipped prompt back (this replaces staff edits).
