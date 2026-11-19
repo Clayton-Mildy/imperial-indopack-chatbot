@@ -499,6 +499,7 @@ export const en: Record<keyof typeof id, string> = {
   "catalog.form.err.price_invalid": "The price must be a whole number from Rp 1 to {max}, e.g. 1.450.",
   "catalog.form.err.duplicate_tier": "This size already has a tier from {qty} {unit}.",
   "catalog.form.err.tier_order": "Must be more than the tier above it (1 rim = 500 pcs).",
+  "catalog.form.err.text_too_long": "Too long (max. {max} characters).",
   "catalog.form.err.invalid": "Some fields are not right yet. Check them and try again.",
   "catalog.form.photosSub": "At most 3. The bot sends them to customers who have no design yet. Order = sending order.",
   "catalog.form.photoUpload": "Upload photo",

@@ -500,6 +500,7 @@ export const id = {
   "catalog.form.err.price_invalid": "Harga harus angka bulat dari Rp 1 sampai {max}, mis. 1.450.",
   "catalog.form.err.duplicate_tier": "Tingkat mulai {qty} {unit} sudah ada di ukuran ini.",
   "catalog.form.err.tier_order": "Harus lebih besar dari tingkat di atasnya (1 rim = 500 pcs).",
+  "catalog.form.err.text_too_long": "Terlalu panjang (maks. {max} karakter).",
   "catalog.form.err.invalid": "Ada isian yang belum benar. Periksa lalu coba lagi.",
   "catalog.form.photosSub": "Maksimal 3. Dikirim bot ke pelanggan yang belum punya desain. Urutan = urutan kirim.",
   "catalog.form.photoUpload": "Unggah foto",

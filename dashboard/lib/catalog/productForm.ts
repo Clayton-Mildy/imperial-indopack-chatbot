@@ -193,51 +193,132 @@ export function nextTierRow(size: SizeRow, brand: BrandSlug): TierRow {
   return { ...top.row, minQty: idNumber(top.qty * 2), price: "" };
 }
 
+/** A text field the API caps (catalogEditor.ts); over the cap its schema answers a bare 400, so the form says it first. */
+export type CappedField = "name" | "gsm" | "print" | "finishing" | "use" | "size";
+
+/** The API's error codes plus the form's own "too long" (the API has no code for it). */
+export type FormErrorCode = ProductInputError["code"] | "text_too_long";
+export interface FormError {
+  code: FormErrorCode;
+  sizeIndex?: number;
+  tierIndex?: number;
+  /** For text_too_long: which field. */
+  field?: CappedField;
+}
+
+/** Codes the form judges itself from what is typed now, exactly as validateProductDraft does. */
+const LOCAL_CODES = new Set<FormErrorCode>([
+  "name_required",
+  "use_required",
+  "no_sizes",
+  "size_required",
+  "no_tiers",
+  "qty_missing",
+  "qty_invalid",
+  "price_missing",
+  "price_invalid",
+]);
+
 /**
- * The errors the form shows: the API's (from the last preview or save) refined by what is typed now.
- * A quantity or price with text in it that is not a number is invalid, not missing, even before the
- * API answers; a missing field that has since been filled, and an error whose row is gone, drop out.
+ * Every problem with the form, in form order. The form judges what it can itself - required fields, a
+ * size and a tier, each quantity and price present, a whole number and within the API's caps, the text
+ * caps - so the checklist and Simpan are right from the first render and never wait on the API. Those
+ * judgements are made on the current text, so the API's answer for them (possibly about an older draft)
+ * is not used. The API stays the authority for what only it can judge: duplicate sizes, duplicate tiers
+ * and tier order, kept while the row they point at stands (an order judgement only while that row's
+ * quantity still reads as a number).
  */
-export function formErrors(f: ProductFormState, server: ProductInputError[]): ProductInputError[] {
-  const out: ProductInputError[] = [];
+export function formErrors(f: ProductFormState, server: ProductInputError[]): FormError[] {
+  const out: FormError[] = [];
   const seen = new Set<string>();
-  const push = (e: ProductInputError) => {
-    const key = `${e.code}:${e.sizeIndex ?? ""}:${e.tierIndex ?? ""}`;
+  const push = (e: FormError) => {
+    const key = `${e.code}:${e.field ?? ""}:${e.sizeIndex ?? ""}:${e.tierIndex ?? ""}`;
     if (seen.has(key)) return;
     seen.add(key);
     out.push(e);
   };
+  const tooLong = (field: CappedField, text: string, max = MAX_TEXT_LENGTH) => text.length > max;
+
+  if (!f.name.trim()) push({ code: "name_required" });
+  else if (tooLong("name", f.name)) push({ code: "text_too_long", field: "name" });
+  for (const field of ["gsm", "print", "finishing"] as const) {
+    if (tooLong(field, f[field])) push({ code: "text_too_long", field });
+  }
+  if (!f.use.trim()) push({ code: "use_required" });
+  else if (tooLong("use", f.use, MAX_USE_LENGTH)) push({ code: "text_too_long", field: "use" });
+  if (f.sizes.length === 0) push({ code: "no_sizes" });
+
+  const qtyBad = new Set<string>();
+  f.sizes.forEach((s, sizeIndex) => {
+    if (!s.size.trim()) push({ code: "size_required", sizeIndex });
+    else if (tooLong("size", s.size)) push({ code: "text_too_long", field: "size", sizeIndex });
+    if (s.tiers.length === 0) push({ code: "no_tiers", sizeIndex });
+    s.tiers.forEach((t, tierIndex) => {
+      const qty = parseQty(t.minQty);
+      if (!t.minQty.trim()) push({ code: "qty_missing", sizeIndex, tierIndex });
+      else if (qty === null || qty > MAX_TIER_QTY) push({ code: "qty_invalid", sizeIndex, tierIndex });
+      if (qty === null || qty > MAX_TIER_QTY) qtyBad.add(`${sizeIndex}:${tierIndex}`);
+      const price = parseRupiah(t.price);
+      if (!t.price.trim()) push({ code: "price_missing", sizeIndex, tierIndex });
+      else if (price === null || price > MAX_TIER_PRICE_IDR) push({ code: "price_invalid", sizeIndex, tierIndex });
+    });
+  });
+
   for (const e of server) {
-    if (e.code === "name_required" && f.name.trim()) continue;
-    if (e.code === "use_required" && f.use.trim()) continue;
-    if (e.code === "no_sizes" && f.sizes.length > 0) continue;
-    const size = e.sizeIndex === undefined ? undefined : f.sizes[e.sizeIndex];
-    if (e.sizeIndex !== undefined && !size) continue;
-    if (e.code === "size_required" && size?.size.trim()) continue;
-    if (e.code === "no_tiers" && size && size.tiers.length > 0) continue;
-    const row = e.tierIndex === undefined ? undefined : size?.tiers[e.tierIndex];
-    if (e.tierIndex !== undefined && !row) continue;
-    if (row && (e.code === "qty_missing" || e.code === "qty_invalid")) {
-      if (!row.minQty.trim()) push({ ...e, code: "qty_missing" });
-      else if (parseQty(row.minQty) === null) push({ ...e, code: "qty_invalid" });
-      else if (e.code === "qty_invalid") push(e);
-      continue;
-    }
-    if (row && (e.code === "price_missing" || e.code === "price_invalid")) {
-      if (!row.price.trim()) push({ ...e, code: "price_missing" });
-      else if (parseRupiah(row.price) === null) push({ ...e, code: "price_invalid" });
-      else if (e.code === "price_invalid") push(e);
-      continue;
+    if (LOCAL_CODES.has(e.code)) continue;
+    if (e.sizeIndex === undefined || !f.sizes[e.sizeIndex]) continue;
+    if (e.tierIndex !== undefined) {
+      if (!f.sizes[e.sizeIndex]!.tiers[e.tierIndex]) continue;
+      if (qtyBad.has(`${e.sizeIndex}:${e.tierIndex}`)) continue;
     }
     push(e);
   }
-  f.sizes.forEach((s, sizeIndex) =>
-    s.tiers.forEach((t, tierIndex) => {
-      if (t.minQty.trim() && parseQty(t.minQty) === null) push({ code: "qty_invalid", sizeIndex, tierIndex });
-      if (t.price.trim() && parseRupiah(t.price) === null) push({ code: "price_invalid", sizeIndex, tierIndex });
-    })
-  );
   return out;
+}
+
+/** A field staff can leave or blur; a missing value is marked on it only once it was touched. */
+export interface TouchedField {
+  field: "name" | "use" | "size" | "qty" | "price";
+  sizeIndex?: number;
+  tierIndex?: number;
+}
+
+const MISSING_FIELD: Partial<Record<FormErrorCode, TouchedField["field"]>> = {
+  name_required: "name",
+  use_required: "use",
+  size_required: "size",
+  qty_missing: "qty",
+  price_missing: "price",
+};
+
+/**
+ * The errors marked on the fields of a fresh form: a missing value only once its field was touched or a
+ * save was tried, so a blank Tambah Produk does not open covered in red. Anything wrong that was typed
+ * (and the API's own judgements) always shows. The checklist and Simpan go by every error.
+ */
+export function visibleErrors(errors: FormError[], touched: TouchedField[], attempted: boolean): FormError[] {
+  if (attempted) return errors;
+  return errors.filter((e) => {
+    const field = MISSING_FIELD[e.code];
+    if (!field) return true;
+    return touched.some((t) => t.field === field && t.sizeIndex === e.sizeIndex && t.tierIndex === e.tierIndex);
+  });
+}
+
+/**
+ * Removing a size (no tierIndex) or a tier moves the indexes that errors and touched fields point at:
+ * the removed one's entries go, the later ones move up.
+ */
+export function shiftErrors<T extends { sizeIndex?: number; tierIndex?: number }>(list: T[], sizeIndex: number, tierIndex?: number): T[] {
+  return list.flatMap((e) => {
+    if (tierIndex === undefined) {
+      if (e.sizeIndex === sizeIndex) return [];
+      return e.sizeIndex !== undefined && e.sizeIndex > sizeIndex ? [{ ...e, sizeIndex: e.sizeIndex - 1 }] : [e];
+    }
+    if (e.sizeIndex !== sizeIndex || e.tierIndex === undefined) return [e];
+    if (e.tierIndex === tierIndex) return [];
+    return e.tierIndex > tierIndex ? [{ ...e, tierIndex: e.tierIndex - 1 }] : [e];
+  });
 }
 
 /** "30 x 30 cm" → "30 × 30 cm", as the designs write sizes. */
@@ -245,7 +326,7 @@ export function displaySize(size: string): string {
   return size.replace(/(\d)\s*[xX×]\s*(?=\d)/g, "$1 × ");
 }
 
-const ERROR_KEY: Record<ProductInputError["code"], TKey> = {
+const ERROR_KEY: Record<FormErrorCode, TKey> = {
   name_required: "catalog.form.err.name_required",
   use_required: "catalog.form.err.use_required",
   no_sizes: "catalog.form.err.no_sizes",
@@ -258,16 +339,18 @@ const ERROR_KEY: Record<ProductInputError["code"], TKey> = {
   price_invalid: "catalog.form.err.price_invalid",
   duplicate_tier: "catalog.form.err.duplicate_tier",
   tier_order: "catalog.form.err.tier_order",
+  text_too_long: "catalog.form.err.text_too_long",
 };
 
 /** The message for one error, worded for the row it sits on. */
-export function errorMessage(e: ProductInputError, f: ProductFormState, t: TFn, lang: Lang): string {
+export function errorMessage(e: FormError, f: ProductFormState, t: TFn, lang: Lang): string {
   const row = e.sizeIndex === undefined || e.tierIndex === undefined ? undefined : f.sizes[e.sizeIndex]?.tiers[e.tierIndex];
   const qty = row ? parseQty(row.minQty) : null;
   const vars = { qty: qty === null ? (row?.minQty.trim() ?? "") : formatNumber(qty, lang), unit: row?.qtyUnit ?? "" };
   if (e.code === "price_missing" && qty === null) return t("catalog.form.err.price_missingBare");
   if (e.code === "qty_invalid") return t(ERROR_KEY[e.code], { max: formatNumber(MAX_TIER_QTY, lang) });
   if (e.code === "price_invalid") return t(ERROR_KEY[e.code], { max: formatRupiah(MAX_TIER_PRICE_IDR) });
+  if (e.code === "text_too_long") return t(ERROR_KEY[e.code], { max: formatNumber(e.field === "use" ? MAX_USE_LENGTH : MAX_TEXT_LENGTH, lang) });
   return t(ERROR_KEY[e.code], vars);
 }
 
@@ -318,9 +401,11 @@ export function describeChange(c: CatalogChange, t: TFn, lang: Lang = "id"): str
       if (c.via === "form") return t("catalog.change.createdForm");
       return c.fileName ? t("catalog.change.createdImport", { file: c.fileName }) : t("catalog.change.createdImportBare");
     case "field": {
+      // Only an addition after a word boundary: "cooki" → "cookies" is a fix, not 'ditambah "es"'.
       if (c.field === "use" && c.from?.trim() && c.to?.startsWith(c.from) && c.to.length > c.from.length) {
-        const added = c.to.slice(c.from.length).replace(/^[\s,;.]+/, "").trim();
-        if (added) return t("catalog.change.useAdded", { added });
+        const rest = c.to.slice(c.from.length);
+        const added = rest.replace(/^[\s,;.]+/, "").trim();
+        if (added && (/^[\s,;.]/.test(rest) || /[\s,;.]$/.test(c.from))) return t("catalog.change.useAdded", { added });
       }
       const show = (v: string | null) => {
         if (!v?.trim()) return "—";

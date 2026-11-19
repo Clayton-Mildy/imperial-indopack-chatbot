@@ -11,8 +11,10 @@ import {
   parseQty,
   parseRupiah,
   previousPrice,
+  shiftErrors,
   sizeChange,
   toDraft,
+  visibleErrors,
   type ProductFormState,
   type TierRow,
 } from "@/lib/catalog/productForm";
@@ -216,6 +218,107 @@ describe("formErrors", () => {
     expect(formErrors(base([{ size: "30 x 30 cm", tiers: [tier("5", "1.45")] }]), [])).toEqual([
       { code: "price_invalid", sizeIndex: 0, tierIndex: 0 },
     ]));
+
+  it("judges a blank form itself, without any API answer", () =>
+    expect(formErrors(emptyForm("kertas_supreme"), [])).toEqual([
+      { code: "name_required" },
+      { code: "use_required" },
+      { code: "size_required", sizeIndex: 0 },
+      { code: "price_missing", sizeIndex: 0, tierIndex: 0 },
+    ]));
+
+  it("needs at least one size, and a tier in every size", () => {
+    expect(formErrors(base([]), [])).toEqual([{ code: "no_sizes" }]);
+    expect(formErrors(base([{ size: "30 x 30 cm", tiers: [] }]), [])).toEqual([{ code: "no_tiers", sizeIndex: 0 }]);
+  });
+
+  it("holds the API's caps on quantity and price", () => {
+    const f = base([
+      {
+        size: "30 x 30 cm",
+        tiers: [tier("10.000.000", "1.000.000.000"), tier("10.000.001", "1.000.000.001", "pcs", "pcs")],
+      },
+    ]);
+    expect(formErrors(f, [])).toEqual([
+      { code: "qty_invalid", sizeIndex: 0, tierIndex: 1 },
+      { code: "price_invalid", sizeIndex: 0, tierIndex: 1 },
+    ]);
+  });
+
+  it("holds the API's text caps (200, Kegunaan 500)", () => {
+    const long = (n: number) => "a".repeat(n);
+    const f = { ...base([{ size: long(201), tiers: [tier("5", "1")] }]), name: long(201), gsm: long(200), finishing: long(201), use: long(501) };
+    expect(formErrors(f, [])).toEqual([
+      { code: "text_too_long", field: "name" },
+      { code: "text_too_long", field: "finishing" },
+      { code: "text_too_long", field: "use" },
+      { code: "text_too_long", field: "size", sizeIndex: 0 },
+    ]);
+    expect(formErrors({ ...f, name: long(200), finishing: "", use: long(500), sizes: [{ size: long(200), tiers: [tier("5", "1")] }] }, [])).toEqual([]);
+  });
+
+  it("keeps the API's own judgements (duplicates, order) while their row stands", () => {
+    const f = base([
+      { size: "30 x 30 cm", tiers: [tier("5", "1"), tier("5", "2")] },
+      { size: "30x30 cm", tiers: [tier("", "1")] },
+    ]);
+    expect(
+      formErrors(f, [
+        { code: "duplicate_tier", sizeIndex: 0, tierIndex: 1 },
+        { code: "duplicate_size", sizeIndex: 1 },
+        // The quantity it judged is gone now: the form's own "missing" replaces it.
+        { code: "tier_order", sizeIndex: 1, tierIndex: 0 },
+      ])
+    ).toEqual([
+      { code: "qty_missing", sizeIndex: 1, tierIndex: 0 },
+      { code: "duplicate_tier", sizeIndex: 0, tierIndex: 1 },
+      { code: "duplicate_size", sizeIndex: 1 },
+    ]);
+  });
+});
+
+describe("visibleErrors", () => {
+  const errors = formErrors(
+    { ...emptyForm("kertas_supreme"), sizes: [{ size: "", tiers: [tier("lima", "")] }] },
+    []
+  );
+
+  it("an untouched empty field is not marked; a wrong value always is", () =>
+    expect(visibleErrors(errors, [], false)).toEqual([{ code: "qty_invalid", sizeIndex: 0, tierIndex: 0 }]));
+
+  it("a touched field shows its missing value", () =>
+    expect(visibleErrors(errors, [{ field: "name" }, { field: "price", sizeIndex: 0, tierIndex: 0 }], false)).toEqual([
+      { code: "name_required" },
+      { code: "qty_invalid", sizeIndex: 0, tierIndex: 0 },
+      { code: "price_missing", sizeIndex: 0, tierIndex: 0 },
+    ]));
+
+  it("after a save attempt everything shows", () => expect(visibleErrors(errors, [], true)).toEqual(errors));
+});
+
+describe("shiftErrors", () => {
+  const list = [
+    { code: "name_required" as const },
+    { code: "size_required" as const, sizeIndex: 0 },
+    { code: "price_missing" as const, sizeIndex: 1, tierIndex: 0 },
+    { code: "price_missing" as const, sizeIndex: 1, tierIndex: 2 },
+    { code: "duplicate_size" as const, sizeIndex: 2 },
+  ];
+
+  it("removing a size drops its entries and moves the later sizes up", () =>
+    expect(shiftErrors(list, 1)).toEqual([
+      { code: "name_required" },
+      { code: "size_required", sizeIndex: 0 },
+      { code: "duplicate_size", sizeIndex: 1 },
+    ]));
+
+  it("removing a tier drops its entries and moves the later tiers of that size up", () =>
+    expect(shiftErrors(list, 1, 0)).toEqual([
+      { code: "name_required" },
+      { code: "size_required", sizeIndex: 0 },
+      { code: "price_missing", sizeIndex: 1, tierIndex: 1 },
+      { code: "duplicate_size", sizeIndex: 2 },
+    ]));
 });
 
 describe("edit markers", () => {
@@ -249,6 +352,9 @@ describe("describeChange", () => {
     [{ kind: "created", via: "form" }, "Dibuat lewat formulir"],
     [{ kind: "active", to: false }, "Dinonaktifkan: tidak ditawarkan bot"],
     [{ kind: "field", field: "use", from: "box kue, cookies", to: "box kue, cookies, bento kecil" }, 'Kegunaan ditambah "bento kecil"'],
+    // A typo fix is not an addition: no word boundary between the old text and the rest.
+    [{ kind: "field", field: "use", from: "box kue, cooki", to: "box kue, cookies" }, "Kegunaan: box kue, cooki → box kue, cookies"],
+    [{ kind: "field", field: "use", from: "box kue,", to: "box kue,cookies" }, 'Kegunaan ditambah "cookies"'],
     [{ kind: "field", field: "brand", from: "kertas_supreme", to: "imperial_indopack" }, "Merek: Kertas Supreme → Imperial Indopack"],
     [{ kind: "field", field: "gsm", from: null, to: "270 gsm" }, "Gramasi: — → 270 gsm"],
     [{ kind: "size_renamed", from: "21x7x5", to: "21 x 7 x 5 cm" }, "Ukuran 21 × 7 × 5 diganti jadi 21 × 7 × 5 cm"],

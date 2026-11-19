@@ -33,11 +33,17 @@ import {
   parseQty,
   parseRupiah,
   previousPrice,
+  shiftErrors,
   sizeChange,
   toDraft,
+  visibleErrors,
+  type CappedField,
+  type FormError,
+  type FormErrorCode,
   type ProductFormState,
   type SizeRow,
   type TierRow,
+  type TouchedField,
 } from "@/lib/catalog/productForm";
 import { apiFileUrl, formatQty } from "@/lib/format";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
@@ -125,8 +131,9 @@ const srOnly: React.CSSProperties = {
 };
 const TIER_GRID = "1fr 0.9fr 1.3fr 0.9fr 1.1fr 0.5fr";
 const LOCKED_GRID = "1fr 1.3fr 1.2fr";
-const QTY_CODES = new Set<ProductInputError["code"]>(["qty_missing", "qty_invalid", "duplicate_tier", "tier_order"]);
-const PRICE_CODES = new Set<ProductInputError["code"]>(["price_missing", "price_invalid"]);
+const QTY_CODES = new Set<FormErrorCode>(["qty_missing", "qty_invalid", "duplicate_tier", "tier_order"]);
+const PRICE_CODES = new Set<FormErrorCode>(["price_missing", "price_invalid"]);
+const SIZE_NAME_CODES = new Set<FormErrorCode>(["size_required", "duplicate_size", "text_too_long"]);
 
 /** Amber, not red: a required marker is a cue, not an error. */
 function Required() {
@@ -142,19 +149,6 @@ function Required() {
 function tidy(text: string, parse: (s: string) => number | null): string {
   const n = parse(text);
   return n === null ? text : formatNumber(n, "id");
-}
-
-/** Removing a size or tier shifts the indexes the last API errors point at; follow it until the next preview. */
-function shiftErrors(errors: ProductInputError[], sizeIndex: number, tierIndex?: number): ProductInputError[] {
-  return errors.flatMap((e) => {
-    if (tierIndex === undefined) {
-      if (e.sizeIndex === sizeIndex) return [];
-      return e.sizeIndex !== undefined && e.sizeIndex > sizeIndex ? [{ ...e, sizeIndex: e.sizeIndex - 1 }] : [e];
-    }
-    if (e.sizeIndex !== sizeIndex || e.tierIndex === undefined) return [e];
-    if (e.tierIndex === tierIndex) return [];
-    return e.tierIndex > tierIndex ? [{ ...e, tierIndex: e.tierIndex - 1 }] : [e];
-  });
 }
 
 interface PendingPhoto {
@@ -181,6 +175,8 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
   const [preview, setPreview] = useState<ProductPreview | null>(null);
   const [previewFailed, setPreviewFailed] = useState(false);
   const [serverErrors, setServerErrors] = useState<ProductInputError[]>([]);
+  const [touched, setTouched] = useState<TouchedField[]>([]);
+  const [attempted, setAttempted] = useState(false);
   const [takenName, setTakenName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -194,7 +190,14 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
 
   const draft = useMemo(() => toDraft(form), [form]);
   const draftJson = useMemo(() => JSON.stringify(draft), [draft]);
+  // Every problem (the checklist and Simpan go by these) and the ones marked on the fields: a fresh
+  // Tambah Produk marks a missing value only once its field was touched or a save was tried. Ubah
+  // Produk has no checklist, so it marks everything.
   const errors = useMemo(() => formErrors(form, serverErrors), [form, serverErrors]);
+  const shown = useMemo(
+    () => (editing ? errors : visibleErrors(errors, touched, attempted)),
+    [editing, errors, touched, attempted]
+  );
   const nameTaken = takenName !== null && form.name.trim().toLowerCase() === takenName;
   const blocked = errors.length > 0 || nameTaken;
   const photoCount = stored ? stored.referenceImages.length : pending.length;
@@ -215,7 +218,11 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
           setPreviewFailed(false);
         })
         .catch(() => {
-          if (seq === previewSeq.current) setPreviewFailed(true);
+          if (seq !== previewSeq.current) return;
+          // Its last answer was about an older draft: drop the API-only errors (a stale one could keep
+          // Simpan disabled for good). The form's own checks still hold, and a save is judged anyway.
+          setPreviewFailed(true);
+          setServerErrors([]);
         });
     }, delay);
     return () => clearTimeout(timer);
@@ -232,6 +239,24 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
 
   function set<K extends keyof ProductFormState>(key: K, value: ProductFormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function touch(ref: TouchedField) {
+    setTouched((list) =>
+      list.some((r) => r.field === ref.field && r.sizeIndex === ref.sizeIndex && r.tierIndex === ref.tierIndex) ? list : [...list, ref]
+    );
+  }
+
+  /** Copying replaces the other sizes' rows; their empty prices are then shown at once, as the design does. */
+  function copyTiers(si: number) {
+    const sourceTiers = form.sizes[si]?.tiers.length ?? 0;
+    setForm((f) => copyTiersToOtherSizes(f, si));
+    setTouched((list) => [
+      ...list.filter((r) => r.sizeIndex === undefined || r.sizeIndex === si || (r.field !== "qty" && r.field !== "price")),
+      ...form.sizes.flatMap((_, i) =>
+        i === si ? [] : Array.from({ length: sourceTiers }, (_, ti): TouchedField => ({ field: "price", sizeIndex: i, tierIndex: ti }))
+      ),
+    ]);
   }
 
   /** On the create page a brand switch also moves every still-unpriced tier to that brand's price unit. */
@@ -272,6 +297,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
       sizes: f.sizes.map((s, i) => (i !== si ? s : { ...s, tiers: s.tiers.filter((_, j) => j !== ti) })),
     }));
     setServerErrors((errs) => shiftErrors(errs, si, ti));
+    setTouched((list) => shiftErrors(list, si, ti));
   }
 
   function addSize() {
@@ -281,6 +307,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
   function removeSize(si: number) {
     setForm((f) => ({ ...f, sizes: f.sizes.filter((_, i) => i !== si) }));
     setServerErrors((errs) => shiftErrors(errs, si));
+    setTouched((list) => shiftErrors(list, si));
   }
 
   // ─── Save ────────────────────────────────────────────────────────────────────
@@ -308,6 +335,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
 
   async function save() {
     if (saving || blocked) return;
+    setAttempted(true);
     setSaving(true);
     setSaveError(null);
     try {
@@ -407,8 +435,11 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
 
   // ─── Rendering helpers ───────────────────────────────────────────────────────
 
-  const message = (e: ProductInputError) => errorMessage(e, form, t, lang);
-  const topError = (code: ProductInputError["code"]) => errors.find((e) => e.code === code && e.sizeIndex === undefined);
+  const message = (e: FormError) => errorMessage(e, form, t, lang);
+  /** A product-level error: from every error (checklist) or from the marked ones (fields). */
+  const topError = (list: FormError[], code: FormErrorCode, field?: CappedField) =>
+    list.find((e) => e.code === code && e.sizeIndex === undefined && e.field === field);
+  const fieldError = (code: FormErrorCode, field: CappedField) => topError(shown, code) ?? topError(shown, "text_too_long", field);
   const sizeLabel = (s: SizeRow, si: number) => (s.size.trim() ? displaySize(s.size.trim()) : t("catalog.form.sizeN", { n: si + 1 }));
   const unitOptions = (
     <>
@@ -421,12 +452,19 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
   function specSelect(id: string, key: "print" | "finishing", options: readonly string[], labelKey: TKey) {
     const value = form[key];
     const all = value && !options.includes(value) ? [...options, value] : options;
+    const err = topError(shown, "text_too_long", key);
     return (
       <div style={field}>
         <label htmlFor={id} style={labelStyle}>
           {t(labelKey)}
         </label>
-        <select id={id} value={value} onChange={(e) => set(key, e.target.value)} style={{ ...input, padding: "0 10px" }}>
+        <select
+          id={id}
+          value={value}
+          aria-invalid={err ? true : undefined}
+          onChange={(e) => set(key, e.target.value)}
+          style={{ ...input, padding: "0 10px", ...(err ? invalid : {}) }}
+        >
           <option value="">{t("catalog.form.none")}</option>
           {all.map((o) => (
             <option key={o} value={o}>
@@ -434,11 +472,12 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
             </option>
           ))}
         </select>
+        {err && <span style={errText}>{message(err)}</span>}
       </div>
     );
   }
 
-  function errorLines(list: ProductInputError[], id?: string) {
+  function errorLines(list: FormError[], id?: string) {
     if (list.length === 0) return null;
     return (
       <span id={id} style={{ ...errText, display: "flex", flexDirection: "column", gap: 2 }}>
@@ -457,7 +496,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
     return <span style={{ fontSize: 11.5, color: "#92400E" }}>{t("catalog.form.previous", { price })}</span>;
   }
 
-  function priceInput(s: SizeRow, si: number, row: TierRow, ti: number, priceErrs: ProductInputError[]) {
+  function priceInput(s: SizeRow, si: number, row: TierRow, ti: number, priceErrs: FormError[]) {
     const label = sizeLabel(s, si);
     const changed = initial ? previousPrice(s, row, initial) !== null : false;
     return (
@@ -470,7 +509,10 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
         placeholder="Rp"
         value={row.price}
         onChange={(e) => updateTier(si, ti, { price: e.target.value })}
-        onBlur={(e) => updateTier(si, ti, { price: tidy(e.target.value, parseRupiah) })}
+        onBlur={(e) => {
+          updateTier(si, ti, { price: tidy(e.target.value, parseRupiah) });
+          touch({ field: "price", sizeIndex: si, tierIndex: ti });
+        }}
         style={{ ...cellInput, ...(priceErrs.length > 0 ? invalid : changed ? changedInput : {}) }}
       />
     );
@@ -478,7 +520,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
 
   function renderTierRow(s: SizeRow, si: number, row: TierRow, ti: number) {
     const label = sizeLabel(s, si);
-    const rowErrs = errors.filter((e) => e.sizeIndex === si && e.tierIndex === ti);
+    const rowErrs = shown.filter((e) => e.sizeIndex === si && e.tierIndex === ti);
     const qtyErrs = rowErrs.filter((e) => QTY_CODES.has(e.code));
     const priceErrs = rowErrs.filter((e) => PRICE_CODES.has(e.code));
     return (
@@ -492,7 +534,10 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
             inputMode="numeric"
             value={row.minQty}
             onChange={(e) => updateTier(si, ti, { minQty: e.target.value })}
-            onBlur={(e) => updateTier(si, ti, { minQty: tidy(e.target.value, parseQty) })}
+            onBlur={(e) => {
+              updateTier(si, ti, { minQty: tidy(e.target.value, parseQty) });
+              touch({ field: "qty", sizeIndex: si, tierIndex: ti });
+            }}
             style={{ ...cellInput, ...(qtyErrs.length > 0 ? invalid : {}) }}
           />
           {errorLines(qtyErrs, `pf-${si}-${ti}-qty-err`)}
@@ -540,7 +585,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
 
   /** Ubah Produk before "Ubah ukuran": minimums as text, price and delivery still editable. */
   function renderLockedTierRow(s: SizeRow, si: number, row: TierRow, ti: number) {
-    const rowErrs = errors.filter((e) => e.sizeIndex === si && e.tierIndex === ti);
+    const rowErrs = shown.filter((e) => e.sizeIndex === si && e.tierIndex === ti);
     const qtyErrs = rowErrs.filter((e) => QTY_CODES.has(e.code));
     const priceErrs = rowErrs.filter((e) => PRICE_CODES.has(e.code));
     const qty = parseQty(row.minQty);
@@ -573,12 +618,12 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
   function renderSize(s: SizeRow, si: number) {
     const open = !initial || !s.id || unlocked.has(s.id);
     const label = sizeLabel(s, si);
-    const sizeErrs = errors.filter((e) => e.sizeIndex === si && e.tierIndex === undefined);
-    const hasErrors = errors.some((e) => e.sizeIndex === si);
+    const sizeErrs = shown.filter((e) => e.sizeIndex === si && e.tierIndex === undefined);
+    const hasErrors = shown.some((e) => e.sizeIndex === si);
     const change = initial ? sizeChange(s, initial) : null;
     const copiedNote = s.copiedFrom !== undefined && s.tiers.some((row) => !row.price.trim());
-    const nameErrs = sizeErrs.filter((e) => e.code === "size_required" || e.code === "duplicate_size");
-    const otherErrs = sizeErrs.filter((e) => e.code !== "size_required" && e.code !== "duplicate_size");
+    const nameErrs = sizeErrs.filter((e) => SIZE_NAME_CODES.has(e.code));
+    const otherErrs = sizeErrs.filter((e) => !SIZE_NAME_CODES.has(e.code));
     const next = nextTierRow(s, form.brand);
     const nextQty = parseQty(next.minQty);
     const badge = change && (
@@ -637,6 +682,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
                 aria-invalid={nameErrs.length > 0 || undefined}
                 aria-describedby={nameErrs.length > 0 ? `pf-size-${si}-err` : undefined}
                 onChange={(e) => updateSize(si, { size: e.target.value })}
+                onBlur={() => touch({ field: "size", sizeIndex: si })}
                 style={{ ...input, height: 36, width: 180, ...(nameErrs.length > 0 ? invalid : {}) }}
               />
               {errorLines(nameErrs, `pf-size-${si}-err`)}
@@ -646,7 +692,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
               <button
                 type="button"
                 disabled={form.sizes.length < 2}
-                onClick={() => setForm((f) => copyTiersToOtherSizes(f, si))}
+                onClick={() => copyTiers(si)}
                 style={{ ...btn, ...(form.sizes.length < 2 ? { color: "#8A949B", cursor: "not-allowed" } : {}) }}
               >
                 {t("catalog.form.copyTiers")}
@@ -798,11 +844,20 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
 
   const dirty = initial !== null && JSON.stringify(toDraft(initial)) !== draftJson;
   const changes = preview?.changes ?? [];
-  const banner: "changes" | "invalid" | null = !dirty ? null : changes.length > 0 ? "changes" : errors.length > 0 ? "invalid" : null;
+  // A failed preview leaves its last answer about an older draft, so its changes are not shown as what Simpan writes.
+  const banner: "changes" | "invalid" | "failed" | null = !dirty
+    ? null
+    : previewFailed
+      ? "failed"
+      : changes.length > 0
+        ? "changes"
+        : errors.length > 0
+          ? "invalid"
+          : null;
 
   const checklist: { state: "ok" | "bad" | "info"; text: string }[] = [];
   if (!editing) {
-    const nameErr = topError("name_required");
+    const nameErr = topError(errors, "name_required") ?? topError(errors, "text_too_long", "name");
     checklist.push(
       nameTaken
         ? { state: "bad", text: t("catalog.form.err.name_taken") }
@@ -810,9 +865,9 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
           ? { state: "bad", text: message(nameErr) }
           : { state: "ok", text: t("catalog.form.check.name") }
     );
-    const useErr = topError("use_required");
+    const useErr = topError(errors, "use_required") ?? topError(errors, "text_too_long", "use");
     checklist.push(useErr ? { state: "bad", text: message(useErr) } : { state: "ok", text: t("catalog.form.check.use") });
-    const noSizes = topError("no_sizes");
+    const noSizes = topError(errors, "no_sizes");
     if (noSizes) checklist.push({ state: "bad", text: message(noSizes) });
     form.sizes.forEach((s, si) => {
       const label = sizeLabel(s, si);
@@ -830,9 +885,11 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
   }
   const CHECK_STYLE = { ok: { mark: "✓", color: "#586B34" }, bad: { mark: "✕", color: "#B91C1C" }, info: { mark: "○", color: "#5F6B5A" } };
 
-  const nameErr = nameTaken ? t("catalog.form.err.name_taken") : topError("name_required") ? message(topError("name_required")!) : null;
-  const useErr = topError("use_required");
-  const noSizesErr = topError("no_sizes");
+  const nameFieldErr = fieldError("name_required", "name");
+  const nameErr = nameTaken ? t("catalog.form.err.name_taken") : nameFieldErr ? message(nameFieldErr) : null;
+  const useErr = fieldError("use_required", "use");
+  const gsmErr = topError(shown, "text_too_long", "gsm");
+  const noSizesErr = topError(shown, "no_sizes");
   const numbered = (n: number, key: TKey) => (editing ? t(key) : `${n} · ${t(key)}`);
 
   const photoInput = (
@@ -873,6 +930,12 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
             <>
               <b>{t("catalog.form.unsavedInvalid")}</b>
               <span>{t("catalog.form.unsavedInvalidNote")}</span>
+            </>
+          )}
+          {banner === "failed" && (
+            <>
+              <b>{t("catalog.form.unsavedInvalid")}</b>
+              <span>{t("catalog.form.botFailed")}</span>
             </>
           )}
         </div>
@@ -1010,9 +1073,11 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
                       type="text"
                       value={form.gsm}
                       maxLength={MAX_TEXT_LENGTH}
+                      aria-invalid={gsmErr ? true : undefined}
                       onChange={(e) => set("gsm", e.target.value)}
-                      style={input}
+                      style={{ ...input, ...(gsmErr ? invalid : {}) }}
                     />
+                    {gsmErr && <span style={errText}>{message(gsmErr)}</span>}
                   </div>
                   {specSelect("pf-print", "print", PRINT_OPTIONS, "catalog.form.print")}
                   {specSelect("pf-finish", "finishing", FINISHING_OPTIONS, "catalog.form.finishing")}
@@ -1031,6 +1096,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
                     aria-invalid={useErr ? true : undefined}
                     aria-describedby={useErr ? "pf-use-err" : undefined}
                     onChange={(e) => set("use", e.target.value)}
+                    onBlur={() => touch({ field: "use" })}
                     style={{ ...input, height: "auto", padding: "10px 12px", resize: "vertical", ...(useErr ? invalid : {}) }}
                   />
                   {useErr && (
@@ -1234,10 +1300,10 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
                       overflowWrap: "anywhere",
                     }}
                   >
-                    {preview ? preview.botText : previewFailed ? "—" : t("catalog.form.botLoading")}
+                    {previewFailed ? "—" : preview ? preview.botText : t("catalog.form.botLoading")}
                   </pre>
                   {previewFailed && <span style={{ ...hint, color: "#92400E" }}>{t("catalog.form.botFailed")}</span>}
-                  {preview?.hiddenSizes.map((size, i) => (
+                  {!previewFailed && preview?.hiddenSizes.map((size, i) => (
                     <span key={i} style={hint}>
                       {t("catalog.form.hiddenSize", { size: size.trim() ? displaySize(size.trim()) : "—" })}
                     </span>
@@ -1293,6 +1359,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
           aria-invalid={nameErr ? true : undefined}
           aria-describedby={nameErr ? "pf-name-err" : undefined}
           onChange={(e) => set("name", e.target.value)}
+          onBlur={() => touch({ field: "name" })}
           style={{ ...input, ...(nameErr ? invalid : {}) }}
         />
         {nameErr && (
