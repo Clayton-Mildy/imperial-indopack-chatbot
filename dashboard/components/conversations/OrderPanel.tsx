@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { saveTeamNotesAction } from "@/actions/conversationActions";
 import { BrandTags } from "@/components/BrandTag";
 import { nearestPriceLine, stampTime } from "@/lib/conversations/labels";
+import { adoptIncomingNotes } from "@/lib/conversations/teamNotes";
 import { apiFileUrl } from "@/lib/format";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import type { TKey } from "@/lib/i18n/core";
@@ -201,21 +202,32 @@ function TeamNotesBox({ conversationId, notes }: { conversationId: string; notes
   const [saved, setSaved] = useState<TeamNotes>(notes);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
-  const focused = useRef(false);
   const savingRef = useRef(false);
-
-  // The page refreshes every few seconds: take another staff member's notes only while this box is
-  // not being edited and holds nothing unsaved.
+  // The newest notes the poll brought, for the check on blur.
+  const latest = useRef(notes);
   useEffect(() => {
-    if (focused.current || savingRef.current || text !== saved.text) return;
-    setText(notes.text);
-    setSaved(notes);
+    latest.current = notes;
+  }, [notes]);
+
+  function adopt(incoming: TeamNotes) {
+    const next = adoptIncomingNotes(text, saved, incoming, savingRef.current);
+    if (!next) return;
+    setText(next.text);
+    setSaved(next);
+  }
+
+  // The page refreshes every few seconds: a colleague's newer save replaces the box whenever it holds
+  // nothing unsaved - focused or not - so a later edit starts from their text, not a stale copy.
+  useEffect(() => {
+    adopt(notes);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notes.text, notes.updatedAt, notes.updatedBy]);
 
   async function save() {
-    focused.current = false;
-    if (savingRef.current || text === saved.text) return;
+    if (savingRef.current) return;
+    // No local change: take what a colleague saved meanwhile (their save may have landed while this
+    // box held an edit that was then undone).
+    if (text === saved.text) return adopt(latest.current);
     savingRef.current = true;
     setSaving(true);
     setFailed(false);
@@ -237,9 +249,6 @@ function TeamNotesBox({ conversationId, notes }: { conversationId: string; notes
         value={text}
         maxLength={NOTES_MAX}
         placeholder={t("conversations.panel.notesPlaceholder")}
-        onFocus={() => {
-          focused.current = true;
-        }}
         onChange={(e) => {
           setText(e.target.value);
           setFailed(false);

@@ -7,7 +7,7 @@ import { resolveConversation, returnToAi, takeOverConversation } from "@/actions
 import { sendMessage } from "@/actions/sendActions";
 import { BASE_PATH } from "@/lib/basePath";
 import type { BrandSlug } from "@/lib/brands";
-import { chatStatus, phoneLocal, priceCallsOf, sourceLabel, stampTime, toolLine, type StatusTone } from "@/lib/conversations/labels";
+import { chatActions, chatStatus, phoneLocal, priceCallsOf, sourceLabel, stampTime, toolLine, type StatusTone } from "@/lib/conversations/labels";
 import { apiFileUrl } from "@/lib/format";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import type { ConversationWithMessages, Message } from "@/types/api";
@@ -193,7 +193,7 @@ function ToolLines({ msg }: { msg: Message }) {
 /**
  * The middle column of Percakapan: who the customer is and who holds the chat, the bot's hand-off
  * banner, the thread (with the bot's price-tool lines), and — unless the chat is resolved — the
- * quick-send bar, the reply box and the return-to-AI / resolve footer.
+ * quick-send bar, the reply box and the take-over / return-to-AI / resolve footer (chatActions).
  */
 export function ChatPane({
   conversation: initial,
@@ -256,6 +256,7 @@ export function ChatPane({
   }, [messages]);
 
   const held = conv.status === "escalated" || conv.status === "needs_human";
+  const actions = chatActions(conv.status);
   const status = chatStatus(conv.status, conv.assignedAgent);
   const pill = PILL_TONE[status.tone];
   const phone = conv.contact?.waId ? phoneLocal(conv.contact.waId) : null;
@@ -295,7 +296,7 @@ export function ChatPane({
       if (body) {
         setSendingReply(true);
         try {
-          const msg = await sendMessage(conv.id, body, staffName);
+          const msg = await sendMessage(conv.id, body);
           setReply("");
           if (msg) append(msg);
         } catch {
@@ -387,7 +388,7 @@ export function ChatPane({
         <div style={{ background: "#ffffff", borderTop: "1px solid #E1E7DC", padding: "12px 18px", display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}>
           <QuickSendBar conversationId={conv.id} brands={brands} nearestProductId={nearestProductId} />
 
-          {!held && <div style={{ fontSize: 11.5, color: "#5F6B5A" }}>{t("conversations.reply.aiHint")}</div>}
+          {actions.takeoverHint && <div style={{ fontSize: 11.5, color: "#5F6B5A" }}>{t("conversations.reply.aiHint")}</div>}
 
           {pendingFile && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#F8FAF6", border: "1px solid #E1E7DC", borderRadius: 6 }}>
@@ -465,18 +466,23 @@ export function ChatPane({
           {error && <div style={{ fontSize: 12, color: "#B91C1C" }}>{error}</div>}
 
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8 }}>
-            {held ? (
-              <button type="button" style={footerBtn} disabled={busy} onClick={() => runStatus(returnToAi)}>
-                {t("conversations.footer.returnToAi")}
-              </button>
-            ) : (
-              <button type="button" style={footerBtn} disabled={busy} onClick={() => runStatus(takeOverConversation)}>
-                {t("conversations.footer.takeOver")}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {actions.returnToAi && (
+                <button type="button" style={footerBtn} disabled={busy} onClick={() => runStatus(returnToAi)}>
+                  {t("conversations.footer.returnToAi")}
+                </button>
+              )}
+              {actions.takeOver && (
+                <button type="button" style={footerBtn} disabled={busy} onClick={() => runStatus(takeOverConversation)}>
+                  {t("conversations.footer.takeOver")}
+                </button>
+              )}
+            </div>
+            {actions.resolve && (
+              <button type="button" style={footerBtn} disabled={busy} onClick={() => setShowResolveConfirm(true)}>
+                {t("conversations.footer.resolve")}
               </button>
             )}
-            <button type="button" style={footerBtn} disabled={busy} onClick={() => setShowResolveConfirm(true)}>
-              {t("conversations.footer.resolve")}
-            </button>
           </div>
         </div>
       )}

@@ -7,9 +7,13 @@ import { sessionStaff } from "@/lib/session";
 import { ConversationDetailClient } from "./ConversationDetailClient";
 import type { ConversationListMeta, ConversationListRow, ConversationWithMessages, OrderPanel } from "@/types/api";
 
-const EMPTY_META: ConversationListMeta = { page: 1, total: 0, limit: INBOX_PAGE_SIZE, counts: { all: 0, team: 0, ai: 0, resolved: 0 } };
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** /conversations/[id]: the inbox list, the chat and the order panel. Re-run every 3 seconds by the client's poll. */
+/**
+ * /conversations/[id]: the inbox list, the chat and the order panel. Re-run every 3 seconds by the
+ * client's poll. Only a conversation that does not exist is a not-found page; any other failed fetch
+ * hands the client null for that piece, and it keeps what it shows (with the reply draft and notes).
+ */
 export default async function ConversationDetailPage({
   params,
   searchParams,
@@ -18,15 +22,17 @@ export default async function ConversationDetailPage({
   searchParams: Promise<InboxSearchParams>;
 }) {
   const { id } = await params;
+  // A malformed id is a conversation that does not exist (the API would answer it with a 500).
+  if (!UUID_RE.test(id)) notFound();
   const query = inboxQueryOf(await searchParams);
   const t = await getT();
 
-  const [conversationResult, panelResult, listResult, staff] = await Promise.all([
+  const [conversation, panel, list, staff] = await Promise.all([
     getConversation(id).then(
-      (c): ConversationWithMessages | null => c,
+      (c): ConversationWithMessages | "missing" | null => c,
       (err: unknown) => {
-        const status = (err as { status?: number }).status;
-        if (status !== 404) console.warn("[conversation-detail] Fetch error:", err);
+        if ((err as { status?: number }).status === 404) return "missing";
+        console.warn("[conversation-detail] Fetch error:", err);
         return null;
       }
     ),
@@ -38,25 +44,25 @@ export default async function ConversationDetailPage({
       }
     ),
     getConversations({ ...query, view: query.view ?? undefined, limit: INBOX_PAGE_SIZE }).then(
-      (r): { rows: ConversationListRow[]; meta: ConversationListMeta } => r,
+      (r): { rows: ConversationListRow[]; meta: ConversationListMeta } | null => r,
       (err: unknown) => {
         console.warn("[conversation-detail] List fetch error:", err);
-        return { rows: [], meta: EMPTY_META };
+        return null;
       }
     ),
     sessionStaff(),
   ]);
 
-  if (!conversationResult) notFound();
+  if (conversation === "missing") notFound();
 
   return (
     <>
       <Header title={t("conversations.title")} />
       <ConversationDetailClient
-        conversation={conversationResult}
-        panel={panelResult}
-        rows={listResult.rows}
-        meta={listResult.meta}
+        conversationId={id}
+        conversation={conversation}
+        panel={panel}
+        list={list}
         query={query}
         staffName={staff.staffName}
       />

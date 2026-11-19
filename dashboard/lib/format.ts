@@ -48,7 +48,8 @@ export function apiFileUrl(url: string): string {
   return /^https?:\/\//.test(url) ? url : `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:50070"}${url}`;
 }
 
-function wibDay(t: number): number {
+/** The WIB calendar day of a timestamp (ms), as a day count: equal numbers are the same WIB day. */
+export function wibDay(t: number): number {
   return Math.floor((t + WIB_OFFSET_MS) / DAY_MS);
 }
 

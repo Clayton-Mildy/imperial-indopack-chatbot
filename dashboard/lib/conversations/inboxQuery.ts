@@ -1,9 +1,17 @@
-import type { ConversationView } from "@/types/api";
+import type { ConversationListMeta, ConversationView } from "@/types/api";
 
 // The inbox list's place in the URL (?view&search&page), read by both Percakapan pages so an open
 // conversation keeps the list it was opened from. Server-safe: no client code.
 
 export const INBOX_PAGE_SIZE = 30;
+
+/** The list meta before (or without) a successful fetch. */
+export const EMPTY_INBOX_META: ConversationListMeta = {
+  page: 1,
+  total: 0,
+  limit: INBOX_PAGE_SIZE,
+  counts: { all: 0, team: 0, ai: 0, resolved: 0 },
+};
 
 export type InboxSearchParams = { view?: string | string[]; search?: string | string[]; page?: string | string[] };
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { sessionStaff } from "@/lib/session";
 
 // Route handler = server-side; prefer the container-to-container URL over the browser's view.
 const API_URL =
@@ -13,8 +13,9 @@ export async function POST(request: NextRequest) {
   }
 
   // The bubble is labelled with this name, like a typed reply - without it a staff upload read "AI".
-  const session = await auth();
-  const qs = new URLSearchParams({ senderName: session?.user?.name ?? "Tim CS" });
+  // The same session name the reply box shows (sessionStaff), never one sent by the browser.
+  const { staffName } = await sessionStaff();
+  const qs = new URLSearchParams({ senderName: staffName });
 
   // Forward the multipart body directly to the backend
   const formData = await request.formData();

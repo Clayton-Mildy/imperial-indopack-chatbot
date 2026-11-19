@@ -28,11 +28,11 @@ export async function resolveConversation(id: string) {
   }).catch(() => {});
 }
 
+/** "Ambil alih": the session's staff member holds the chat (the pill reads "Ditangani tim · {name}") and the AI stops. */
 export async function takeOverConversation(id: string) {
-  const session = await auth();
-  const agentName = session?.user?.name ?? "Agen";
+  const { staffName: agentName } = await sessionStaff();
 
-  await patchConversation(id, { status: "needs_human" });
+  await patchConversation(id, { status: "needs_human", assignedAgent: agentName });
   revalidatePath(`/conversations/${id}`);
   revalidatePath("/conversations");
   revalidatePath("/team-queue");

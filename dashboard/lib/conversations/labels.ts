@@ -1,4 +1,5 @@
 import { BRAND_TAG, isBrandSlug } from "@/lib/brands";
+import { wibDay } from "@/lib/format";
 import { formatDate, formatNumber, translate, type Lang, type TKey, type TVars } from "@/lib/i18n/core";
 import { sizeText } from "@/lib/leads/items";
 import type {
@@ -150,6 +151,17 @@ export function previewLine(m: ConversationListRow["lastMessage"], lang: Lang): 
     : translate(lang, "conversations.row.bot", { body: m.body });
 }
 
+/**
+ * The chat's action buttons. The bot keeps replying while a chat is `escalated`, so it can be taken
+ * over (and replying takes it over: the hint) as well as handed back; a chat staff hold can only go
+ * back to AI; a resolved chat has none.
+ */
+export function chatActions(status: ConversationStatus): { takeOver: boolean; returnToAi: boolean; resolve: boolean; takeoverHint: boolean } {
+  if (status === "resolved") return { takeOver: false, returnToAi: false, resolve: false, takeoverHint: false };
+  const staffHold = status === "needs_human";
+  return { takeOver: !staffHold, returnToAi: isHeld(status), resolve: true, takeoverHint: !staffHold };
+}
+
 export type StatusTone = "team" | "ai" | "resolved";
 
 /** The chat header's pill: who holds the chat now. */
@@ -160,9 +172,6 @@ export function chatStatus(status: ConversationStatus, assignedAgent: string | n
   return { key: "conversations.chat.statusResolved", tone: "resolved" };
 }
 
-const DAY_MS = 86_400_000;
-const WIB_OFFSET_MS = 7 * 3_600_000;
-const wibDay = (t: number): number => Math.floor((t + WIB_OFFSET_MS) / DAY_MS);
 const CLOCK: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
 const DAY: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
 

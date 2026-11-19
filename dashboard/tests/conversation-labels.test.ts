@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { id } from "@/lib/i18n/id";
-import { inboxQueryOf } from "@/lib/conversations/inboxQuery";
+import { EMPTY_INBOX_META, inboxQueryOf } from "@/lib/conversations/inboxQuery";
+import { adoptIncomingNotes } from "@/lib/conversations/teamNotes";
+import { nextKept, shownValue } from "@/lib/conversations/lastGood";
 import {
+  chatActions,
   chatStatus,
   listTime,
   nearestPriceLine,
@@ -229,4 +232,46 @@ describe("inbox query", () => {
     expect(inboxQueryOf({ view: "follow_up", page: "abc" })).toEqual({ view: null, search: "", page: 1 });
     expect(inboxQueryOf({ view: ["ai", "team"], page: "0" })).toEqual({ view: "ai", search: "", page: 1 });
   });
+});
+
+describe("chat actions per status", () => {
+  it("an AI chat can be taken over or resolved, with the takeover hint", () =>
+    expect(chatActions("active")).toEqual({ takeOver: true, returnToAi: false, resolve: true, takeoverHint: true }));
+  it("an escalated chat (the bot still replies) can be taken over or returned to AI", () =>
+    expect(chatActions("escalated")).toEqual({ takeOver: true, returnToAi: true, resolve: true, takeoverHint: true }));
+  it("a chat staff hold can go back to AI", () =>
+    expect(chatActions("needs_human")).toEqual({ takeOver: false, returnToAi: true, resolve: true, takeoverHint: false }));
+  it("a resolved chat has no actions", () =>
+    expect(chatActions("resolved")).toEqual({ takeOver: false, returnToAi: false, resolve: false, takeoverHint: false }));
+});
+
+describe("team notes from the poll", () => {
+  const SAVED = { text: "cek plano", updatedAt: "2026-11-17T02:00:00.000Z", updatedBy: "Admin" };
+  const NEWER = { text: "cek plano 79x109", updatedAt: "2026-11-17T02:05:00.000Z", updatedBy: "Rina" };
+
+  it("takes a colleague's newer save when nothing local is unsaved", () => expect(adoptIncomingNotes("cek plano", SAVED, NEWER, false)).toEqual(NEWER));
+  it("keeps local edits", () => expect(adoptIncomingNotes("cek plano, pot 1:6", SAVED, NEWER, false)).toBeNull());
+  it("waits while a save is out", () => expect(adoptIncomingNotes("cek plano", SAVED, NEWER, true)).toBeNull());
+  it("ignores a poll older than the last save", () =>
+    expect(adoptIncomingNotes(NEWER.text, NEWER, SAVED, false)).toBeNull());
+  it("ignores the same notes", () => expect(adoptIncomingNotes("cek plano", SAVED, { ...SAVED }, false)).toBeNull());
+  it("takes the first notes ever written", () =>
+    expect(adoptIncomingNotes("", { text: "", updatedAt: null, updatedBy: null }, NEWER, false)).toEqual(NEWER));
+});
+
+describe("keeping the last good poll", () => {
+  it("a failed poll keeps the last value of the same conversation", () => {
+    const kept = nextKept({ key: "c1", value: null as string | null }, "c1", "panel-1");
+    expect(kept).toEqual({ key: "c1", value: "panel-1" });
+    const afterFailure = nextKept(kept, "c1", null);
+    expect(afterFailure).toBe(kept);
+    expect(shownValue(afterFailure, "c1", null)).toBe("panel-1");
+  });
+  it("never shows another conversation's value", () => {
+    const kept = { key: "c1", value: "panel-1" };
+    expect(shownValue(kept, "c2", null)).toBeNull();
+    expect(nextKept(kept, "c2", null)).toEqual({ key: "c2", value: null });
+  });
+  it("a fresh value always wins", () => expect(shownValue({ key: "c1", value: "old" }, "c1", "new")).toBe("new"));
+  it("the empty list meta", () => expect(EMPTY_INBOX_META.counts).toEqual({ all: 0, team: 0, ai: 0, resolved: 0 }));
 });
