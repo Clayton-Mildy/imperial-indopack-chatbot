@@ -13,14 +13,16 @@ export const PRICE_LIST_FILES = {
 export const REFERENCE_PHOTO_NAMES = ['qa-ref-1.png', 'qa-ref-2.png'] as const;
 
 type Tier = [minQty: number, price: number];
-interface Fx { brand: string; product: string; size: string; unit: 'rim' | 'pcs'; delivery: 'ya' | 'tidak'; use: string; tiers: Tier[] }
+interface Fx { brand: string; product: string; gsm: string; size: string; unit: 'rim' | 'pcs'; delivery: 'ya' | 'tidak'; use: string; tiers: Tier[] }
 
 const FIXTURES: Fx[] = [
-  { brand: 'Kertas Supreme', product: 'Kertas Supreme 64 gsm cetak 1 warna', size: '30 x 30 cm', unit: 'rim', delivery: 'tidak', use: 'Pembungkus nasi, gorengan dan makanan kering', tiers: [[5, 185_000], [10, 165_000], [20, 160_000]] },
-  { brand: 'Kertas Supreme', product: 'Kertas Supreme 64 gsm cetak 1 warna', size: '35 x 35 cm', unit: 'rim', delivery: 'tidak', use: 'Pembungkus nasi, gorengan dan makanan kering', tiers: [[5, 245_000], [10, 217_500], [20, 207_000]] },
-  { brand: 'Kertas Supreme', product: 'Greaseproof 40 gsm polos', size: '30 x 30 cm', unit: 'rim', delivery: 'tidak', use: 'Pembungkus makanan berminyak, anti tembus minyak', tiers: [[5, 150_000]] },
-  { brand: 'Imperial Indopack', product: 'Box Ivory 270 gsm cetak full color', size: '21 x 14 x 5 cm', unit: 'pcs', delivery: 'ya', use: 'Box kue dan makanan', tiers: [[5, 1_900], [10, 1_500]] },
-  { brand: 'Imperial Indopack', product: 'Box Ivory 310 gsm cetak full color', size: '20 x 20 x 7,5 cm', unit: 'pcs', delivery: 'ya', use: 'Box kue dan makanan', tiers: [[5, 2_000], [10, 1_800], [20, 1_500]] },
+  { brand: 'Kertas Supreme', product: 'Kertas Supreme cetak 1 warna', gsm: '64 gsm', size: '30 x 30 cm', unit: 'rim', delivery: 'tidak', use: 'Pembungkus nasi, gorengan dan makanan kering', tiers: [[5, 185_000], [10, 165_000], [20, 160_000]] },
+  { brand: 'Kertas Supreme', product: 'Kertas Supreme cetak 1 warna', gsm: '64 gsm', size: '35 x 35 cm', unit: 'rim', delivery: 'tidak', use: 'Pembungkus nasi, gorengan dan makanan kering', tiers: [[5, 245_000], [10, 217_500], [20, 207_000]] },
+  { brand: 'Kertas Supreme', product: 'Greaseproof polos', gsm: '40 gsm', size: '30 x 30 cm', unit: 'rim', delivery: 'tidak', use: 'Pembungkus makanan berminyak, anti tembus minyak', tiers: [[5, 150_000]] },
+  { brand: 'Imperial Indopack', product: 'Box Ivory cetak full color', gsm: '270 gsm', size: '21 x 14 x 5 cm', unit: 'pcs', delivery: 'ya', use: 'Box kue dan makanan', tiers: [[5, 1_900], [10, 1_500]] },
+  { brand: 'Imperial Indopack', product: 'Box Ivory cetak full color', gsm: '310 gsm', size: '20 x 20 x 7,5 cm', unit: 'pcs', delivery: 'ya', use: 'Box kue dan makanan', tiers: [[5, 2_000], [10, 1_800], [20, 1_500]] },
+  // The same size at a second gramasi, so a customer who does not name one must be asked.
+  { brand: 'Imperial Indopack', product: 'Box Ivory cetak full color', gsm: '270 gsm', size: '20 x 20 x 7,5 cm', unit: 'pcs', delivery: 'ya', use: 'Box kue dan makanan', tiers: [[5, 1_700], [10, 1_400], [20, 1_200]] },
 ];
 
 /** Catalog rows: every tier's minimum is in rim (500 pcs), the price per rim (paper) or per pcs (boxes). */
@@ -29,7 +31,7 @@ export function fixtureRows(): unknown[][] {
   for (const f of FIXTURES) {
     for (const [min, price] of f.tiers) {
       // Merek, Produk, Ukuran, Gramasi, Cetak, Finishing, Kegunaan, Min Qty, Satuan Qty, Harga, Satuan Harga, Ongkir, Catatan
-      rows.push([f.brand, f.product, f.size, null, null, null, f.use, min, 'rim', price, f.unit, f.delivery, null]);
+      rows.push([f.brand, f.product, f.size, f.gsm, null, null, f.use, min, 'rim', price, f.unit, f.delivery, null]);
     }
   }
   return rows;

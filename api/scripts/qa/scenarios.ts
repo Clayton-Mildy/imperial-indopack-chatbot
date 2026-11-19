@@ -38,7 +38,7 @@ const got = (msgs: CapturedMessage[]): Check => check('the bot answered', texts(
 async function referenceUrls(): Promise<string[]> {
   const { rows } = await getDb().execute<{ image_url: string }>(sql`
     SELECT r.image_url FROM product_reference_images r JOIN products p ON p.id = r.product_id
-    WHERE p.name = 'Kertas Supreme 64 gsm cetak 1 warna' ORDER BY r.sort`);
+    WHERE p.name = 'Kertas Supreme cetak 1 warna' ORDER BY r.sort`);
   return rows.map((r) => r.image_url);
 }
 

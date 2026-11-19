@@ -62,7 +62,7 @@ for (const slug of ['kertas_supreme', 'imperial_indopack'] as const) {
   await setBrandPriceList(slug, { url: files.priceListUrls[slug], fileName: PRICE_LIST_FILES[slug].name });
 }
 const { products } = await listProducts({ limit: 0 });
-const supreme64 = products.find((p) => p.name === 'Kertas Supreme 64 gsm cetak 1 warna');
+const supreme64 = products.find((p) => p.name === 'Kertas Supreme cetak 1 warna');
 if (!supreme64) { console.error('fixture product missing'); process.exit(1); }
 for (const u of files.referenceUrls) await addReferenceImage(supreme64.id, u);
 await setPoFormUrl('cetak', PO_FORM_QA_URLS.cetak);

@@ -126,6 +126,8 @@ function toRows(d: Draft): { rows: Row[] } | { reason: string } {
     const si = sub.indexOf('CETAK');
     if (si !== -1 && sub.slice(si).every((w) => /^\d+$/.test(w) || GENERIC_WORDS.has(w) || w === 'CMYK')) cetak = sub.slice(si + 1).join(' ').toLowerCase() || null;
   }
+  // The gramasi goes to its own column, not into the product name.
+  toks = toks.filter((w, i) => !((/^\d+$/.test(w) && /^(GSM|GR)$/.test(toks[i + 1] ?? '')) || (/^(GSM|GR)$/.test(w) && /^\d+$/.test(toks[i - 1] ?? ''))));
   const gsm = gsmOf(d.titleText) ?? d.extras.map(gsmOf).find(Boolean) ?? null;
   const upper = all.toUpperCase();
   const grease = /GR[EA]SEPROOF/.test(upper);
@@ -141,7 +143,7 @@ function toRows(d: Draft): { rows: Row[] } | { reason: string } {
     else prefix.push('Kertas');
     if (grease) prefix.push('greaseproof');
   }
-  const name = [...prefix, ...titleWords, ...(gsm && !gsmOf(d.titleText) ? [`${gsm} gsm`] : []), ...(cetak ? [`cetak ${cetak}`] : [])].join(' ').replace(/\s+/g, ' ').trim();
+  const name = [...prefix, ...titleWords, ...(cetak ? [`cetak ${cetak}`] : [])].join(' ').replace(/\s+/g, ' ').trim();
   if (!name) return { reason: 'tidak ada nama produk' };
 
   const finishing = /NON\s+LAMINASI/i.test(all) ? 'Non laminasi' : /LAMINASI/i.test(all) ? 'Laminasi' : null;

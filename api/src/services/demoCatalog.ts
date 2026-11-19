@@ -24,11 +24,19 @@ interface DemoProduct {
   tiers: [number, number][]; // [min qty, price per unit]
 }
 
+const BOX_TIERS: [number, number][] = [[2500, 1234], [5000, 1111], [10000, 999]];
+const NASI_TIERS: [number, number][] = [[5, 123000], [10, 111000], [20, 99000]];
+
+// One entry per (product, gramasi): the same product name in two entries is one product with two gramasi.
+const NASI = `Kertas Nasi Cetak 1 Warna ${DEMO_SUFFIX}`;
+const BOX_MAKAN = `Box Makan Ivory Cetak 1 Warna ${DEMO_SUFFIX}`;
 const DEMO_PRODUCTS: DemoProduct[] = [
-  { brand: 'Kertas Supreme', product: `Kertas Nasi 64 gsm Cetak 1 Warna ${DEMO_SUFFIX}`, gramasi: '64 gsm', sizes: ['25x25', '30x30'], unit: 'rim', tiers: [[5, 123000], [10, 111000], [20, 99000]] },
-  { brand: 'Kertas Supreme', product: `Kertas Burger 40 gsm Cetak 1 Warna ${DEMO_SUFFIX}`, gramasi: '40 gsm', sizes: ['30x30'], unit: 'rim', tiers: [[5, 123000], [10, 111000], [20, 99000]] },
-  { brand: 'Imperial Indopack', product: `Box Makan Ivory 300 gsm ${DEMO_SUFFIX}`, gramasi: '300 gsm', sizes: ['20x20x7', '16x16x6'], unit: 'pcs', tiers: [[2500, 1234], [5000, 1111], [10000, 999]] },
-  { brand: 'Imperial Indopack', product: `Box Kue Ivory 270 gsm ${DEMO_SUFFIX}`, gramasi: '270 gsm', sizes: ['22x22x8'], unit: 'pcs', tiers: [[2500, 1234], [5000, 1111], [10000, 999]] },
+  { brand: 'Kertas Supreme', product: NASI, gramasi: '62 gsm', sizes: ['25x25', '30x30'], unit: 'rim', tiers: [[5, 118000], [10, 106000], [20, 95000]] },
+  { brand: 'Kertas Supreme', product: NASI, gramasi: '64 gsm', sizes: ['25x25', '30x30'], unit: 'rim', tiers: NASI_TIERS },
+  { brand: 'Kertas Supreme', product: `Kertas Burger Cetak 1 Warna ${DEMO_SUFFIX}`, gramasi: '40 gsm', sizes: ['30x30'], unit: 'rim', tiers: NASI_TIERS },
+  { brand: 'Imperial Indopack', product: BOX_MAKAN, gramasi: '270 gsm', sizes: ['20x20x7', '16x16x6'], unit: 'pcs', tiers: [[2500, 1150], [5000, 1050], [10000, 950]] },
+  { brand: 'Imperial Indopack', product: BOX_MAKAN, gramasi: '300 gsm', sizes: ['20x20x7', '16x16x6'], unit: 'pcs', tiers: BOX_TIERS },
+  { brand: 'Imperial Indopack', product: `Box Kue Ivory Cetak 1 Warna ${DEMO_SUFFIX}`, gramasi: '270 gsm', sizes: ['22x22x8'], unit: 'pcs', tiers: BOX_TIERS },
 ];
 
 /** The template rows (header first), as the client's own file would carry them. */

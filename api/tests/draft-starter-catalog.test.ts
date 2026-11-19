@@ -27,8 +27,8 @@ const TIERS: [string, number][] = [['5 RIM / 2.500 PCS', 1500], ['10 RIM / 5.000
 describe('extractBlocks', () => {
   it('keeps a generic block and skips a customer-named one by title only', () => {
     const { rows, skipped } = extractBlocks(HARGA_BOX);
-    expect(rows.map((r) => r[1])).toEqual(['Box Ivory 270 gsm cetak full color', 'Box Ivory 270 gsm cetak full color']);
-    expect(rows[0]).toEqual(['Imperial Indopack', 'Box Ivory 270 gsm cetak full color', '21 x 7 x 5 cm', '270 gsm', 'Full color', null, null, 5, 'rim', 1500, 'pcs', 'ya', null]);
+    expect(rows.map((r) => r[1])).toEqual(['Box Ivory cetak full color', 'Box Ivory cetak full color']);
+    expect(rows[0]).toEqual(['Imperial Indopack', 'Box Ivory cetak full color', '21 x 7 x 5 cm', '270 gsm', 'Full color', null, null, 5, 'rim', 1500, 'pcs', 'ya', null]);
     expect(rows.map((r) => r[7])).toEqual([5, 10]);
     expect(skipped).toEqual(['BOX CONTOH RESTO BIRU 350 GSM']);
     expect(JSON.stringify(skipped)).not.toMatch(/\d{3}\.?\d{3}/);
@@ -71,7 +71,7 @@ describe('extractBlocks', () => {
 
   it('maps CETAK clauses to the Cetak column and the product name', () => {
     const { rows } = extractBlocks(block('PENAWARAN HARGA KERTAS SUPREME 67 GSM', 'CETAK 2 WARNA FULL BLOCK', TIERS));
-    expect(rows[0]![1]).toBe('Kertas Supreme 67 gsm cetak 2 warna full block');
+    expect(rows[0]![1]).toBe('Kertas Supreme cetak 2 warna full block');
     expect(rows[0]![4]).toBe('2 warna full block');
     const t = extractBlocks(block('PENAWARAN HARGA CETAK FULL COLOR', 'UKURAN 20 X 20 CM', TIERS));
     expect(t.rows[0]![4]).toBe('Full color');
