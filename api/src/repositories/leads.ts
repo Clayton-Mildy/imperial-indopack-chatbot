@@ -1222,11 +1222,11 @@ function mapLead(row: typeof leads.$inferSelect): Lead {
  * or contacted, and never over a kind staff set (both in applyLeadStage). The hand-off reply itself
  * does not depend on it. Fire-and-forget from messageRouter; no lead yet is not an error.
  */
-export async function tagNonSalesLead(contactId: string, topic: string): Promise<void> {
+export async function tagNonSalesLead(contactId: string, topic: string, kind: LeadKind = kindFromNonSalesTopic(topic)): Promise<void> {
   const lead = await findCurrentLeadForContact(contactId);
   if (!lead) return;
   await applyLeadStage(lead.id, {
-    kind: kindFromNonSalesTopic(topic),
+    kind,
     kindSetBy: 'rule',
     actor: 'system',
     evidence: topic,

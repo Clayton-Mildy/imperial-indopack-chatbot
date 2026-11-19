@@ -98,3 +98,15 @@ export function kindFromNonSalesTopic(topic: string): LeadKind {
       return 'lainnya';
   }
 }
+
+/**
+ * The lead kind for a hand-off the MODEL marked "BUKAN PEMBELI: ..." when no keyword detector named a
+ * topic (a courier asking who receives a parcel matched none of them, and the lead pass then filed
+ * it as status_pesanan - QA courier). Read from the reason's words; anything else is 'lainnya'.
+ */
+export function kindFromNonSalesReason(reason: string): LeadKind {
+  if (/\b(?:kurir|ojek|driver|pengantar|mengirim\s+paket|antar\s+paket|paket\s+untuk|penerima)\b/i.test(reason)) return 'kurir';
+  if (/\b(?:lowongan|lamar(?:an)?|melamar|pelamar|loker)\b/i.test(reason)) return 'lamaran_kerja';
+  if (/\b(?:supplier|pemasok|vendor|menawarkan|penawaran|produsen|pabrik)\b/i.test(reason)) return 'supplier';
+  return 'lainnya';
+}

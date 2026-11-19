@@ -4,6 +4,7 @@ import { upsertContact } from '../repositories/contacts.js';
 import { upsertConversation, insertMessage, insertMessageIfNew, claimSyncedInbound, resetConversationToActive, resetConversationContext, findConversationById, findMessageByWaMessageId, updateConversationStatus, getLastNMessages, mergeMessageMetadata } from '../repositories/conversations.js';
 import { getContactProfile, deleteContactProfile } from '../repositories/contactProfiles.js';
 import { resetLeadsForContact, tagNonSalesLead } from '../repositories/leads.js';
+import { kindFromNonSalesReason } from '../domain/leadStages.js';
 import { getFirstPhoneNumber, findPhoneNumberByProviderId } from '../repositories/phoneNumbers.js';
 import { getAiEnabledDefault, getPoFormUrls } from '../repositories/appSettings.js';
 import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormsMessage, isPoFormPlaceholder, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM } from '../domain/constants.js';
@@ -661,6 +662,9 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
       const reason = withExamplesAsked(aiResponse.escalationReason
         ?? (ppnAsked ? 'Pertanyaan PPN/pajak — kebijakan pajak hanya dari tim' : 'Low confidence'), aiResponse);
       const category = classifyHandoff(signals, reason);
+    if (!nonSales && isNonSalesReason(aiResponse.escalationReason)) void tagNonSalesLead(conv.contactId, reason, kindFromNonSalesReason(reason)).catch((err) => console.error('[leads] tag non-sales failed:', err));
+      // The model's own "BUKAN PEMBELI" hand-off, when no keyword detector named the topic: tag the lead from its reason.
+      if (!nonSales && isNonSalesReason(aiResponse.escalationReason)) void tagNonSalesLead(conv.contactId, reason, kindFromNonSalesReason(reason)).catch((err) => console.error('[leads] tag non-sales failed:', err));
       // Already handed to the team — no second escalation, but never dead silence either:
       // the customer asked something new and a human CS would at least acknowledge it.
       if (conv.status === 'escalated') {
