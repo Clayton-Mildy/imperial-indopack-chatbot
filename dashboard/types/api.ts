@@ -148,12 +148,12 @@ export interface CatalogProduct {
   id: string;
   brand: BrandSlug;
   name: string;
-  gsm: string | null;
   print: string | null;
   finishing: string | null;
   use: string;
   isActive: boolean;
-  sizes: { id: string; size: string; tiers: PriceTier[] }[];
+  /** Gramasi is per size row ("300 gsm"), null when the product has none; a product is all-gramasi or no-gramasi. */
+  sizes: { id: string; size: string; gsm: string | null; tiers: PriceTier[] }[];
   referenceImages: { id: string; imageUrl: string; sort: number }[];
   updatedAt: string;
 }
@@ -168,7 +168,6 @@ export type CatalogCounts = Record<"all" | BrandSlug, number>;
 export interface ProductDraft {
   brand: BrandSlug;
   name: string;
-  gsm: string | null;
   print: string | null;
   finishing: string | null;
   use: string;
@@ -177,6 +176,8 @@ export interface ProductDraft {
     /** The variant id from GET; absent for a size added in the form. */
     id?: string | null;
     size: string;
+    /** Gramasi as typed ("300", "300 gsm"); null when the product has none. */
+    gsm: string | null;
     tiers: {
       minQty: number | null;
       qtyUnit: QtyUnit;
@@ -193,6 +194,7 @@ export type ProductInputErrorCode =
   | "no_sizes"
   | "size_required"
   | "duplicate_size"
+  | "gsm_mixed"
   | "no_tiers"
   | "qty_missing"
   | "qty_invalid"
@@ -212,11 +214,14 @@ export type CatalogChange =
   | { kind: "created"; via: "form" | "import"; fileName?: string }
   | { kind: "field"; field: "name" | "brand" | "gsm" | "print" | "finishing" | "use"; from: string | null; to: string | null }
   | { kind: "active"; to: boolean }
-  | { kind: "size_added" | "size_removed"; size: string }
-  | { kind: "size_renamed"; from: string; to: string }
-  | { kind: "tier_added" | "tier_removed"; size: string; minQty: number; qtyUnit: QtyUnit }
-  | { kind: "tier_price"; size: string; minQty: number; qtyUnit: QtyUnit; priceUnit: QtyUnit; from: number; to: number }
-  | { kind: "delivery"; size: string; minQty: number; qtyUnit: QtyUnit; to: boolean };
+  | { kind: "gsm_added" | "gsm_removed"; gsm: string }
+  | { kind: "gsm_renamed"; from: string; to: string }
+  // `gsm` names the gramasi a size or tier change sits under; absent when the product has none.
+  | { kind: "size_added" | "size_removed"; size: string; gsm?: string | null }
+  | { kind: "size_renamed"; from: string; to: string; gsm?: string | null }
+  | { kind: "tier_added" | "tier_removed"; size: string; gsm?: string | null; minQty: number; qtyUnit: QtyUnit }
+  | { kind: "tier_price"; size: string; gsm?: string | null; minQty: number; qtyUnit: QtyUnit; priceUnit: QtyUnit; from: number; to: number }
+  | { kind: "delivery"; size: string; gsm?: string | null; minQty: number; qtyUnit: QtyUnit; to: boolean };
 
 /** POST /catalog/products/preview: the form's "Yang dilihat bot" panel. */
 export interface ProductPreview {
@@ -277,6 +282,8 @@ export interface PriceToolCall {
   productId: string | null;
   productName: string | null;
   variantName: string | null;
+  /** The gramasi of the size the tool matched; null when the product has none. */
+  gsm: string | null;
   /** The quote behind a `quote`, `below_minimum` or `above_top_tier` call; null for `not_in_catalog`. */
   quote: PriceQuote | null;
 }
@@ -298,6 +305,8 @@ export interface NearestMatch {
   productId: string;
   productName: string;
   variantName: string;
+  /** The matched size's gramasi; null when the product has none. */
+  gsm: string | null;
   /** The catalog has the size itself, not just a close one. */
   exact: boolean;
   /** The quote for the item's quantity; null when the quantity or its unit is unknown. */

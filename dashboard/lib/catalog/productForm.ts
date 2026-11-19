@@ -17,13 +17,14 @@ export interface TierRow {
 export interface SizeRow {
   id?: string;
   size: string;
+  /** Gramasi as typed ("300 gsm"); '' when the product has none (all rows then have none). */
+  gsm: string;
   tiers: TierRow[];
   copiedFrom?: string;
 }
 export interface ProductFormState {
   brand: BrandSlug;
   name: string;
-  gsm: string;
   print: string;
   finishing: string;
   use: string;
@@ -52,12 +53,12 @@ function startingTier(brand: BrandSlug): TierRow {
   return { minQty: "5", qtyUnit: "rim", price: "", priceUnit: defaultPriceUnit(brand), includesDelivery: false };
 }
 
-export function emptySize(brand: BrandSlug): SizeRow {
-  return { size: "", tiers: [startingTier(brand)] };
+export function emptySize(brand: BrandSlug, gsm = ""): SizeRow {
+  return { size: "", gsm, tiers: [startingTier(brand)] };
 }
 
 export function emptyForm(brand: BrandSlug): ProductFormState {
-  return { brand, name: "", gsm: "", print: "", finishing: "", use: "", isActive: true, sizes: [emptySize(brand)] };
+  return { brand, name: "", print: "", finishing: "", use: "", isActive: true, sizes: [emptySize(brand)] };
 }
 
 const idNumber = (n: number): string => formatNumber(n, "id");
@@ -66,7 +67,6 @@ export function fromCatalogProduct(p: CatalogProduct): ProductFormState {
   return {
     brand: p.brand,
     name: p.name,
-    gsm: p.gsm ?? "",
     print: p.print ?? "",
     finishing: p.finishing ?? "",
     use: p.use,
@@ -74,6 +74,7 @@ export function fromCatalogProduct(p: CatalogProduct): ProductFormState {
     sizes: p.sizes.map((s) => ({
       id: s.id,
       size: s.size,
+      gsm: s.gsm ?? "",
       tiers: s.tiers.map((t) => ({
         minQty: idNumber(t.minQty),
         qtyUnit: t.qtyUnit,
@@ -113,14 +114,13 @@ export function parseQty(s: string): number | null {
 /**
  * The API's draft. Prices go through parseRupiah and quantities through parseQty (the brief says
  * parseInt, but parseInt("2.500") is 2: quantities are typed with thousands dots too). Blank
- * gramasi / cetak / finishing are null; the copy marker is the form's own.
+ * cetak / finishing and a size's gramasi are null; the copy marker is the form's own.
  */
 export function toDraft(f: ProductFormState): ProductDraft {
   const optional = (v: string): string | null => v.trim() || null;
   return {
     brand: f.brand,
     name: f.name,
-    gsm: optional(f.gsm),
     print: optional(f.print),
     finishing: optional(f.finishing),
     use: f.use,
@@ -128,6 +128,7 @@ export function toDraft(f: ProductFormState): ProductDraft {
     sizes: f.sizes.map((s) => ({
       ...(s.id ? { id: s.id } : {}),
       size: s.size,
+      gsm: optional(s.gsm),
       tiers: s.tiers.map((t) => ({
         minQty: parseQty(t.minQty),
         qtyUnit: t.qtyUnit,
@@ -137,6 +138,96 @@ export function toDraft(f: ProductFormState): ProductDraft {
       })),
     })),
   };
+}
+
+// ─── Gramasi ─────────────────────────────────────────────────────────────────
+// Gramasi sits on each size row (a product is all-gramasi or no-gramasi). The form stays a flat sizes[]
+// so the API's sizeIndex errors still point at a row; these functions group and edit it by gramasi.
+// A small copy of api/src/domain/gramasi.ts: "300", "300gsm" and "300 GSM" are all "300 gsm".
+
+const GSM_NUMERIC = /^(\d+(?:[.,]\d+)?)\s*(?:gsm)?$/i;
+
+/** Canonical gramasi text ('' when blank): a bare number becomes "<n> gsm", anything else stays as typed. */
+function normalizeGsm(raw: string): string {
+  const text = raw.trim().replace(/\s+/g, " ");
+  const m = GSM_NUMERIC.exec(text);
+  return m ? `${m[1]!.replace(",", ".")} gsm` : text;
+}
+
+/** Whether two gramasi texts are the same gramasi. */
+export function sameGsm(a: string, b: string): boolean {
+  return normalizeGsm(a).toLowerCase() === normalizeGsm(b).toLowerCase();
+}
+
+function gsmNumber(g: string): number | null {
+  const m = GSM_NUMERIC.exec(g);
+  return m ? Number(m[1]!.replace(",", ".")) : null;
+}
+
+/** The API's compareGsm: no gramasi first, then by number, then other text alphabetically. */
+function compareGsm(a: string, b: string): number {
+  const x = normalizeGsm(a);
+  const y = normalizeGsm(b);
+  if (!x || !y) return x === y ? 0 : !x ? -1 : 1;
+  const nx = gsmNumber(x);
+  const ny = gsmNumber(y);
+  if (nx !== null && ny !== null) return nx - ny;
+  if (nx !== null) return -1;
+  if (ny !== null) return 1;
+  return x.localeCompare(y);
+}
+
+/**
+ * The form's rows grouped by gramasi, in the order the API lists them, each group with its row indexes in
+ * sizes[]. A no-gramasi product is one group with gsm '' (also when it has no rows yet).
+ */
+export function gramasiGroups(f: ProductFormState): { gsm: string; indexes: number[] }[] {
+  const groups: { gsm: string; indexes: number[] }[] = [];
+  f.sizes.forEach((s, i) => {
+    const g = groups.find((x) => sameGsm(x.gsm, s.gsm));
+    if (g) g.indexes.push(i);
+    else groups.push({ gsm: normalizeGsm(s.gsm) ? s.gsm.trim() : "", indexes: [i] });
+  });
+  if (groups.length === 0) return [{ gsm: "", indexes: [] }];
+  return groups.sort((a, b) => compareGsm(a.gsm, b.gsm));
+}
+
+/**
+ * A new gramasi. With copyFrom, it copies that gramasi's sizes and tier quantities with every price
+ * empty, marked as copied (as copyTiersToOtherSizes marks a size); without, it adds one empty size.
+ * The new rows go at the end of sizes[], so existing indexes stay where they are.
+ */
+export function addGramasi(f: ProductFormState, gsm: string, copyFrom?: string): ProductFormState {
+  const to = gsm.trim();
+  const source = copyFrom === undefined ? [] : f.sizes.filter((s) => sameGsm(s.gsm, copyFrom));
+  if (source.length === 0) return { ...f, sizes: [...f.sizes, emptySize(f.brand, to)] };
+  return {
+    ...f,
+    sizes: [
+      ...f.sizes,
+      ...source.map((s) => ({
+        size: s.size,
+        gsm: to,
+        copiedFrom: copyFrom,
+        tiers: s.tiers.map((t) => ({ ...t, price: "" })),
+      })),
+    ],
+  };
+}
+
+/** A no-gramasi product gets its first gramasi: every existing row takes it (the form asks "which gramasi is this?"). */
+export function setFirstGramasi(f: ProductFormState, gsm: string): ProductFormState {
+  return { ...f, sizes: f.sizes.map((s) => ({ ...s, gsm: gsm.trim() })) };
+}
+
+/** Only the rows of that gramasi change. */
+export function renameGramasi(f: ProductFormState, from: string, to: string): ProductFormState {
+  return { ...f, sizes: f.sizes.map((s) => (sameGsm(s.gsm, from) ? { ...s, gsm: to.trim() } : s)) };
+}
+
+/** Removes that gramasi's rows and nothing else. */
+export function removeGramasi(f: ProductFormState, gsm: string): ProductFormState {
+  return { ...f, sizes: f.sizes.filter((s) => !sameGsm(s.gsm, gsm)) };
 }
 
 /** (minQty, qtyUnit) as the API matches tiers; null while the quantity is not a number. */
@@ -212,6 +303,7 @@ const LOCAL_CODES = new Set<FormErrorCode>([
   "use_required",
   "no_sizes",
   "size_required",
+  "gsm_mixed",
   "no_tiers",
   "qty_missing",
   "qty_invalid",
@@ -241,15 +333,21 @@ export function formErrors(f: ProductFormState, server: ProductInputError[]): Fo
 
   if (!f.name.trim()) push({ code: "name_required" });
   else if (tooLong("name", f.name)) push({ code: "text_too_long", field: "name" });
-  for (const field of ["gsm", "print", "finishing"] as const) {
+  for (const field of ["print", "finishing"] as const) {
     if (tooLong(field, f[field])) push({ code: "text_too_long", field });
   }
   if (!f.use.trim()) push({ code: "use_required" });
   else if (tooLong("use", f.use, MAX_USE_LENGTH)) push({ code: "text_too_long", field: "use" });
   if (f.sizes.length === 0) push({ code: "no_sizes" });
 
+  // A product is all-gramasi or no-gramasi: the first row decides, the first row that differs is the mistake.
+  const hasGsm = (s: SizeRow) => normalizeGsm(s.gsm) !== "";
+  const mixedAt = f.sizes.findIndex((s) => hasGsm(s) !== hasGsm(f.sizes[0]!));
+  if (mixedAt > 0) push({ code: "gsm_mixed", sizeIndex: mixedAt });
+
   const qtyBad = new Set<string>();
   f.sizes.forEach((s, sizeIndex) => {
+    if (tooLong("gsm", s.gsm)) push({ code: "text_too_long", field: "gsm", sizeIndex });
     if (!s.size.trim()) push({ code: "size_required", sizeIndex });
     else if (tooLong("size", s.size)) push({ code: "text_too_long", field: "size", sizeIndex });
     if (s.tiers.length === 0) push({ code: "no_tiers", sizeIndex });
@@ -332,6 +430,7 @@ const ERROR_KEY: Record<FormErrorCode, TKey> = {
   no_sizes: "catalog.form.err.no_sizes",
   size_required: "catalog.form.err.size_required",
   duplicate_size: "catalog.form.err.duplicate_size",
+  gsm_mixed: "catalog.form.err.gsm_mixed",
   no_tiers: "catalog.form.err.no_tiers",
   qty_missing: "catalog.form.err.qty_missing",
   qty_invalid: "catalog.form.err.qty_invalid",
@@ -359,7 +458,7 @@ export function sizeChange(s: SizeRow, initial: ProductFormState): "new" | "chan
   const before = s.id ? initial.sizes.find((b) => b.id === s.id) : undefined;
   if (!before) return "new";
   const norm = (x: SizeRow) =>
-    JSON.stringify({ size: x.size.trim(), tiers: toDraft({ ...initial, sizes: [x] }).sizes[0]!.tiers });
+    JSON.stringify({ size: x.size.trim(), gsm: normalizeGsm(x.gsm).toLowerCase(), tiers: toDraft({ ...initial, sizes: [x] }).sizes[0]!.tiers });
   return norm(s) === norm(before) ? null : "changed";
 }
 
@@ -396,6 +495,8 @@ const FIELD_KEY: Record<Extract<CatalogChange, { kind: "field" }>["field"], TKey
  */
 export function describeChange(c: CatalogChange, t: TFn, lang: Lang = "id"): string {
   const qty = (n: number) => formatNumber(n, lang);
+  /** A size, with the gramasi it sits under when the product has one. */
+  const sized = (size: string, gsm?: string | null) => (gsm ? `${displaySize(size)} (${gsm})` : displaySize(size));
   switch (c.kind) {
     case "created":
       if (c.via === "form") return t("catalog.change.createdForm");
@@ -415,22 +516,28 @@ export function describeChange(c: CatalogChange, t: TFn, lang: Lang = "id"): str
     }
     case "active":
       return t(c.to ? "catalog.change.activeOn" : "catalog.change.activeOff");
+    case "gsm_added":
+      return t("catalog.change.gsmAdded", { gsm: c.gsm });
+    case "gsm_removed":
+      return t("catalog.change.gsmRemoved", { gsm: c.gsm });
+    case "gsm_renamed":
+      return t("catalog.change.gsmRenamed", { from: c.from, to: c.to });
     case "size_added":
-      return t("catalog.change.sizeAdded", { size: displaySize(c.size) });
+      return t("catalog.change.sizeAdded", { size: sized(c.size, c.gsm) });
     case "size_removed":
-      return t("catalog.change.sizeRemoved", { size: displaySize(c.size) });
+      return t("catalog.change.sizeRemoved", { size: sized(c.size, c.gsm) });
     case "size_renamed":
-      return t("catalog.change.sizeRenamed", { from: displaySize(c.from), to: displaySize(c.to) });
+      return t("catalog.change.sizeRenamed", { from: sized(c.from, c.gsm), to: displaySize(c.to) });
     case "tier_added":
     case "tier_removed":
       return t(c.kind === "tier_added" ? "catalog.change.tierAdded" : "catalog.change.tierRemoved", {
         qty: qty(c.minQty),
         unit: c.qtyUnit,
-        size: displaySize(c.size),
+        size: sized(c.size, c.gsm),
       });
     case "tier_price":
       return t("catalog.change.tierPrice", {
-        size: displaySize(c.size),
+        size: sized(c.size, c.gsm),
         qty: qty(c.minQty),
         unit: c.qtyUnit,
         from: formatRupiah(c.from),
@@ -439,7 +546,7 @@ export function describeChange(c: CatalogChange, t: TFn, lang: Lang = "id"): str
       });
     case "delivery":
       return t(c.to ? "catalog.change.deliveryOn" : "catalog.change.deliveryOff", {
-        size: displaySize(c.size),
+        size: sized(c.size, c.gsm),
         qty: qty(c.minQty),
         unit: c.qtyUnit,
       });

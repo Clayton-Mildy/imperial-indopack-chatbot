@@ -12,7 +12,7 @@ const T = (
   priceUnit: "rim" | "pcs" = "pcs"
 ): PriceTier => ({ minQty, qtyUnit, priceIdr, priceUnit, includesDelivery, note: null });
 let nextId = 0;
-const S = (size: string, tiers: PriceTier[]): Size => ({ id: `size-${++nextId}`, size, tiers });
+const S = (size: string, tiers: PriceTier[]): Size => ({ id: `size-${++nextId}`, size, gsm: null, tiers });
 
 const SIZES = [
   S("21 x 7 x 5 cm", [T(5, "rim", 1500, true), T(10, "rim", 1300, true)]),
