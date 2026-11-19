@@ -201,6 +201,9 @@ describe('the facts each section must state', () => {
     expect(c).toMatch(/beberapa gramasi[^\n]*belum dipilih[^\n]*JANGAN set send_po_form[^\n]*Tanyakan dulu[^\n]*gramasi/);
     expect(c).toMatch(/Memilih gramasi BUKAN persetujuan membeli[^\n]*send_po_form: true di giliran dia memilih HANYA kalau dia sudah jelas setuju membeli sebelumnya/);
     expect(c).toMatch(/Kalau belum pernah setuju, sebutkan harga gramasi itu dan tunggu persetujuannya/);
+    // QA replay 921 (fix wave): "yang 310 aja" after the per-gramasi quote still sent the form - the pick is named as an example.
+    expect(c).toMatch(/BUKAN persetujuan membeli: jawaban seperti "yang 310 aja"[^\n]*hanya memilih gramasi, juga kalau barang, ukuran, dan jumlahnya sudah lengkap/);
+    expect(c).toMatch(/tunggu persetujuannya seperti biasa[^\n]*send_po_form tetap false di giliran itu/);
     // The old wording stated the agreement as a fact.
     expect(c).not.toMatch(/dia sudah setuju, jadi jangan tanya/);
     expect(c).toMatch(/ulangi singkat pesanannya \([^)]*gramasi/);
