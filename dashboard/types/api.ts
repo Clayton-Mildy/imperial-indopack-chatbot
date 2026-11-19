@@ -395,8 +395,10 @@ export interface LeadReport {
   conversionPct: number | null;
   avgDaysToClose: number | null;
   daily: { day: string; newLeads: number; contacted: number }[];
+  /** New leads per WIB day per brand; a two-brand lead counts in both. */
+  dailyByBrand: { day: string; kertas_supreme: number; imperial_indopack: number }[];
   funnel: Record<LeadStatus, number>;
-  lostReasons: { reason: string; count: number }[];
+  lostReasons: { reason: LostReason | null; count: number }[];
   unreplied: {
     leadId: string;
     name: string | null;

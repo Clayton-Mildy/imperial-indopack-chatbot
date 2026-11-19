@@ -5,15 +5,17 @@ import { isReadOnly } from "@/lib/session";
 import { Header } from "@/components/layout/Header";
 import { SummaryClient } from "./SummaryClient";
 import type { LeadReport } from "@/types/api";
+import { isBrandSlug } from "@/lib/brands";
 
 export default async function SummaryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ startDate?: string; endDate?: string }>;
+  searchParams: Promise<{ startDate?: string; endDate?: string; brand?: string }>;
 }) {
   const params = await searchParams;
   const startDate = params.startDate ?? "";
   const endDate = params.endDate ?? "";
+  const brand = isBrandSlug(params.brand) ? params.brand : null;
 
   let report: LeadReport | null = null;
   // "invalid" = the API refused the range (400); "failed" = anything else. Neither is an error page.
@@ -22,6 +24,7 @@ export default async function SummaryPage({
     report = await getLeadReport({
       ...(startDate ? { startDate } : {}),
       ...(endDate ? { endDate } : {}),
+      ...(brand ? { brand } : {}),
     });
   } catch (err) {
     if (err instanceof ApiError && err.status === 400) problem = "invalid";
@@ -46,6 +49,7 @@ export default async function SummaryPage({
         problem={problem}
         activeStartDate={startDate}
         activeEndDate={endDate}
+        activeBrand={brand}
       />
     </>
   );

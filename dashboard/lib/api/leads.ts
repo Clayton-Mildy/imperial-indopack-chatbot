@@ -106,10 +106,12 @@ export async function getLeadDetail(id: string): Promise<LeadDetail> {
 export async function getLeadReport(params: {
   startDate?: string;
   endDate?: string;
+  brand?: BrandSlug;
 }): Promise<LeadReport> {
   const qs = new URLSearchParams();
   if (params.startDate) qs.set("startDate", params.startDate);
   if (params.endDate) qs.set("endDate", params.endDate);
+  if (params.brand) qs.set("brand", params.brand);
   const query = qs.toString();
   const envelope = await apiFetch<LeadReport>(`/leads/report${query ? `?${query}` : ""}`);
   return envelope.data as LeadReport;

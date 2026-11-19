@@ -4,7 +4,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { LeadReport, LeadStatus } from "@/types/api";
 import { useT, useLang } from "@/lib/i18n/LangProvider";
-import { formatNumber, type TFn, type TKey } from "@/lib/i18n/core";
+import { formatNumber, type TKey } from "@/lib/i18n/core";
+import { formatWait } from "@/lib/format";
+import { BRAND_SLUGS, BRAND_TAG, isBrandSlug, type BrandSlug } from "@/lib/brands";
+import { brandSeries, seriesMax } from "@/lib/summary/series";
 
 // Same palette as the Leads page's status pills; the funnel bars take the text colour.
 const STATUS_KEYS: LeadStatus[] = ["new", "contacted", "quoted", "won", "lost"];
@@ -15,8 +18,7 @@ const STATUS_COLOR: Record<LeadStatus, { background: string; color: string }> = 
   won: { background: "#DCFCE7", color: "#15803D" },
   lost: { background: "#FEE2E2", color: "#B91C1C" },
 };
-const BAR_NEW = "#586B34";
-const BAR_CONTACTED = "#ADCF6D";
+const BRAND_BAR: Record<BrandSlug, string> = { kertas_supreme: "#88B44E", imperial_indopack: "#C49A3C" };
 
 const thStyle: React.CSSProperties = {
   padding: "10px 12px",
@@ -61,14 +63,6 @@ const emptyStyle: React.CSSProperties = {
   fontSize: 14,
 };
 
-/** "{n} mnt / jam / hari" - same rule as the Leads page. */
-function waitText(iso: string, t: TFn): string {
-  const minutes = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
-  if (minutes < 60) return t("leads.wait.min", { n: minutes });
-  if (minutes < 60 * 24) return t("leads.wait.hour", { n: Math.floor(minutes / 60) });
-  return t("leads.wait.day", { n: Math.floor(minutes / (60 * 24)) });
-}
-
 function formatPhone(raw: string): string {
   const digits = raw.replace(/^\+/, "").replace(/\D/g, "");
   if (digits.startsWith("62") && digits.length >= 11) {
@@ -98,9 +92,10 @@ interface Props {
   problem: "invalid" | "failed" | null;
   activeStartDate: string;
   activeEndDate: string;
+  activeBrand: BrandSlug | null;
 }
 
-export function SummaryClient({ report, problem, activeStartDate, activeEndDate }: Props) {
+export function SummaryClient({ report, problem, activeStartDate, activeEndDate, activeBrand }: Props) {
   const router = useRouter();
   const t = useT();
   const lang = useLang();
@@ -112,13 +107,14 @@ export function SummaryClient({ report, problem, activeStartDate, activeEndDate 
     const current: Record<string, string> = {
       startDate: activeStartDate,
       endDate: activeEndDate,
+      brand: activeBrand ?? "",
       ...patch,
     };
     for (const [key, value] of Object.entries(current)) if (value) qs.set(key, value);
     router.push(`/summary${qs.toString() ? "?" + qs.toString() : ""}`);
   }
 
-  const hasFilter = Boolean(activeStartDate || activeEndDate);
+  const hasFilter = Boolean(activeStartDate || activeEndDate || activeBrand);
   const statusLabel = (st: LeadStatus) => t(`leads.status.${st}`);
 
   const filterBar = (
@@ -137,10 +133,23 @@ export function SummaryClient({ report, problem, activeStartDate, activeEndDate 
         onChange={(e) => navigate({ endDate: e.target.value })}
         style={inputStyle}
       />
+      <span style={{ fontSize: 12, color: "#64748B" }}>{t("summary.brand")}</span>
+      <select
+        value={activeBrand ?? ""}
+        onChange={(e) => navigate({ brand: isBrandSlug(e.target.value) ? e.target.value : "" })}
+        style={{ ...inputStyle, width: 170 }}
+      >
+        <option value="">{t("summary.allBrands")}</option>
+        {BRAND_SLUGS.map((b) => (
+          <option key={b} value={b}>
+            {t(BRAND_TAG[b].labelKey)}
+          </option>
+        ))}
+      </select>
       {hasFilter && (
         <button
           type="button"
-          onClick={() => navigate({ startDate: "", endDate: "" })}
+          onClick={() => navigate({ startDate: "", endDate: "", brand: "" })}
           style={{
             height: 34,
             padding: "0 12px",
@@ -179,7 +188,7 @@ export function SummaryClient({ report, problem, activeStartDate, activeEndDate 
     );
   }
 
-  const tiles: { label: string; hint: string; value: string; color?: string; sub?: string }[] = [
+  const tiles: { label: string; hint: string; value: string; color?: string; sub?: string; subColor?: string }[] = [
     {
       label: t("summary.tile.newLeads"),
       hint: t("summary.tile.newLeads.hint"),
@@ -198,6 +207,8 @@ export function SummaryClient({ report, problem, activeStartDate, activeEndDate 
       label: t("summary.tile.won"),
       hint: t("summary.tile.won.hint"),
       value: num(report.won),
+      sub: t("summary.tile.won.sub"),
+      subColor: "#64748B",
       color: "#15803D",
     },
     {
@@ -231,7 +242,8 @@ export function SummaryClient({ report, problem, activeStartDate, activeEndDate 
     },
   ];
 
-  const maxDaily = Math.max(0, ...report.daily.flatMap((d) => [d.newLeads, d.contacted]));
+  const series = brandSeries(report.dailyByBrand, activeBrand);
+  const maxDaily = seriesMax(series);
   const CHART_H = 140;
   const maxReason = Math.max(1, ...report.lostReasons.map((r) => r.count));
   const maxFunnel = Math.max(1, ...STATUS_KEYS.map((k) => report.funnel[k] ?? 0));
@@ -264,7 +276,7 @@ export function SummaryClient({ report, problem, activeStartDate, activeEndDate 
             >
               {tile.value}
             </div>
-            {tile.sub && <div style={{ fontSize: 12, color: "#B45309", marginTop: 2 }}>{tile.sub}</div>}
+            {tile.sub && <div style={{ fontSize: 12, color: tile.subColor ?? "#B45309", marginTop: 2 }}>{tile.sub}</div>}
             <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 6 }}>{tile.hint}</div>
           </div>
         ))}
@@ -285,10 +297,10 @@ export function SummaryClient({ report, problem, activeStartDate, activeEndDate 
         >
           <h2 style={h2Style}>{t("summary.daily.title")}</h2>
           <div style={{ display: "flex", gap: 14, fontSize: 12, color: "#475569" }}>
-            {[
-              { color: BAR_NEW, label: t("summary.daily.new") },
-              { color: BAR_CONTACTED, label: t("summary.daily.contacted") },
-            ].map((l) => (
+            {(activeBrand ? [activeBrand] : BRAND_SLUGS).map((b) => ({
+              color: BRAND_BAR[b],
+              label: t(BRAND_TAG[b].labelKey),
+            })).map((l) => (
               <span key={l.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 2, background: l.color }} />
                 {l.label}
@@ -296,12 +308,12 @@ export function SummaryClient({ report, problem, activeStartDate, activeEndDate 
             ))}
           </div>
         </div>
-        {report.daily.length === 0 ? (
+        {series.length === 0 ? (
           <div style={emptyStyle}>{t("summary.daily.empty")}</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <div style={{ display: "flex", gap: 10, minWidth: "max-content" }}>
-              {report.daily.map((d) => (
+              {series.map((d) => (
                 <div key={d.day} style={{ width: 44, flexShrink: 0 }}>
                   <div
                     style={{
@@ -312,12 +324,9 @@ export function SummaryClient({ report, problem, activeStartDate, activeEndDate 
                       gap: 3,
                     }}
                   >
-                    {[
-                      { v: d.newLeads, color: BAR_NEW },
-                      { v: d.contacted, color: BAR_CONTACTED },
-                    ].map((bar, i) => (
+                    {d.bars.map((b) => ({ v: b.n, color: BRAND_BAR[b.brand], key: b.brand })).map((bar) => (
                       <div
-                        key={i}
+                        key={bar.key}
                         style={{
                           width: 19,
                           display: "flex",
@@ -519,7 +528,7 @@ export function SummaryClient({ report, problem, activeStartDate, activeEndDate 
                         {u.lastMessage ? truncate(u.lastMessage, 80) : "—"}
                       </td>
                       <td style={{ ...tdStyle, color: "#92400E", fontWeight: 600, whiteSpace: "nowrap" }}>
-                        {waitText(u.waitingSince, t)}
+                        {formatWait((Date.now() - new Date(u.waitingSince).getTime()) / 60000, lang)}
                       </td>
                     </tr>
                   );
