@@ -11,7 +11,16 @@ import { formatQty, formatWait } from "@/lib/format";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import { formatDate, formatNumber, type Lang, type TFn, type TKey } from "@/lib/i18n/core";
 import { sizeText } from "@/lib/leads/items";
-import { fromItems, productText, quotedPriceText, toItemsPayload, type ItemRow } from "@/lib/leads/itemsForm";
+import {
+  MAX_PRODUCT,
+  MAX_SIZE,
+  fromItems,
+  productText,
+  quotedPriceText,
+  rowProblems,
+  toItemsPayload,
+  type ItemRow,
+} from "@/lib/leads/itemsForm";
 import type { Lead, LeadDetailExtras, LeadEvent, LeadKind, LeadStatus, OrderItem } from "@/types/api";
 
 const STATUS_KEYS: LeadStatus[] = ["new", "contacted", "quoted", "won", "lost"];
@@ -26,7 +35,7 @@ const TEMPERATURE_BADGE: Record<string, { label: string; background: string; col
 // The history dot: green for a win, red for a loss, blue for a quote, grey for the rest.
 const EVENT_DOT: Partial<Record<LeadStatus, string>> = { quoted: "#0369A1", won: "#15803D", lost: "#B91C1C" };
 
-/** The API's limits (PatchLeadBodySchema): 50 items, a 200-character product, a 100-character size. */
+/** The API's limit on items per lead (PatchLeadBodySchema). */
 const MAX_ITEMS = 50;
 
 const EVIDENCE_MAX = 200;
@@ -64,6 +73,7 @@ const outlineBtn: React.CSSProperties = {
   color: "#1F2421",
   cursor: "pointer",
 };
+const invalidControl: React.CSSProperties = { ...control, border: "1px solid #B91C1C" };
 const primaryBtn: React.CSSProperties = { ...outlineBtn, border: "1px solid #586B34", background: "#586B34", color: "#fff" };
 const th: React.CSSProperties = {
   padding: "9px 12px",
@@ -167,6 +177,9 @@ export function LeadDetailClient({
   const [rows, setRows] = useState<EditRow[]>([]);
   const [brands, setBrands] = useState<BrandSlug[]>([]);
   const [itemsError, setItemsError] = useState<string | null>(null);
+  // Saved, waiting for router.refresh() to bring the new items: edit mode stays open until then, so
+  // the old items never flash back in between.
+  const [awaitingRefresh, setAwaitingRefresh] = useState(false);
   const nextKey = useRef(0);
 
   // Props are the server truth after router.refresh(); local state only bridges the gap.
@@ -175,6 +188,13 @@ export function LeadDetailClient({
     setSeen({ status: lead.status, kind: lead.kind });
     setStatus(lead.status);
     setKind(lead.kind);
+  }
+  // Every staff save of items/brands stamps a new orderFieldsSetAt: its arrival is the refresh landing.
+  const [seenLock, setSeenLock] = useState(lead.orderFieldsSetAt);
+  if (seenLock !== lead.orderFieldsSetAt) {
+    setSeenLock(lead.orderFieldsSetAt);
+    setEditing(false);
+    setAwaitingRefresh(false);
   }
 
   const fmt = (d: string, o?: Intl.DateTimeFormatOptions) => formatDate(d, lang, o);
@@ -206,14 +226,21 @@ export function LeadDetailClient({
     save({ kind: next }, () => setKind(prev));
   }
 
-  const blankRow = (): EditRow => ({ key: nextKey.current++, product: "", size: "", qty: "", qtyUnit: "pcs", design: "" });
+  // A new row has no unit until staff pick one: none is invented.
+  const blankRow = (): EditRow => ({ key: nextKey.current++, product: "", size: "", qty: "", qtyUnit: "pcs", noUnit: true, design: "" });
 
   function startEdit() {
     const stored = fromItems(lead.items).map((r) => ({ ...r, key: nextKey.current++ }));
     setRows(stored.length > 0 ? stored : [blankRow()]);
     setBrands(leadBrands);
     setItemsError(null);
+    setAwaitingRefresh(false);
     setEditing(true);
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setAwaitingRefresh(false);
   }
 
   function setRow(key: number, patch: Partial<ItemRow>) {
@@ -235,10 +262,18 @@ export function LeadDetailClient({
         setItemsError(result.error ?? t("leads.saveFailed"));
         return;
       }
-      setEditing(false);
+      setAwaitingRefresh(true);
       router.refresh();
     });
   }
+
+  // Simpan replaces the list and locks it against the bot, so an empty list or no brand is never
+  // saved by accident, and text the API would refuse is flagged on its field first.
+  const problems = editing ? rowProblems(rows) : [];
+  const problemAt = (i: number, field: "product" | "size") => problems.some((p) => p.row === i && p.field === field);
+  const noItems = editing && toItemsPayload(rows).length === 0;
+  const noBrands = editing && brands.length === 0;
+  const canSaveItems = !noItems && !noBrands && problems.length === 0 && !pending && !awaitingRefresh;
 
   const closed = lead.status === "won" || lead.status === "lost";
   const showProof = closed && Boolean(lead.outcomeEvidence);
@@ -373,21 +408,25 @@ export function LeadDetailClient({
                     </div>
                     {rows.map((row, i) => {
                       const n = i + 1;
+                      const productTooLong = problemAt(i, "product");
+                      const sizeTooLong = problemAt(i, "size");
                       return (
                         <div key={row.key} style={{ display: "grid", gridTemplateColumns: EDIT_COLS, gap: 8, borderTop: "1px solid #EEF2EA", alignItems: "center", padding: "8px 12px 8px 18px" }}>
                           <input
                             value={row.product}
-                            maxLength={200}
+                            maxLength={MAX_PRODUCT}
                             onChange={(e) => setRow(row.key, { product: e.target.value })}
                             aria-label={`${t("leadDetail.items.col.product")} ${n}`}
-                            style={control}
+                            aria-invalid={productTooLong || undefined}
+                            style={productTooLong ? invalidControl : control}
                           />
                           <input
                             value={row.size}
-                            maxLength={100}
+                            maxLength={MAX_SIZE}
                             onChange={(e) => setRow(row.key, { size: e.target.value })}
                             aria-label={`${t("leadDetail.items.col.size")} ${n}`}
-                            style={control}
+                            aria-invalid={sizeTooLong || undefined}
+                            style={sizeTooLong ? invalidControl : control}
                           />
                           <input
                             value={row.qty}
@@ -397,11 +436,14 @@ export function LeadDetailClient({
                             style={control}
                           />
                           <select
-                            value={row.qtyUnit}
-                            onChange={(e) => setRow(row.key, { qtyUnit: e.target.value as ItemRow["qtyUnit"] })}
+                            value={row.noUnit ? "" : row.qtyUnit}
+                            onChange={(e) =>
+                              setRow(row.key, e.target.value ? { qtyUnit: e.target.value as ItemRow["qtyUnit"], noUnit: false } : { noUnit: true })
+                            }
                             aria-label={`${t("leadDetail.items.col.unit")} ${n}`}
                             style={control}
                           >
+                            <option value="">—</option>
                             <option value="rim">rim</option>
                             <option value="pcs">pcs</option>
                           </select>
@@ -424,6 +466,13 @@ export function LeadDetailClient({
                           >
                             ×
                           </button>
+                          {(productTooLong || sizeTooLong) && (
+                            <div role="alert" style={{ gridColumn: "1 / -1", fontSize: 12, color: "#B91C1C" }}>
+                              {productTooLong && t("leadDetail.items.tooLong.product", { max: MAX_PRODUCT })}
+                              {productTooLong && sizeTooLong && " "}
+                              {sizeTooLong && t("leadDetail.items.tooLong.size", { max: MAX_SIZE })}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -450,12 +499,22 @@ export function LeadDetailClient({
                   </div>
                   <div style={{ fontSize: 12, color: "#5F6B5A" }}>{t("leadDetail.items.lockHint")}</div>
                   {itemsError && <div role="alert" style={{ fontSize: 13, color: "#B91C1C" }}>{itemsError}</div>}
+                  {(noItems || noBrands) && (
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#8A6A2A" }}>
+                      {noItems ? t("leadDetail.items.needItem") : t("leadDetail.items.needBrand")}
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    <button type="button" onClick={() => setEditing(false)} disabled={pending} style={outlineBtn}>
+                    <button type="button" onClick={cancelEdit} disabled={pending} style={outlineBtn}>
                       {t("leadDetail.items.cancel")}
                     </button>
-                    <button type="button" onClick={saveItems} disabled={pending} style={primaryBtn}>
-                      {t("leadDetail.items.save")}
+                    <button
+                      type="button"
+                      onClick={saveItems}
+                      disabled={!canSaveItems}
+                      style={{ ...primaryBtn, ...(canSaveItems ? {} : { opacity: 0.55, cursor: "not-allowed" }) }}
+                    >
+                      {pending || awaitingRefresh ? t("leadDetail.items.saving") : t("leadDetail.items.save")}
                     </button>
                   </div>
                 </div>
