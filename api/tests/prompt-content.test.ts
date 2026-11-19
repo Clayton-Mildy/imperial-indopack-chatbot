@@ -107,7 +107,7 @@ describe('the facts each section must state', () => {
   it('Pricing: TIDAK_ADA_DI_KATALOG by its cause - several products, an unknown size, nothing to price', () => {
     const c = section('Pricing');
     expect(c).toMatch(/\(a\)[^\n]*lebih dari satu produk[^\n]*hitung_harga lagi[^\n]*nama produk persis[^\n]*gsm/);
-    expect(c).toMatch(/\(b\)[^\n]*Ukuran yang ada[^\n]*SEKALI[^\n]*custom[^\n]*confidence "low"/);
+    expect(c).toMatch(/\(b\)[^\n]*Ukuran yang ada[^\n]*pesanan custom[^\n]*JANGAN sebut harga apa pun[^\n]*confidence "low"/);
     expect(c).toMatch(/\(c\)[^\n]*stok habis[^\n]*STOK HABIS[^\n]*ukuran yang ready[^\n]*"low" hanya kalau pelanggan tetap mau/);
     expect(c).toMatch(/\(d\)[^\n]*tidak ada di katalog[^\n]*belum punya harga[^\n]*confidence "low"/);
     // Out of stock is no longer a straight hand-off.
