@@ -65,6 +65,11 @@ describe("stripCustomerText", () => {
     expect(stripCustomerText(rows)).toEqual([{ id: "a", outcomeEvidence: null, firstMessage: null }]);
   });
 
+  it("removes the follow-up notes (the Leads table's tooltip) when the row carries them", () => {
+    const rows = [{ id: "a", outcomeEvidence: null, firstMessage: null, followUpNotes: "pelanggan minta dikirim besok" }];
+    expect(stripCustomerText(rows)).toEqual([{ id: "a", outcomeEvidence: null, firstMessage: null, followUpNotes: null }]);
+  });
+
   it("removes the form message the Bukan Lead Pesan column falls back to, and keeps the rest of the form", () => {
     const rows = [
       {
