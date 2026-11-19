@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { BOX_GRAMASI } from './price-fixtures.js';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -78,8 +79,10 @@ vi.mock('../src/repositories/conversations.js', () => ({
   getLastNMessages: mockGetLastNMessages,
   mergeMessageMetadata: mockMergeMessageMetadata,
 }));
+const mockUpsertContactProfile = vi.fn();
 vi.mock('../src/repositories/contactProfiles.js', () => ({
   getContactProfile: mockGetContactProfile,
+  upsertContactProfile: mockUpsertContactProfile,
   deleteContactProfile: mockDeleteContactProfile,
 }));
 vi.mock('../src/repositories/leads.js', () => ({
@@ -98,6 +101,13 @@ vi.mock('../src/services/whatsappSender.js', () => ({
 }));
 vi.mock('../src/repositories/products.js', () => ({
   listBrands: mockListBrands,
+}));
+// The catalog the PO form's gramasi check reads (and the reference photos' owners). Empty by default:
+// no product with gramasi, so every turn sends the form as it did before the check.
+const mockGetCatalogProducts = vi.fn(async (): Promise<unknown[]> => []);
+vi.mock('../src/services/ragQuery.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/services/ragQuery.js')>()),
+  getCatalogProducts: mockGetCatalogProducts,
 }));
 // detectPpnQuestion is deliberately NOT mocked: the point of the tax gate is that a real
 // customer sentence reaches escalateConversation, so the real matcher runs here.
@@ -242,6 +252,8 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
     mockSendImageMessage.mockResolvedValue('wa-img-id');
     mockSendDocumentMessage.mockResolvedValue('wa-doc-id');
     mockListBrands.mockResolvedValue([]);
+    mockGetCatalogProducts.mockResolvedValue([]);
+    mockUpsertContactProfile.mockResolvedValue(undefined);
     mockEscalateConversation.mockResolvedValue(undefined);
     mockDetectHumanRequest.mockReturnValue(false);
     mockClassifyIntent.mockResolvedValue({ intent: 'product_inquiry', language: 'id', keywords: ['produk'] });
@@ -2148,6 +2160,178 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
       expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
       expect(mockUpdateConversationStatus).not.toHaveBeenCalledWith('conv-uuid-1', 'escalated', expect.anything(), undefined, expect.anything());
+    });
+  });
+
+  // Spec 5.6: the PO form waits for a gramasi. A net under the prompt rule (ask first, set send_po_form
+  // on the turn the customer picks): a send_po_form turn whose item's size two gramasi offer, with none
+  // chosen, asks which instead - the next turn's rules send the form once one is recorded.
+  describe('the PO form waits for a gramasi', () => {
+    // 'Box Makan Ivory (CONTOH)': 20x20x7 in 270 and 300 gsm, 25x25x7 in 300 gsm only.
+    const BOX = { ...BOX_GRAMASI, variants: [...BOX_GRAMASI.variants!, { ...BOX_GRAMASI.variants![0]!, id: 'v-ii2-25-300', name: '25x25x7' }] };
+    const poTurn = (profileUpdate?: Record<string, unknown>) =>
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true, ...(profileUpdate && { profileUpdate }) });
+    const profile = (item: Record<string, unknown>) => mockGetContactProfile.mockResolvedValue({
+      customerType: null, profile: { name: 'Contoh', items: [{ product: 'Box Makan Ivory', qty: 10, qty_unit: 'rim', has_design: true, ...item }] },
+    });
+    const payload = (photo: boolean, id: string) => (photo ? makeImagePayload(`${id}p`, 'oke kak saya ambil') : makeTextPayload(id, 'oke kak saya ambil'));
+    const rowFor = (body: string) => mockInsertMessage.mock.calls.map((c) => c[0]).find((r) => r.body === body);
+    const handedToTeam = () => mockUpdateConversationStatus.mock.calls.some((c) => c[1] === 'escalated');
+    const paths = [['text', false], ['photo', true]] as const;
+
+    beforeEach(() => {
+      mockGetPoFormUrls.mockResolvedValue(PO_URLS);
+      mockGetCatalogProducts.mockResolvedValue([BOX]);
+      poTurn();
+    });
+
+    it.each(paths)('holds the PO form and asks which gramasi when two gramasi offer the size (%s path)', async (_path, photo) => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { gramasiBeforePoLine } = await import('../src/domain/constants.js');
+      profile({ size: '20x20x7' });
+
+      await routeInboundBaileysMessage(payload(photo, 'wamid-GR1'));
+      await vi.runAllTimersAsync();
+
+      const question = gramasiBeforePoLine(['270 gsm', '300 gsm']);
+      expect(sentTexts()).toEqual(['AI reply', question]);
+      expect(sentTexts().join(' ')).not.toContain(PO_URL);
+      expect(rowFor(question).metadata).toMatchObject({ source: 'gramasi_question' });
+      // A question for the customer, not a job for the team.
+      expect(handedToTeam()).toBe(false);
+    });
+
+    it('holds the team\'s PO promise too: a form waiting on the gramasi hands nothing to the team', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { gramasiBeforePoLine, CANNED_PO_FORM_FROM_TEAM, PO_FORM_PLACEHOLDER_URL } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue({ cetak: PO_FORM_PLACEHOLDER_URL, plano: PO_FORM_PLACEHOLDER_URL });
+      profile({ size: '20x20x7' });
+
+      await routeInboundBaileysMessage(payload(false, 'wamid-GR2'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', gramasiBeforePoLine(['270 gsm', '300 gsm'])]);
+      expect(sentTexts()).not.toContain(CANNED_PO_FORM_FROM_TEAM);
+      expect(handedToTeam()).toBe(false);
+      expect(mockEscalateConversation).not.toHaveBeenCalled();
+    });
+
+    // Once per order: a second send_po_form turn that still finds no gramasi (the pick was not recorded,
+    // or an item the customer moved on from) sends the form - the net never holds it twice.
+    it('asks once: the question already went and no form after it -> the form goes', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { gramasiBeforePoLine, poFormMessage } = await import('../src/domain/constants.js');
+      const question = gramasiBeforePoLine(['270 gsm', '300 gsm']);
+      mockGetLastNMessages.mockResolvedValue([
+        { role: 'assistant', body: 'AI reply' },
+        { role: 'assistant', body: question, metadata: { source: 'gramasi_question' } },
+        { role: 'user', body: 'oke kak' },
+      ]);
+      profile({ size: '20x20x7' });
+
+      await routeInboundBaileysMessage(payload(false, 'wamid-GR9'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+    });
+
+    it('a PO form after the last question starts a new order: it asks again', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { gramasiBeforePoLine, poFormMessage } = await import('../src/domain/constants.js');
+      const question = gramasiBeforePoLine(['270 gsm', '300 gsm']);
+      mockGetLastNMessages.mockResolvedValue([
+        { role: 'assistant', body: question, metadata: { source: 'gramasi_question' } },
+        { role: 'assistant', body: poFormMessage(PO_URL), metadata: { source: 'po_form' } },
+        { role: 'user', body: 'tambah satu lagi kak' },
+      ]);
+      profile({ size: '20x20x7' });
+
+      await routeInboundBaileysMessage(payload(false, 'wamid-GR10'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', question]);
+    });
+
+    it.each(paths)('sends the form when the item has a chosen gramasi (%s path)', async (_path, photo) => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      profile({ size: '20x20x7', gsm: '300' }); // "300" is 300 gsm
+
+      await routeInboundBaileysMessage(payload(photo, 'wamid-GR3'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+      expect(mockUpsertContactProfile).not.toHaveBeenCalled();
+    });
+
+    // The QA case "yang 300 aja, saya ambil": the pick and the agreement in one turn.
+    it("this turn's own pick counts, before the saved profile shows it", async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      profile({ size: '20x20x7' });
+      poTurn({ items: [{ product: 'Box Makan Ivory', size: '20x20x7', gsm: '300 gsm' }] });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-GR4', 'yang 300 aja kak, saya ambil'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+    });
+
+    it.each(paths)('fills the only gramasi into the profile and sends the form (%s path)', async (_path, photo) => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      profile({ size: '25x25x7' });
+
+      await routeInboundBaileysMessage(payload(photo, 'wamid-GR5'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+      // The saved item, matched by product and size, takes the gramasi - before the form is made.
+      expect(mockUpsertContactProfile).toHaveBeenCalledTimes(1);
+      expect(mockUpsertContactProfile).toHaveBeenCalledWith('contact-uuid-1', { profilePatch: { items: [{ product: 'Box Makan Ivory', size: '25x25x7', gsm: '300 gsm' }] } });
+      expect(mockUpsertContactProfile.mock.invocationCallOrder[0]!).toBeLessThan(mockGetPoFormUrls.mock.invocationCallOrder[0]!);
+    });
+
+    it('an item that already has its only gramasi is not written again', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      profile({ size: '25x25x7', gsm: '300 gsm' });
+
+      await routeInboundBaileysMessage(payload(false, 'wamid-GR6'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+      expect(mockUpsertContactProfile).not.toHaveBeenCalled();
+    });
+
+    it('a fill that cannot be saved still sends the form', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => { });
+      mockUpsertContactProfile.mockRejectedValue(new Error('db down'));
+      profile({ size: '25x25x7' });
+
+      await routeInboundBaileysMessage(payload(false, 'wamid-GR7'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('gramasi'))).toBe(true);
+      warn.mockRestore();
+    });
+
+    it.each(paths)('an unreadable catalog still sends the form (%s path)', async (_path, photo) => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => { });
+      mockGetCatalogProducts.mockRejectedValue(new Error('db down'));
+      profile({ size: '20x20x7' });
+
+      await routeInboundBaileysMessage(payload(photo, 'wamid-GR8'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply', poFormMessage(PO_URL)]);
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('gramasi'))).toBe(true);
+      warn.mockRestore();
     });
   });
 

@@ -2,12 +2,12 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { upsertContact } from '../repositories/contacts.js';
 import { upsertConversation, insertMessage, insertMessageIfNew, claimSyncedInbound, resetConversationToActive, resetConversationContext, findConversationById, findMessageByWaMessageId, updateConversationStatus, getLastNMessages, mergeMessageMetadata } from '../repositories/conversations.js';
-import { getContactProfile, deleteContactProfile } from '../repositories/contactProfiles.js';
+import { getContactProfile, upsertContactProfile, deleteContactProfile } from '../repositories/contactProfiles.js';
 import { resetLeadsForContact, tagNonSalesLead } from '../repositories/leads.js';
 import { kindFromNonSalesReason } from '../domain/leadStages.js';
 import { getFirstPhoneNumber, findPhoneNumberByProviderId } from '../repositories/phoneNumbers.js';
 import { getAiEnabledDefault, getPoFormUrls } from '../repositories/appSettings.js';
-import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormsMessage, isPoFormPlaceholder, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM } from '../domain/constants.js';
+import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormsMessage, isPoFormPlaceholder, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM, gramasiBeforePoLine } from '../domain/constants.js';
 import { buildContextAndCallAI } from './aiLayer.js';
 import { resolveCatalogDelivery, isPriceRequest, asksForPriceList, forgetSentPriceLists, CATALOG_NOT_SENT_NOTE, type CatalogDelivery } from './catalogDelivery.js';
 import { extractCatalogKeywordsFromImage, visionExtractToKeywords, type VisionExtract } from './visionKeywords.js';
@@ -16,6 +16,7 @@ import { escalateConversation, detectComplaint, detectNonSalesTopic, detectHuman
 import { sendTextMessage, sendDocumentMessage, sendImageMessage } from './whatsappSender.js';
 import { recordOutboundMedia } from './outboundMedia.js';
 import { getCatalogProducts } from './ragQuery.js';
+import { gramasiChoice, type GramasiChoice } from './gramasiChoice.js';
 import { MESSAGE_SOURCE } from '../domain/messageSources.js';
 import { saveConversationInsights } from './conversationInsights.js';
 import { recordLeadFromMessage } from './leadMatcher.js';
@@ -23,7 +24,8 @@ import { syncContactChat } from './chakraSync.js';
 import type { BaileysInboundPayload } from '../domain/schemas.js';
 import type { AIResponse, PhoneNumber, PromptSections } from '../domain/types.js';
 import { notifyStaff } from './staffNotify.js';
-import { mergeOrderFacts, orderDetailsSummary } from '../domain/orderProfile.js';
+import { mergeOrderFacts, orderDetailsSummary, sanitizeItem, type OrderItem } from '../domain/orderProfile.js';
+import { sameGsm } from '../domain/gramasi.js';
 import { PO_FORM_KINDS, poFormsForOrder, updateSaysHasDesign, type PoFormKind } from '../domain/poForms.js';
 import { claudeTokensExhausted } from './claude.js';
 import { getConfig } from '../config.js';
@@ -284,6 +286,11 @@ interface TeamFollowUp {
   examples?: boolean;
   /** The customer sent a logo/design and the reply acknowledged it: the team checks the design (spec 7.6). */
   design?: boolean;
+  /**
+   * Not the team's: the question that holds the PO form back until a gramasi is chosen
+   * (gramasiQuestionBeforePo). It goes where the form would have gone; needsTeam ignores it.
+   */
+  gramasiQuestion?: string | null;
 }
 
 function teamFollowUp(r: AIResponse, customerText: string, po?: { teamReason: string | null } | null): TeamFollowUp {
@@ -305,7 +312,9 @@ function teamFollowUp(r: AIResponse, customerText: string, po?: { teamReason: st
 async function onceOnlyFollowUp(
   conv: { id: string; status: string; contactId: string }, r: AIResponse, customerText: string
 ): Promise<{ followUp: TeamFollowUp; poForm: PoFormLine | null }> {
-  let poForm = r.sendPoForm ? await poFormToSend(conv.contactId, r) : null;
+  // A size two gramasi offer, with none chosen, asks which instead of sending the form (or its promise).
+  const gramasiQuestion = r.sendPoForm ? await gramasiQuestionBeforePo(conv, r) : null;
+  let poForm = r.sendPoForm && !gramasiQuestion ? await poFormToSend(conv.contactId, r) : null;
   const due = [
     r.examplesForTeam ? CANNED_DESIGN_EXAMPLES_FROM_TEAM : null,
     poForm?.teamReason ? poForm.body : null,
@@ -314,6 +323,7 @@ async function onceOnlyFollowUp(
   if (poForm && sent.has(poForm.body)) poForm = null;
   const followUp = teamFollowUp(r, customerText, poForm);
   if (sent.has(CANNED_DESIGN_EXAMPLES_FROM_TEAM)) followUp.examples = false;
+  if (gramasiQuestion) followUp.gramasiQuestion = gramasiQuestion;
   return { followUp, poForm };
 }
 
@@ -716,10 +726,10 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
       if (sentId === null) notifyReplyNotSent(conversationId, reply);
     }
     // After the text: the reference photos in order, the team's design-examples promise, then the PO
-    // form link (or the team's promise).
+    // form link (or the team's promise, or the gramasi question holding the form back).
     const photos = await sendReferencePhotos(aiResponse.imageUrls, async (url) => (await entry.sendImage?.(url)) ?? null);
     const examplesSent = followUp.examples ? await sendFixedLine(CANNED_DESIGN_EXAMPLES_FROM_TEAM, 'design_examples', (text) => entry.sendReply(text)) : null;
-    const poSent = poForm ? await sendFixedLine(poForm.body, MESSAGE_SOURCE.poForm, (text) => entry.sendReply(text)) : null;
+    const poSent = await sendPoLine(poForm, followUp, (text) => entry.sendReply(text));
     await deliverPriceList(reply, Boolean(aiResponse.catalogUrl));
     // Rows in send order, so the thread reads as the customer saw it.
     if (reply) await insertMessage({ conversationId, role: 'assistant', body: reply, waMessageId: sentId || undefined, status: sentId ? 'sent' : 'saved', ...(aiResponse.priceCalls?.length ? { metadata: priceCallsMetadata(aiResponse) } : {}) });
@@ -931,7 +941,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   const photos = await sendReferencePhotos(aiResponse.imageUrls, (url) => sendImageMessage(phoneNumber.phoneNumberId, replyJid, url, ''));
   const sendLine = (text: string) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text);
   const examplesSent = followUp.examples ? await sendFixedLine(CANNED_DESIGN_EXAMPLES_FROM_TEAM, 'design_examples', sendLine) : null;
-  const poSent = poForm ? await sendFixedLine(poForm.body, MESSAGE_SOURCE.poForm, sendLine) : null;
+  const poSent = await sendPoLine(poForm, followUp, sendLine);
   if (aiResponse.catalogUrl) {
     // Price list asked for via the photo's caption. No keyword trigger runs on this path,
     // so without this the model says "katalognya sudah dikirim" and nothing is sent. Nothing was
@@ -984,11 +994,16 @@ const PO_FORM_NOT_SET_REASON = 'Form PO belum diatur di Pengaturan';
  */
 interface PoFormLine { body: string; teamReason: string | null }
 
+/** This turn's order facts: the saved profile (saved just before) with this turn's profile_update merged in. Throws when the profile cannot be read. */
+async function turnOrderFacts(contactId: string, r: AIResponse): Promise<Record<string, unknown>> {
+  const saved = await getContactProfile(contactId);
+  return mergeOrderFacts(saved?.profile ?? {}, r.profileUpdate ?? {});
+}
+
 /** The form(s) for this order; [cetak, plano] when the saved profile cannot be read. */
 async function poFormKindsFor(contactId: string, r: AIResponse): Promise<PoFormKind[]> {
   try {
-    const saved = await getContactProfile(contactId);
-    return poFormsForOrder(mergeOrderFacts(saved?.profile ?? {}, r.profileUpdate ?? {}));
+    return poFormsForOrder(await turnOrderFacts(contactId, r));
   } catch (err) {
     console.warn('[messageRouter] profile unreadable for the PO form - sending both:', err instanceof Error ? err.message : err);
     return [...PO_FORM_KINDS];
@@ -1010,10 +1025,72 @@ async function poFormToSend(contactId: string, r: AIResponse): Promise<PoFormLin
   }
 }
 
+/**
+ * The PO form waits for a gramasi (spec 5.6), a net under the prompt rule and never a gate. An order
+ * item of this turn's facts whose size two or more gramasi offer, with none chosen (gramasiChoice
+ * 'ask'), holds the form back: the customer is asked which, for the first such item, and the next
+ * turn's rules send the form once one is recorded. Asked once per order (gramasiAlreadyAsked). A size
+ * only one gramasi offers has that gramasi written into the saved profile first, matched by product
+ * and size, so the hand-off summary and the lead name it. An unreadable profile or catalog lets the
+ * form through, and so does a failed fill.
+ */
+async function gramasiQuestionBeforePo(conv: { id: string; contactId: string }, r: AIResponse): Promise<string | null> {
+  let choices: { item: OrderItem; choice: GramasiChoice }[];
+  try {
+    const facts = await turnOrderFacts(conv.contactId, r);
+    const catalog = await getCatalogProducts();
+    choices = (Array.isArray(facts.items) ? facts.items : []).filter(isRecord).map(sanitizeItem)
+      .map((item) => ({ item, choice: gramasiChoice(item, catalog) }));
+  } catch (err) {
+    console.warn('[messageRouter] gramasi check skipped - the PO form goes:', err instanceof Error ? err.message : err);
+    return null;
+  }
+  const fills = choices.flatMap(({ item, choice }) =>
+    choice.kind === 'only' && !sameGsm(item.gsm, choice.gsm) ? [{ product: item.product, size: item.size, gsm: choice.gsm }] : []);
+  if (fills.length > 0) {
+    await upsertContactProfile(conv.contactId, { profilePatch: { items: fills } })
+      .catch((err) => console.warn('[messageRouter] only gramasi not saved to the profile - the PO form still goes:', err instanceof Error ? err.message : err));
+  }
+  const ask = choices.map((c) => c.choice).find((c): c is Extract<GramasiChoice, { kind: 'ask' }> => c.kind === 'ask');
+  if (!ask) return null;
+  if (await gramasiAlreadyAsked(conv.id)) {
+    console.warn('[messageRouter] gramasi already asked for this order - the PO form goes without one');
+    return null;
+  }
+  return gramasiBeforePoLine(ask.options);
+}
+
+/**
+ * The gramasi question is asked once per order: a recent bot row is the question, with no PO form row
+ * after it. A second send_po_form turn that still finds no gramasi - the pick was not recorded, or the
+ * item is one the customer moved on from - sends the form rather than asking forever. A failed read
+ * counts as not asked.
+ */
+async function gramasiAlreadyAsked(conversationId: string): Promise<boolean> {
+  const recent = await getLastNMessages(conversationId, MAX_CONTEXT_MESSAGES).catch(() => []);
+  let asked = false;
+  // Oldest first: a PO form sent after the question ends that order.
+  for (const m of recent) {
+    if (m.role !== 'assistant') continue;
+    if (m.metadata?.source === MESSAGE_SOURCE.gramasiQuestion) asked = true;
+    else if (m.metadata?.source === MESSAGE_SOURCE.poForm) asked = false;
+  }
+  return asked;
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
 /** 'form PO cetak', 'form PO cetak dan plano' - for the team's hand-off reason. */
 const formsNamed = (kinds: PoFormKind[]): string => `form PO ${kinds.join(' dan ')}`;
 
 interface FixedLineSent { body: string; source: string; wamid: string | null }
+
+/** What goes where the PO form goes: the form (or the team's promise), or the gramasi question holding it back. */
+async function sendPoLine(poForm: PoFormLine | null, f: TeamFollowUp, send: (text: string) => Promise<string | null>): Promise<FixedLineSent | null> {
+  if (poForm) return sendFixedLine(poForm.body, MESSAGE_SOURCE.poForm, send);
+  if (f.gramasiQuestion) return sendFixedLine(f.gramasiQuestion, MESSAGE_SOURCE.gramasiQuestion, send);
+  return null;
+}
 
 /** Sends a fixed line after the reply (the PO form, the design-examples promise); a failed send is still stored, as 'saved'. */
 async function sendFixedLine(body: string, source: string, send: (text: string) => Promise<string | null>): Promise<FixedLineSent> {

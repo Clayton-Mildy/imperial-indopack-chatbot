@@ -106,7 +106,9 @@ describe('the facts each section must state', () => {
   // Review fix (Task 10 I2): TIDAK_ADA_DI_KATALOG has three causes, each with its own step, stated once.
   it('Pricing: TIDAK_ADA_DI_KATALOG by its cause - several products, an unknown size, nothing to price', () => {
     const c = section('Pricing');
-    expect(c).toMatch(/\(a\)[^\n]*lebih dari satu produk[^\n]*hitung_harga lagi[^\n]*nama produk persis[^\n]*gsm/);
+    expect(c).toMatch(/\(a\)[^\n]*lebih dari satu produk[^\n]*hitung_harga lagi[^\n]*nama produk persis/);
+    // Gramasi is an option inside one product now, not what tells two products apart.
+    expect(c).not.toMatch(/\(a\)[^\n]*gsm/);
     expect(c).toMatch(/\(b\)[^\n]*Ukuran yang ada[^\n]*pesanan custom[^\n]*JANGAN sebut harga apa pun[^\n]*confidence "low"/);
     expect(c).toMatch(/\(c\)[^\n]*stok habis[^\n]*STOK HABIS[^\n]*ukuran yang ready[^\n]*"low" hanya kalau pelanggan tetap mau/);
     expect(c).toMatch(/\(d\)[^\n]*tidak ada di katalog[^\n]*belum punya harga[^\n]*confidence "low"/);
@@ -126,6 +128,22 @@ describe('the facts each section must state', () => {
   // Review fix (Task 10 m3): the strict check takes only tool figures once the tool ran this turn.
   it('Pricing: once hitung_harga ran this turn, every price in the reply comes from it', () =>
     expect(section('Pricing')).toMatch(/hitung_harga sudah dipanggil[^\n]*SEMUA harga[^\n]*setiap barang/));
+
+  // Spec 5.6: no gramasi named -> every gramasi hitung_harga returns, one short line each; once one is
+  // named or picked it is recorded on the item and is the only one quoted.
+  it('Pricing: no gramasi named quotes every gramasi; a picked one is recorded and quoted alone', () => {
+    const c = section('Pricing');
+    expect(c).toMatch(/belum menyebut atau memilih gramasi[^\n]*hitung_harga TANPA gramasi[^\n]*SEMUA gramasi[^\n]*satu baris singkat/);
+    expect(c).toMatch(/menyebut atau memilih satu gramasi[^\n]*items\[\]\.gsm[^\n]*gramasi itu saja/);
+    // The custom-gsm rule stays.
+    expect(c).toMatch(/model, gsm, atau cetakan yang tidak ada di KATALOG PRODUK[^\n]*pesanan custom/);
+  });
+
+  it('no prompt line says the gramasi is part of the product name', () => {
+    expect(all).not.toMatch(/beberapa baris dengan gsm/);
+    expect(section('Order Details')).not.toMatch(/termasuk gsm/);
+    expect(section('Order Details')).toMatch(/gsm[^\n]*bukan di nama product/);
+  });
 
   it('Pricing: every price figure is written "Rp N" - no ribu, rb, IDR or ranges', () => {
     const c = section('Pricing');
@@ -174,6 +192,14 @@ describe('the facts each section must state', () => {
     expect(c).not.toMatch(/https?:\/\/|forms\.gle/i);
     // The model still never writes either link or the form line itself.
     expect(c).toMatch(/JANGAN[^\n]*link/i);
+  });
+
+  // Spec 5.6: several gramasi and none chosen -> ask first, no send_po_form; set it on the turn they pick.
+  it('PO Form: asks the gramasi before the form, sends it on the turn the customer picks, recap names it', () => {
+    const c = section('PO Form');
+    expect(c).toMatch(/beberapa gramasi[^\n]*belum dipilih[^\n]*JANGAN set send_po_form[^\n]*Tanyakan dulu[^\n]*gramasi/);
+    expect(c).toMatch(/pelanggan memilih[^\n]*send_po_form: true di giliran itu/);
+    expect(c).toMatch(/ulangi singkat pesanannya \([^)]*gramasi/);
   });
 
   // Review fix (Task 10 m4): the close-line names no PO form, and a reply may end without a question.
