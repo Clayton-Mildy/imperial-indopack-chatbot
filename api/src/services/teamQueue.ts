@@ -6,7 +6,7 @@
 
 import { HANDOFF_CATEGORIES, type HandoffCategory } from '../domain/handoff.js';
 import { contactHeadline, orderDetailRows, orderItemsSummary, profileFacts, type OrderDetailKey } from '../domain/orderDetails.js';
-import type { BrandSlug, OrderItem } from '../domain/orderProfile.js';
+import type { BrandSlug } from '../domain/orderProfile.js';
 import { listHeldConversations } from '../repositories/conversations.js';
 import { getBotSettings } from '../repositories/appSettings.js';
 
@@ -51,7 +51,7 @@ export async function getTeamQueue(opts: { assignedTo?: string } = {}): Promise<
       conversationId: row.id,
       ...contactHeadline(facts, row.displayName),
       waId: row.waId,
-      itemsSummary: orderItemsSummary(Array.isArray(facts.items) ? (facts.items as OrderItem[]) : []),
+      itemsSummary: orderItemsSummary(Array.isArray(facts.items) ? facts.items : []),
       detailsFilled: details.filter((d) => d.filled).length,
       missing: details.filter((d) => !d.filled).map((d) => d.key),
       waitingSince: row.waitingSince.toISOString(),

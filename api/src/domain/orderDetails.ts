@@ -67,8 +67,11 @@ export function orderDetailRows(facts: Record<string, unknown>): OrderDetailRow[
   return ORDER_DETAIL_KEYS.map((key) => ({ key, filled: values[key] !== '', value: values[key] || null }));
 }
 
-/** '<model> · <size> · <qty> · desain ada|belum ada desain' per item, unknown parts dropped, items joined ' + '. */
-export function orderItemsSummary(items: OrderItem[]): string {
+/**
+ * '<model> · <size> · <qty> · desain ada|belum ada desain' per item, unknown parts dropped, items joined ' + '.
+ * Takes the stored jsonb array as it is: anything that is not an item is skipped.
+ */
+export function orderItemsSummary(items: unknown[]): string {
   return items
     .filter(isRecord)
     .map((raw) => {

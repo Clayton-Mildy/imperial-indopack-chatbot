@@ -140,11 +140,14 @@ export interface ConversationListRow extends Conversation {
   poFormSentAt: Date | null;
 }
 
-// The newest message of any role - the same row lastMessageAtExpr times, so the preview and its
-// time agree. The `m` alias is deliberate - see the warning on lastMessageAtExpr below.
+// The last line of the chat itself - customer, bot or staff. role 'system_note' rows are the
+// dashboard's own notes (a staff takeover, a reopen, /new), written right after the line they are
+// about; previewing one put "X membalas langsung. AI berhenti..." over every taken-over chat.
+// lastMessageAtExpr skips them too, so the time shown beside the preview is that line's time.
+// The `m` alias is deliberate - see the warning on lastMessageAtExpr below.
 const lastMessageExpr = sql<{ body: string; role: string; senderName: string | null } | null>`(
   SELECT json_build_object('body', m.body, 'role', m.role, 'senderName', m.sender_name)
-  FROM messages m WHERE m.conversation_id = conversations.id
+  FROM messages m WHERE m.conversation_id = conversations.id AND m.role <> 'system_note'
   ORDER BY m.created_at DESC, m.id DESC LIMIT 1
 )`;
 
@@ -177,8 +180,9 @@ export async function listConversations(
   // interpolated column when the query has a join, and `messages` has its own `id`, so an
   // unqualified render would bind to messages.id, match nothing, and silently fall back to
   // created_at for every row. The `m` alias makes that impossible to get wrong.
+  // Internal notes are not chat lines (see lastMessageExpr): they neither move the time nor the sort.
   const lastMessageAtExpr = sql<Date>`COALESCE(
-    (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = conversations.id),
+    (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = conversations.id AND m.role <> 'system_note'),
     conversations.created_at
   )`;
 

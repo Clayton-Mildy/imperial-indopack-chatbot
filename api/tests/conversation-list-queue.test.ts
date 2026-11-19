@@ -76,6 +76,8 @@ const SEEDS: Record<'andi' | 'rina' | 'tanpa' | 'lina' | 'aktif' | 'selesai', Se
       { role: 'assistant', body: 'Baik kak, tim kami cek dulu ya', minAgo: 30, source: 'escalation' },
       { role: 'assistant', body: CANNED_PO_FORM_FROM_TEAM, minAgo: 25, source: MESSAGE_SOURCE.poForm },
       { role: 'assistant', body: 'Halo kak, saya Admin QA', minAgo: 20, senderName: 'Admin QA' },
+      // markHumanTakeover's internal note, written right after the staff reply: never the preview.
+      { role: 'system_note', body: 'Admin QA membalas langsung. AI berhenti membalas percakapan ini sampai dikembalikan lewat tombol "Kembalikan ke AI".', minAgo: 19 },
     ],
   },
   // Held with no category and no escalation message: grouped as lainnya, waiting since updated_at.
@@ -192,6 +194,15 @@ describe('the conversation list', () => {
     expect(items.find((i) => i.id === id.aktif)).toMatchObject({
       customerName: 'Contoh Aktif', businessName: null, brands: [], poFormSentAt: null, handoffCategory: null, escalatedAt: null,
     });
+  });
+
+  // Staff takeover and reopen write role 'system_note' rows; the inbox previews the last chat line
+  // and shows that line's time, so a note newer than it changes neither.
+  it('the preview and its time skip internal notes', async () => {
+    const { items } = await list({ search: PREFIX });
+    const rina = items.find((i) => i.id === id.rina)!;
+    expect(rina.lastMessage).toEqual({ body: 'Halo kak, saya Admin QA', role: 'assistant', senderName: 'Admin QA' });
+    expect(rina.lastMessageAt.toISOString()).toBe(ago(20).toISOString());
   });
 
   it('GET /api/v1/conversations takes view and search, and meta carries the counts', async () => {
