@@ -100,7 +100,7 @@ Isi data lead dari percakapan ini. Hanya dari apa yang benar-benar tertulis - ja
 - brands: daftar merek yang diminati pelanggan: "imperial_indopack" (box karton cetak) dan/atau "kertas_supreme" (kertas bungkus makanan cetak). Kosongkan [] bila belum jelas.
 - items: daftar barang yang diminta pelanggan, satu objek per barang: {"product": nama barang, "size": ukuran mis. "30x30", "gsm": gramatur, "print": cetakan/warna, "qty": jumlah (angka), "qty_unit": "rim" atau "pcs", "has_design": true bila pelanggan sudah punya desain, false bila belum}. Isi hanya field yang disebut. Kosongkan [] bila belum ada barang.
 
-- lead_kind: jenis percakapan ini. "lead" = calon pembeli (termasuk yang mencari barang yang tidak kami jual - barang yang tidak kami jual tetap lead). "kurir" = kurir / ojek online / pengantar paket. "status_pesanan" = menanyakan atau menagih pesanan, pembayaran, atau pengiriman yang sudah ada. "lamaran_kerja" = melamar kerja. "supplier" = pihak yang menawarkan barangnya kepada kami. "lainnya" = obrolan pribadi, salah sambung, spam. Pembeli yang menanyakan pesanan / pembayaran / pengiriman miliknya sendiri di chat yang sama tetap "lead", begitu juga pelanggan lama yang memesan lagi di chat ini. Bila bukan "lead", isi stage dengan null. Bila bukan calon pembeli sama sekali, field lain diabaikan.
+- lead_kind: jenis percakapan ini. "lead" = calon pembeli (termasuk yang mencari barang yang tidak kami jual - barang yang tidak kami jual tetap lead). "kurir" = kurir / ojek online / pengantar paket (termasuk yang mau mengantar paket ke gudang kami dan menanyakan siapa penerimanya; paket yang mereka antar bukan pesanan pelanggan kami). "status_pesanan" = menanyakan atau menagih pesanan, pembayaran, atau pengiriman yang sudah ada. "lamaran_kerja" = melamar kerja. "supplier" = pihak yang menawarkan barangnya kepada kami. "lainnya" = obrolan pribadi, salah sambung, spam. Pembeli yang menanyakan pesanan / pembayaran / pengiriman miliknya sendiri di chat yang sama tetap "lead", begitu juga pelanggan lama yang memesan lagi di chat ini. Bila bukan "lead", isi stage dengan null. Bila bukan calon pembeli sama sekali, field lain diabaikan.
 - stage (hanya bila lead_kind "lead"): "contacted" = pelanggan menyatakan kebutuhan atau menanyakan produk. "won" = pelanggan JELAS setuju membeli, mis. "oke saya ambil 10 rim", minta nomor rekening, atau mengirim alamat pengiriman untuk pesanan; tanya harga atau "nanti saya kabari" BUKAN won. "lost" = pelanggan menolak, sudah membeli di tempat lain, atau menutup percakapan setelah kami bilang barangnya tidak ada (mis. "ok makasih" setelah "belum ada di kami"); diam / tidak membalas BUKAN lost. Bila ragu, isi null.
 - evidence: wajib bila stage "won" atau "lost" - salin PERSIS satu pesan Pelanggan (kata per kata, jangan diringkas, jangan memakai kata Bot atau Staf) yang menjadi buktinya. Selain itu null.
 - lost_reason (hanya bila stage "lost"): "barang_tidak_ada", "harga", "beli_di_tempat_lain", "tidak_jadi", "tidak_cocok", "di_bawah_minimum" (jumlah pesanan di bawah minimum order kami), atau "lainnya".
@@ -318,7 +318,11 @@ function planKindAndStage(
 
   // The AI names the kind only while the chat is still being qualified; a buyer past Penawaran (or Won)
   // asking about their own order is still a lead.
-  if (kind && (status === 'new' || status === 'contacted')) {
+  // A non-buyer kind the live rule set (courier, supplier, job seeker) is not swapped for another non-buyer
+  // kind by the model: it called a courier asking who receives a parcel "status_pesanan" (QA courier).
+  // Only "lead" - the rule misfired on a buyer - overrides it.
+  const ruleHeld = lead.kindSetBy === 'rule' && lead.kind !== 'lead' && kind !== 'lead';
+  if (kind && !ruleHeld && (status === 'new' || status === 'contacted')) {
     plan.steps.push({ op: 'stage', change: { kind, kindSetBy: 'ai', actor: 'ai' } });
     if (!kindLocked && kind !== curKind) plan.wouldChange.push(`kind ${curKind}->${kind}`);
     if (!kindLocked) curKind = kind;
