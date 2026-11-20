@@ -11,6 +11,10 @@ describe("namesPrice", () => {
       expect(namesPrice(s), s).toBe(true);
     }
   });
+  it("spots a bare figure after a price word, like the API", () => {
+    for (const s of ["harga 4.500.000 ya kak", "jadi 4500000 aja"]) expect(namesPrice(s), s).toBe(true);
+    for (const s of ["jadi 2500 pcs ya", "halo kak"]) expect(namesPrice(s), s).toBe(false);
+  });
   it("does not treat quantities as prices", () => {
     for (const s of ["10 ribu pcs", "2 juta lembar", "5rb biji", "halo kak", "ukuran 30x40"]) {
       expect(namesPrice(s), s).toBe(false);

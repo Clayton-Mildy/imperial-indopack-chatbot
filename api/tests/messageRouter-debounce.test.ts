@@ -3624,6 +3624,18 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       expect(mockNotifyStaff).toHaveBeenCalledWith(expect.objectContaining({ title: 'Pelanggan menunggu balasan' }));
     });
 
+    it('an agreement that also complains goes to the bot, not the fixed line (review)', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { CANNED_STAFF_PRICE_AGREED } = await import('../src/domain/constants.js');
+      mockGetLastNMessages.mockResolvedValue([QUOTE, STAFF] as HistoryRow[]);
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Mohon maaf kak 🙏', sendPoForm: true });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-SP5', 'oke deal kak, tapi pesanan kemarin rusak'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).not.toContain(CANNED_STAFF_PRICE_AGREED);
+    });
+
     it('a bot quote after the staff price is an ordinary agreement again', async () => {
       const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
       const { poFormMessage } = await import('../src/domain/constants.js');

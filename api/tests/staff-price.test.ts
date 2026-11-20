@@ -19,11 +19,28 @@ describe('priceFiguresIn', () => {
     expect(priceFiguresIn('2.000 per lembar')).toEqual([2_000]);
   });
 
+  it('reads a bare figure after a price word, and a per-unit price with no separator (review)', () => {
+    expect(priceFiguresIn('harga 4.500.000 ya kak')).toEqual([4_500_000]);
+    expect(priceFiguresIn('jadi 4500000 aja')).toEqual([4_500_000]);
+    expect(priceFiguresIn('Harga 185 per pcs')).toEqual([185]);
+    expect(priceFiguresIn('saya kirim harga 3 juta ya')).toEqual([3_000_000]);
+    expect(priceFiguresIn('Rp 1.150,50 per pcs')).toEqual([1_150]);
+  });
+
+  it('skips shipping, down payment, minimum and order-size figures (review)', () => {
+    expect(priceFiguresIn('ongkir 25rb ya kak')).toEqual([]);
+    expect(priceFiguresIn('DP 500rb dulu')).toEqual([]);
+    expect(priceFiguresIn('minimal order 20k')).toEqual([]);
+    expect(priceFiguresIn('ongkir 25rb, harga jadi 3 juta')).toEqual([3_000_000]);
+  });
+
   it('reads no quantity, size or phone number as a price', () => {
     expect(priceFiguresIn('10 ribu pcs')).toEqual([]);
     expect(priceFiguresIn('5 rim, ukuran 20 x 20 x 7')).toEqual([]);
     expect(priceFiguresIn('2.500 pcs ya kak')).toEqual([]);
     expect(priceFiguresIn('wa 081234567890')).toEqual([]);
+    expect(priceFiguresIn('harga cek wa 081234567890')).toEqual([]);
+    expect(priceFiguresIn('jadi 2500 pcs ya')).toEqual([]);
     expect(priceFiguresIn('halo kak')).toEqual([]);
   });
 });
@@ -54,6 +71,11 @@ describe('standingStaffPrice', () => {
   it('counts a bot turn that ran the price calculator as a quote even without a figure in the text', () => {
     const recent = [staff('Rp 4.500.000 ya kak'), bot('Siap kak', { priceCalls: [{ outcome: 'priced' }] })];
     expect(standingStaffPrice(recent)).toBeNull();
+  });
+
+  it('is null once a PO form row closed that deal (review)', () => {
+    const form = { role: 'assistant', body: 'Siap kak, terima kasih 🙏 Untuk form PO-nya, tim kami kirimkan sebentar lagi ya kak.', senderName: null, metadata: { source: 'po_form' } };
+    expect(standingStaffPrice([staff('buletin ke 3 juta'), customer('oke'), form, customer('tambah 1 order lagi ya')])).toBeNull();
   });
 
   it('is null when no staff message names a price', () => {

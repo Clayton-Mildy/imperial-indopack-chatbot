@@ -9,10 +9,12 @@ const PRICE_UNIT = "pcs|pc|lembar|lbr|rim|box|dus|biji|buah|unit|pack|karton|ctn
 const RP = /\brp\.?\s*\d/i;
 const INFORMAL = new RegExp(`\\d(?:[.,]\\d+)?\\s*(?:rb|ribu|k|jt|juta)\\b(?!\\s*(?:${UNIT})\\b)`, "i");
 const PER_UNIT = new RegExp(`\\d{1,3}(?:[.,]\\d{3})+\\s*(?:/|per\\s+)\\s*(?:${PRICE_UNIT})\\b`, "i");
+// "harga 4.500.000 ya", "jadi 4500000 aja" - a price word, then a figure of 1.000 or more (same rule as the API's staffPrice).
+const AFTER_WORD = new RegExp(`\\b(?:harga(?:nya)?|jadi|jd|total(?:nya)?|deal|nego|diskon|bulet\\w*|bulat\\w*|cuma|hanya)\\b[^\\d\\n]{0,12}(?:\\d{1,3}(?:[.,]\\d{3})+|\\d{4,9})\\b(?![.,]\\d)(?!\\s*(?:${UNIT})\\b)`, "i");
 
 /** Does this text name a price ("Rp 4.500.000", "3 juta", "1.234/pcs")? A quantity ("10 ribu pcs") is not a price. */
 export function namesPrice(text: string): boolean {
-  return RP.test(text) || INFORMAL.test(text) || PER_UNIT.test(text);
+  return RP.test(text) || INFORMAL.test(text) || PER_UNIT.test(text) || AFTER_WORD.test(text);
 }
 
 /**

@@ -397,18 +397,20 @@ async function agreedToStaffPrice(
   send: (text: string) => Promise<string | null>
 ): Promise<boolean> {
   if (!r.sendPoForm) return false;
-  const staff = standingStaffPrice(await getLastNMessages(conv.id, MAX_CONTEXT_MESSAGES).catch(() => []));
-  if (!staff) return false;
-  console.log(`[messageRouter] ${conv.id} agreed after a staff price ("${staff.body.slice(0, 60)}") - to the team, no re-quote`);
-  await saveConversationInsights(conv.id, conv.contactId, r).catch(() => { });
+  // First: the line already went out and the team has not answered it. The staff price no longer stands
+  // then (the line closes that deal), but this "oke" is the same one.
   const pending = conv.status === 'escalated' && (await linesStillPending(conv.id, [CANNED_STAFF_PRICE_AGREED])).size > 0;
-  if (pending) {
+  const staff = pending ? null : standingStaffPrice(await getLastNMessages(conv.id, MAX_CONTEXT_MESSAGES).catch(() => []));
+  if (!pending && !staff) return false;
+  await saveConversationInsights(conv.id, conv.contactId, r).catch(() => { });
+  if (pending || !staff) {
     notifyStaff({ title: 'Pelanggan menunggu balasan', body: customerText.slice(0, 180), path: `/conversations/${conv.id}` });
     const ack = await stillCheckingReply(conv.id, conv.contactId, false);
     const sent = await sendFixedLine(ack, 'escalation_ack', send);
     await recordAfterReply(conv.id, [], [sent]);
     return true;
   }
+  console.log(`[messageRouter] ${conv.id} agreed after a staff price ("${staff.body.slice(0, 60)}") - to the team, no re-quote`);
   const kinds = await poFormKindsFor(conv.contactId, r);
   const reason = `Pelanggan setuju harga dari tim ("${staff.body.slice(0, 120)}") - mohon kirimkan ${formsNamed(kinds)}`;
   await handToTeam(conv, customerText, { total: false, size: false, poForm: reason }, 'lainnya');
@@ -762,7 +764,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     const notBuyer = notABuyer(nonSales, aiResponse, conv);
     const askGap = !humanRequested && !isNonSalesHandoff(combinedText) && !notBuyer && !ppnAsked && !taxHandoff(aiResponse);
     const signals = handoffSignals(notBuyer, complaint, humanRequested, aiResponse, Boolean(entry.designReceived));
-    if (!humanRequested && !ppnAsked && !nonSales && await agreedToStaffPrice(conv, aiResponse, combinedText, (text) => entry.sendReply(text))) return;
+    if (!humanRequested && !ppnAsked && !nonSales && !complaint && await agreedToStaffPrice(conv, aiResponse, combinedText, (text) => entry.sendReply(text))) return;
     if (aiResponse.confidence === 'low' || humanRequested || ppnAsked || (!aiResponse.message && !onlyFixedLines(aiResponse))) {
       // Save this turn's profile facts BEFORE escalating: the hand-off question reads the
       // profile and must not re-ask something the customer said in this very message.
@@ -986,7 +988,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   const askGap = !humanRequested && !isNonSalesHandoff(body) && !notBuyer && !ppnAsked && !taxHandoff(aiResponse);
   // The customer sent photos: a hand-off is a design received unless a stronger signal fired.
   const signals = handoffSignals(notBuyer, complaint, humanRequested, aiResponse, true);
-  if (!humanRequested && !ppnAsked && !nonSales
+  if (!humanRequested && !ppnAsked && !nonSales && !complaint
     && await agreedToStaffPrice(conv, aiResponse, body, (text) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text))) return;
   // humanRequested belongs in this condition exactly as it does on the text path: it was
   // computed here and used below for askProfileGap, but left OUT of the gate, so a photo
