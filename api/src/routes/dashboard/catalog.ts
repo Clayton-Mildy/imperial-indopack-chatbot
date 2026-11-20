@@ -173,6 +173,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     }
     if (files.length + rejected.length === 0) return reply.code(400).send({ data: null, error: 'NO_FILE' });
     const results = [...(await importCatalogImages(files)), ...rejected];
+    forgetCatalogPhotoPresence();
     return reply.send({ data: { results }, error: null });
   });
 
