@@ -4,7 +4,7 @@ import Link from "next/link";
 import { BrandTags } from "@/components/BrandTag";
 import { BRAND_TAG } from "@/lib/brands";
 import { apiFileUrl } from "@/lib/format";
-import { gramasiSummary } from "@/lib/catalog/productForm";
+import { designExampleThumbs, gramasiSummary } from "@/lib/catalog/productForm";
 import { PCS_PER_RIM } from "@/lib/format";
 import { cellFor, deliveryLabel, distinctSizeCount, sizeRowLabel, tierColumns, type TierColumn } from "@/lib/catalog/tierTable";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
@@ -74,7 +74,7 @@ interface Props {
 export function ProductCard({ product: p, canEdit, onDelete }: Props) {
   const t = useT();
   const lang = useLang();
-  const photos = [...p.referenceImages].sort((a, b) => a.sort - b.sort).slice(0, MAX_THUMBS);
+  const examples = designExampleThumbs(p.referenceImages, MAX_THUMBS);
   const editHref = `/catalog/${p.id}`;
 
   if (!p.isActive) {
@@ -93,8 +93,8 @@ export function ProductCard({ product: p, canEdit, onDelete }: Props) {
           color: "#3B4540",
         }}
       >
-        {photos[0] ? (
-          <Thumb url={photos[0].imageUrl} alt={t("catalog.card.photoAlt", { name: p.name, n: 1 })} size={40} />
+        {p.imageUrl ? (
+          <Thumb url={p.imageUrl} alt={t("catalog.card.productPhotoAlt", { name: p.name })} size={40} />
         ) : (
           <div style={{ width: 40, height: 40, borderRadius: 6, background: "#F8FAF6", border: "1px solid #DDE5D6" }} />
         )}
@@ -132,12 +132,8 @@ export function ProductCard({ product: p, canEdit, onDelete }: Props) {
           borderBottom: "1px solid #EEF2EA",
         }}
       >
-        {photos.length > 0 ? (
-          <div style={{ display: "flex", gap: 6 }}>
-            {photos.map((ph, i) => (
-              <Thumb key={ph.id} url={ph.imageUrl} alt={t("catalog.card.photoAlt", { name: p.name, n: i + 1 })} size={56} />
-            ))}
-          </div>
+        {p.imageUrl ? (
+          <Thumb url={p.imageUrl} alt={t("catalog.card.productPhotoAlt", { name: p.name })} size={56} />
         ) : (
           <div
             style={{
@@ -170,6 +166,14 @@ export function ProductCard({ product: p, canEdit, onDelete }: Props) {
           </div>
           {spec && <span style={{ fontSize: 12.5, color: "#3B4540" }}>{spec}</span>}
           {p.use.trim() && <span style={{ fontSize: 12.5, color: "#5F6B5A" }}>{t("catalog.card.use", { use: p.use.trim() })}</span>}
+          {examples.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 2 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: "#5F6B5A" }}>{t("catalog.card.designExamples")}</span>
+              {examples.map((ex, i) => (
+                <Thumb key={ex.id} url={ex.imageUrl} alt={t("catalog.card.photoAlt", { name: p.name, n: i + 1 })} size={28} />
+              ))}
+            </div>
+          )}
         </div>
         {canEdit && (
           <div style={{ display: "flex", gap: 8 }}>

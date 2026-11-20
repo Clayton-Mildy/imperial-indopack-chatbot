@@ -237,7 +237,7 @@ export async function importCatalogFromXlsx(
         if (!created.has(productId) && !before.has(productId)) {
           const was = await loadOne(tx, productId);
           if (was) {
-            const { id: _id, referenceImages: _r, updatedAt: _u, ...input } = was;
+            const { id: _id, referenceImages: _r, imageUrl: _i, updatedAt: _u, ...input } = was;
             before.set(productId, input);
             after.set(productId, structuredClone(input));
           }

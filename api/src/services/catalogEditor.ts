@@ -403,6 +403,8 @@ export function previewProduct(draft: ProductDraft, stored: CatalogProduct | nul
 export interface CatalogProduct extends Omit<ProductInput, 'sizes'> {
   id: string;
   sizes: { id: string; size: string; gsm: string | null; tiers: PriceTier[] }[];
+  /** The product photo (products.image_url): the item itself, what customers' photos are compared with. */
+  imageUrl: string | null;
   referenceImages: { id: string; imageUrl: string; sort: number }[];
   updatedAt: string;
 }
@@ -461,6 +463,7 @@ async function loadCatalogProducts(db: DbOrTx, where?: SQL): Promise<CatalogProd
       use: p.fungsi ?? '',
       isActive: p.isActive,
       sizes: variantRows.filter((v) => v.productId === p.id).map((v) => ({ id: v.id, size: v.name, gsm: v.gsm, tiers: tierMap.get(v.id) ?? [] })),
+      imageUrl: p.imageUrl,
       referenceImages: imageRows.filter((i) => i.productId === p.id).map((i) => ({ id: i.id, imageUrl: i.imageUrl, sort: i.sort })),
       updatedAt: p.updatedAt.toISOString(),
     };

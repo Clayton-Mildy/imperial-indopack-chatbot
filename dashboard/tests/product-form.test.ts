@@ -10,6 +10,7 @@ import {
   gramasiProblem,
   gramasiSummary,
   gramasiGroups,
+  designExampleThumbs,
   isJpgOrPng,
   nextTierRow,
   parseQty,
@@ -69,6 +70,7 @@ const PRODUCT: CatalogProduct = {
   finishing: "Non laminasi",
   use: "box kue",
   isActive: true,
+  imageUrl: null,
   sizes: [
     {
       id: "22222222-2222-4222-8222-222222222222",
@@ -409,6 +411,19 @@ describe("helpers", () => {
     [{ type: "image/webp", name: "a.webp" }, false],
     [{ type: "image/gif", name: "a.png" }, false],
   ])("isJpgOrPng(%o)", (file, ok) => expect(isJpgOrPng(file)).toBe(ok));
+});
+
+describe("designExampleThumbs", () => {
+  const refs = [
+    { id: "c", sort: 2 },
+    { id: "a", sort: 0 },
+    { id: "b", sort: 1 },
+  ];
+  it("orders by sending order and caps the count, without touching the input", () => {
+    expect(designExampleThumbs(refs, 2).map((r) => r.id)).toEqual(["a", "b"]);
+    expect(refs.map((r) => r.id)).toEqual(["c", "a", "b"]);
+  });
+  it("is empty for no examples", () => expect(designExampleThumbs([], 3)).toEqual([]));
 });
 
 const gsmForm = (): ProductFormState =>

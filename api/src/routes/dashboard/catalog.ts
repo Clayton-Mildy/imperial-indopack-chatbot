@@ -174,6 +174,47 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ data: { results }, error: null });
   });
 
+  // POST /api/v1/products/:id/image - THE product photo (products.image_url): the item itself, which the
+  // bot compares customers' photos against. One per product; a new upload replaces the old one.
+  app.post<{ Params: { id: string } }>('/api/v1/products/:id/image', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const { id } = request.params;
+    const part = await request.file();
+    if (!part) return reply.code(400).send({ data: null, error: 'NO_FILE' });
+    if (!part.mimetype.startsWith('image/')) {
+      await part.toBuffer().catch(() => {});
+      return reply.code(400).send({ data: null, error: 'UNSUPPORTED_MIME_TYPE' });
+    }
+    let buffer: Buffer;
+    try {
+      buffer = await part.toBuffer();
+    } catch {
+      return reply.code(413).send({ data: null, error: 'FILE_TOO_LARGE' });
+    }
+    if (!UUID_RE.test(id) || !(await productExists(id))) {
+      return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
+    }
+    let imageUrl: string;
+    try {
+      imageUrl = await storeUploadedImage(buffer);
+    } catch {
+      return reply.code(400).send({ data: null, error: 'INVALID_IMAGE' });
+    }
+    await updateProduct(id, { imageUrl });
+    invalidateCatalogCache();
+    return reply.send({ data: { imageUrl }, error: null });
+  });
+
+  // DELETE /api/v1/products/:id/image - clears the product photo
+  app.delete<{ Params: { id: string } }>('/api/v1/products/:id/image', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+    const { id } = request.params;
+    if (!UUID_RE.test(id) || !(await productExists(id))) {
+      return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
+    }
+    await updateProduct(id, { imageUrl: null });
+    invalidateCatalogCache();
+    return reply.code(204).send();
+  });
+
   // POST /api/v1/products/:id/reference-images - one design-reference photo (max 3 per product);
   // the bot sends these as examples. Stored the way the catalog photos are.
   app.post<{ Params: { id: string } }>('/api/v1/products/:id/reference-images', { preHandler: [apiKeyAuth] }, async (request, reply) => {

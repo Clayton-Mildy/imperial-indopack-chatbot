@@ -502,6 +502,11 @@ export function isJpgOrPng(file: { type: string; name: string }): boolean {
   return /\.(jpe?g|png)$/i.test(file.name);
 }
 
+/** The design examples a card shows beside the product photo: in sending order, at most `max`. */
+export function designExampleThumbs<T extends { sort: number }>(refs: readonly T[], max: number): T[] {
+  return [...refs].sort((a, b) => a.sort - b.sort).slice(0, max);
+}
+
 const FIELD_KEY: Record<Extract<CatalogChange, { kind: "field" }>["field"], TKey> = {
   name: "catalog.change.f.name",
   brand: "catalog.change.f.brand",

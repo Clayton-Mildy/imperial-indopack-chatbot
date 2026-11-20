@@ -154,6 +154,9 @@ export interface CatalogProduct {
   isActive: boolean;
   /** Gramasi is per size row ("300 gsm"), null when the product has none; a product is all-gramasi or no-gramasi. */
   sizes: { id: string; size: string; gsm: string | null; tiers: PriceTier[] }[];
+  /** The product photo (products.image_url): the item itself, what the bot compares customers' photos with. */
+  imageUrl: string | null;
+  /** Design examples the bot sends to customers who have no design. Not the product photo. */
   referenceImages: { id: string; imageUrl: string; sort: number }[];
   updatedAt: string;
 }

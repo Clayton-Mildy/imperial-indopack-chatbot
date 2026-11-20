@@ -190,6 +190,9 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
   const [pending, setPending] = useState<PendingPhoto[]>([]);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  // The product photo (products.image_url) is separate from the design examples above: its own busy flag and error.
+  const [mainBusy, setMainBusy] = useState(false);
+  const [mainError, setMainError] = useState<string | null>(null);
   const [activeBusy, setActiveBusy] = useState(false);
   const [activeError, setActiveError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -415,6 +418,41 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
       setPhotosNotice(0);
       router.refresh();
     }
+  }
+
+  async function pickProductPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !productId) return;
+    setMainError(null);
+    if (!isJpgOrPng(file)) return setMainError(t("catalog.form.photoErr.type"));
+    if (file.size > IMAGE_MAX_BYTES) return setMainError(t("catalog.form.photoErr.size"));
+    setMainBusy(true);
+    try {
+      const body = new FormData();
+      body.append("file", file, file.name);
+      const res = await fetch(`${BASE_PATH}/api/product-image/${encodeURIComponent(productId)}`, { method: "POST", body });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && !json.error) router.refresh();
+      else setMainError(photoErrorText(res.status, json.error));
+    } catch {
+      setMainError(t("catalog.form.photoErr.failed"));
+    }
+    setMainBusy(false);
+  }
+
+  async function removeProductPhoto() {
+    if (!productId) return;
+    setMainBusy(true);
+    setMainError(null);
+    try {
+      const res = await fetch(`${BASE_PATH}/api/product-image/${encodeURIComponent(productId)}`, { method: "DELETE" });
+      if (res.ok) router.refresh();
+      else setMainError(t("catalog.form.productPhotoErr.removeFailed"));
+    } catch {
+      setMainError(t("common.err.network"));
+    }
+    setMainBusy(false);
   }
 
   async function removeStoredPhoto(id: string) {
@@ -1170,13 +1208,80 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
                 <AddGramasi existing={gramasiNames} onAdd={addGramasiToForm} />
               </section>
 
+              {/* ─── Foto produk (the item itself; the bot matches customers' photos against it) ─── */}
+              <section style={{ ...card, gap: 12, position: "relative" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={sectionTitle}>{numbered(3, "catalog.form.section.productPhoto")}</span>
+                  <span style={{ fontSize: 12, color: "#5F6B5A", lineHeight: 1.5 }}>{t("catalog.form.productPhotoSub")}</span>
+                </div>
+                {stored ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 12 }}>
+                    {stored.imageUrl ? (
+                      <img
+                        src={apiFileUrl(stored.imageUrl)}
+                        alt={t("catalog.form.productPhotoAlt")}
+                        style={{ width: 140, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid #DDE5D6", display: "block" }}
+                      />
+                    ) : (
+                      <span style={{ flex: "1 1 260px", fontSize: 12.5, color: "#6E531E", lineHeight: 1.5 }}>{t("catalog.form.productPhotoNone")}</span>
+                    )}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
+                      <label
+                        htmlFor="pf-main-photo"
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          height: 36,
+                          padding: "0 14px",
+                          borderRadius: 6,
+                          background: "#8A6A2A",
+                          color: "#ffffff",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          cursor: mainBusy ? "wait" : "pointer",
+                        }}
+                      >
+                        {mainBusy ? t("catalog.form.photoUploading") : t("catalog.form.productPhotoReplace")}
+                      </label>
+                      <input
+                        id="pf-main-photo"
+                        type="file"
+                        accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                        disabled={mainBusy}
+                        onChange={pickProductPhoto}
+                        style={srOnly}
+                      />
+                      <span style={hint}>{t("catalog.form.photoHint")}</span>
+                      {stored.imageUrl && (
+                        <button
+                          type="button"
+                          aria-label={t("catalog.form.productPhotoRemoveAria")}
+                          disabled={mainBusy}
+                          onClick={removeProductPhoto}
+                          style={{ ...linkBtn, fontSize: 12.5 }}
+                        >
+                          {t("catalog.form.productPhotoRemove")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <span style={{ fontSize: 12.5, color: "#6E531E", lineHeight: 1.5 }}>{t("catalog.form.productPhotoAfterSave")}</span>
+                )}
+                {mainError && (
+                  <span role="alert" style={{ ...errText, fontSize: 12.5 }}>
+                    {mainError}
+                  </span>
+                )}
+              </section>
+
               {/* ─── Foto referensi desain ─── */}
               {/* position: relative keeps the visually hidden (absolute) file input inside this card: without
                   it the input is placed against the page, past the end of the scrolling <main>, and the whole
                   layout (sidebar included) scrolls up when the input is focused or scrolled into view. */}
               <section style={{ ...card, gap: 12, position: "relative" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={sectionTitle}>{numbered(3, "catalog.form.section.photos")}</span>
+                  <span style={sectionTitle}>{numbered(4, "catalog.form.section.photos")}</span>
                   {!editing && <span style={{ fontSize: 12, color: "#5F6B5A" }}>{t("catalog.form.photosSub")}</span>}
                 </div>
                 {editing && photoCount === 0 ? (
