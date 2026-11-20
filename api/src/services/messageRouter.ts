@@ -7,7 +7,7 @@ import { resetLeadsForContact, tagNonSalesLead } from '../repositories/leads.js'
 import { kindFromNonSalesReason } from '../domain/leadStages.js';
 import { getFirstPhoneNumber, findPhoneNumberByProviderId } from '../repositories/phoneNumbers.js';
 import { getAiEnabledDefault, getPoFormUrls } from '../repositories/appSettings.js';
-import { CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormsMessage, isPoFormPlaceholder, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM, gramasiBeforePoLine } from '../domain/constants.js';
+import { CANNED_STAFF_PRICE_AGREED, CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormsMessage, isPoFormPlaceholder, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM, gramasiBeforePoLine } from '../domain/constants.js';
 import { buildContextAndCallAI } from './aiLayer.js';
 import { resolveCatalogDelivery, isPriceRequest, asksForPriceList, forgetSentPriceLists, CATALOG_NOT_SENT_NOTE, type CatalogDelivery } from './catalogDelivery.js';
 import { extractCatalogKeywordsFromImage, visionExtractToKeywords, type VisionExtract } from './visionKeywords.js';
@@ -26,6 +26,7 @@ import type { AIResponse, PhoneNumber, PromptSections } from '../domain/types.js
 import { notifyStaff } from './staffNotify.js';
 import { itemKey, mergeOrderFacts, orderDetailsSummary, sanitizeItem, type OrderItem } from '../domain/orderProfile.js';
 import { sameGsm } from '../domain/gramasi.js';
+import { standingStaffPrice } from '../domain/staffPrice.js';
 import { PO_FORM_KINDS, poFormsForOrder, updateSaysHasDesign, type PoFormKind } from '../domain/poForms.js';
 import { claudeTokensExhausted } from './claude.js';
 import { getConfig } from '../config.js';
@@ -355,6 +356,52 @@ function withExamplesAsked(reason: string, r: AIResponse): string {
   return r.examplesForTeam ? `${reason}; ${DESIGN_EXAMPLES_REASON}` : reason;
 }
 
+const AGREED_REASON = 'Pelanggan setuju membeli - mohon kirimkan form PO';
+
+/**
+ * A hand-off on the turn the customer agreed to buy says so first (QA 2026-11-19, A4). The PO form is
+ * not sent on a hand-off turn, and the reason used to be only the check's objection ("Desain sudah ada
+ * tidak didukung data"), so staff did not know a sale was waiting.
+ */
+function agreementReason(reason: string, r: AIResponse): string {
+  return r.sendPoForm ? `${AGREED_REASON} (balasan bot ditahan: ${reason})` : reason;
+}
+
+/**
+ * The customer agreed after staff named their own price in the chat (QA 2026-11-19, A3). The bot's
+ * reply is not sent - it could re-quote, and the catalog check used to turn staff's 4,5 juta into
+ * Rp 5.000.000 - and neither is the PO form: the team confirms its own deal. The customer gets a fixed
+ * line, the team gets the price they offered and the forms to send. Said once per hand-off, like the
+ * PO promise: while the team has not answered the line, a second "oke" only gets an ack.
+ * Returns whether it handled the turn.
+ */
+async function agreedToStaffPrice(
+  conv: { id: string; status: string; contactId: string },
+  r: AIResponse,
+  customerText: string,
+  send: (text: string) => Promise<string | null>
+): Promise<boolean> {
+  if (!r.sendPoForm) return false;
+  const staff = standingStaffPrice(await getLastNMessages(conv.id, MAX_CONTEXT_MESSAGES).catch(() => []));
+  if (!staff) return false;
+  console.log(`[messageRouter] ${conv.id} agreed after a staff price ("${staff.body.slice(0, 60)}") - to the team, no re-quote`);
+  await saveConversationInsights(conv.id, conv.contactId, r).catch(() => { });
+  const pending = conv.status === 'escalated' && (await linesStillPending(conv.id, [CANNED_STAFF_PRICE_AGREED])).size > 0;
+  if (pending) {
+    notifyStaff({ title: 'Pelanggan menunggu balasan', body: customerText.slice(0, 180), path: `/conversations/${conv.id}` });
+    const ack = await stillCheckingReply(conv.id, conv.contactId, false);
+    const sent = await sendFixedLine(ack, 'escalation_ack', send);
+    await recordAfterReply(conv.id, [], [sent]);
+    return true;
+  }
+  const kinds = await poFormKindsFor(conv.contactId, r);
+  const reason = `Pelanggan setuju harga dari tim ("${staff.body.slice(0, 120)}") - mohon kirimkan ${formsNamed(kinds)}`;
+  await handToTeam(conv, customerText, { total: false, size: false, poForm: reason }, 'lainnya');
+  const sent = await sendFixedLine(CANNED_STAFF_PRICE_AGREED, MESSAGE_SOURCE.poForm, send);
+  await recordAfterReply(conv.id, [], [sent]);
+  return true;
+}
+
 /**
  * A turn with no text but a fixed line to send (the PO form, the team's examples promise): not a failed
  * turn - the line goes out on its own (final review M9).
@@ -536,6 +583,29 @@ async function catchUpStaffReplies(waId: string, conversationId: string): Promis
   if (added === -1) console.warn(`[messageRouter] staff sync for ${conversationId} took over ${STAFF_SYNC_TIMEOUT_MS / 1000}s - replying without waiting`);
 }
 
+const HUMAN_STATUSES = ['needs_human', 'resolved'];
+
+/**
+ * Staff hold the chat right now. The status is read before the AI call, and that call takes 10-30 s:
+ * staff who took the chat over or replied from the dashboard meanwhile were answered over, and a
+ * low-confidence turn wrote 'escalated' over their 'needs_human' (QA 2026-11-19, B1). Read again once
+ * the reply is ready, before anything is sent or any status written. A failed read lets the turn go on:
+ * a reply beats a silent bot. A conversation that is gone sends nothing.
+ */
+async function staffHoldNow(conversationId: string): Promise<boolean> {
+  let conv: Awaited<ReturnType<typeof findConversationById>>;
+  try {
+    conv = await findConversationById(conversationId);
+  } catch (err) {
+    console.warn('[messageRouter] status re-check failed - replying anyway:', err instanceof Error ? err.message : err);
+    return false;
+  }
+  if (!conv) return true;
+  const held = HUMAN_STATUSES.includes(conv.status) || conv.assignedAgent !== null;
+  if (held) console.log(`[messageRouter] staff took ${conversationId} over during the AI call - sending nothing`);
+  return held;
+}
+
 // Conversations with an AI turn currently in flight. AI latency (~30s) far exceeds the
 // debounce window, so without this two messages a few seconds apart would spawn concurrent
 // turns that neither see each other's reply — the source of duplicate/contradicting replies.
@@ -561,8 +631,7 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     await catchUpStaffReplies(entry.escalationJid, conversationId);
     const conv = await findConversationById(conversationId);
     if (!conv) return;
-    const humanStatuses = ['needs_human', 'resolved'];
-    if (humanStatuses.includes(conv.status) || conv.assignedAgent !== null) return;
+    if (HUMAN_STATUSES.includes(conv.status) || conv.assignedAgent !== null) return;
 
     const combinedText = entry.texts.join('\n');
     // Not about buying (courier, job seeker, payment/order follow-up, supplier) - to the team as it is,
@@ -622,6 +691,11 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     }
     // Before anything is sent, saved or escalated: the next turn decides all of that afresh.
     if (supersedeStaleTurn(entry, sentCatalogNote)) return;
+    // Staff took the chat over while the reply was being written: theirs now. The facts still count.
+    if (await staffHoldNow(conversationId)) {
+      await saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
+      return;
+    }
 
     // The price question's list, after the reply (or the hand-off): sent unless this turn priced the item
     // - a quote from hitung_harga, or a priced item in the facts just saved - or when the reply says the
@@ -665,13 +739,14 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     const notBuyer = notABuyer(nonSales, aiResponse, conv);
     const askGap = !humanRequested && !isNonSalesHandoff(combinedText) && !notBuyer && !ppnAsked && !taxHandoff(aiResponse);
     const signals = handoffSignals(notBuyer, complaint, humanRequested, aiResponse, Boolean(entry.designReceived));
+    if (!humanRequested && !ppnAsked && !nonSales && await agreedToStaffPrice(conv, aiResponse, combinedText, (text) => entry.sendReply(text))) return;
     if (aiResponse.confidence === 'low' || humanRequested || ppnAsked || (!aiResponse.message && !onlyFixedLines(aiResponse))) {
       // Save this turn's profile facts BEFORE escalating: the hand-off question reads the
       // profile and must not re-ask something the customer said in this very message.
       await saveConversationInsights(conversationId, conv.contactId, aiResponse).catch(() => { });
       if (nonSales) void tagNonSalesLead(conv.contactId, nonSales).catch((err) => console.error('[leads] tag non-sales failed:', err));
-      const reason = withExamplesAsked(aiResponse.escalationReason
-        ?? (ppnAsked ? 'Pertanyaan PPN/pajak — kebijakan pajak hanya dari tim' : 'Low confidence'), aiResponse);
+      const reason = agreementReason(withExamplesAsked(aiResponse.escalationReason
+        ?? (ppnAsked ? 'Pertanyaan PPN/pajak — kebijakan pajak hanya dari tim' : 'Low confidence'), aiResponse), aiResponse);
       const category = classifyHandoff(signals, reason);
       // The model's own "BUKAN PEMBELI" hand-off, when no keyword detector named the topic: tag the lead from its reason.
       if (!nonSales && isNonSalesReason(aiResponse.escalationReason)) void tagNonSalesLead(conv.contactId, reason, kindFromNonSalesReason(reason)).catch((err) => console.error('[leads] tag non-sales failed:', err));
@@ -810,7 +885,7 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   // Re-fetch: the deferral can outlast an escalation/assignment status change.
   const conv = await findConversationById(conversationId);
   if (!conv) return;
-  if (['needs_human', 'resolved'].includes(conv.status) || conv.assignedAgent !== null) return;
+  if (HUMAN_STATUSES.includes(conv.status) || conv.assignedAgent !== null) return;
 
   const quotedBody = await resolveQuotedBody(quotedWaMessageId);
   // Same silent-failure fix as the text path: a thrown AI call becomes a
@@ -873,6 +948,11 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     console.log(`[messageRouter] more photos arrived during the photo turn for ${conv.id} - dropping the draft, answering all ${nextPhotos.items.length} together`);
     return;
   }
+  // As on the text path: staff who took the chat over during the AI call have it (B1).
+  if (await staffHoldNow(conv.id)) {
+    await saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
+    return;
+  }
 
   // A caption can ask about tax just as a text message can — same gate, both paths. So can a
   // screenshot of a chat: live 2026-10-26 the faktur question was only in the picture.
@@ -883,6 +963,8 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
   const askGap = !humanRequested && !isNonSalesHandoff(body) && !notBuyer && !ppnAsked && !taxHandoff(aiResponse);
   // The customer sent photos: a hand-off is a design received unless a stronger signal fired.
   const signals = handoffSignals(notBuyer, complaint, humanRequested, aiResponse, true);
+  if (!humanRequested && !ppnAsked && !nonSales
+    && await agreedToStaffPrice(conv, aiResponse, body, (text) => sendTextMessage(phoneNumber.phoneNumberId, replyJid, text))) return;
   // humanRequested belongs in this condition exactly as it does on the text path: it was
   // computed here and used below for askProfileGap, but left OUT of the gate, so a photo
   // captioned "ini fotonya, tolong sambungkan ke CS" kept talking to the bot whenever the
@@ -892,9 +974,9 @@ async function runPhotoTurn(batch: PhotoBatch, generation: number): Promise<void
     // must land before the hand-off question picks what to ask.
     await saveConversationInsights(conv.id, conv.contactId, aiResponse).catch(() => { });
     if (nonSales) void tagNonSalesLead(conv.contactId, nonSales).catch((err) => console.error('[leads] tag non-sales failed:', err));
-    const reason = withExamplesAsked(aiResponse.escalationReason
+    const reason = agreementReason(withExamplesAsked(aiResponse.escalationReason
       ?? (ppnAsked ? 'Pertanyaan PPN/pajak — kebijakan pajak hanya dari tim'
-        : nonSales ? `${nonSales} - bukan pertanyaan produk` : 'Low confidence'), aiResponse);
+        : nonSales ? `${nonSales} - bukan pertanyaan produk` : 'Low confidence'), aiResponse), aiResponse);
     const category = classifyHandoff(signals, reason);
     // No second escalation, but acknowledge the new question (same as the text path).
     if (conv.status === 'escalated') {

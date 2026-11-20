@@ -362,22 +362,28 @@ const unwrittenPrices = (text: string): string[] => [...text.matchAll(UNWRITTEN_
  *
  * A price not written "Rp N" (UNWRITTEN_PRICE_RE) fails whatever its value: the reply is redone with
  * the full figure, the form the tool's results and the catalog use.
+ *
+ * `staffFigures`: the price staff named in the chat after the bot's last quote (standingStaffPrice). It
+ * is the team's decision, so the reply may repeat it on any line, total lines included - a repair that
+ * "corrected" it to a catalog total told a customer Rp 5.000.000 after staff had offered 4,5 juta (A3).
  */
 export function verifyReplyTieredPrices(
   message: string,
   catalogBlock: string,
   toolFigures: number[] | undefined,
-  priceToolRan = false
+  priceToolRan = false,
+  staffFigures: number[] = []
 ): { ok: boolean; reason: string; invented?: number[]; onlyInvented?: boolean } {
   const toolRan = priceToolRan || (toolFigures?.length ?? 0) > 0;
   const allowed = new Set(toolRan ? toolFigures ?? [] : rpFigures(catalogBlock));
+  const fromStaff = new Set(staffFigures);
   const failing = new Set<number>();
   const passing = new Set<number>();
   let offTotalLine = false;
   for (const line of message.split('\n')) {
     const totalLine = toolRan ? addsUp(line) : noToolTotalLine(line);
     for (const n of rpFigures(line)) {
-      if (allowed.has(n) && (toolRan || !totalLine)) { passing.add(n); continue; }
+      if (fromStaff.has(n) || (allowed.has(n) && (toolRan || !totalLine))) { passing.add(n); continue; }
       failing.add(n);
       if (!totalLine) offTotalLine = true;
     }

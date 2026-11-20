@@ -55,6 +55,10 @@ export function isPoFormPlaceholder(url: string): boolean {
 // read): a promise, so messageRouter hands the chat to the team, who send the form by hand.
 export const CANNED_PO_FORM_FROM_TEAM = 'Untuk form PO-nya, tim kami kirimkan sebentar lagi ya kak 🙏';
 
+// The customer agreed after staff named their own price in the chat (QA 2026-11-19, A3): the team
+// confirms its own deal and sends the form, so the bot neither re-quotes nor sends the link itself.
+export const CANNED_STAFF_PRICE_AGREED = 'Siap kak, terima kasih 🙏 Untuk form PO-nya, tim kami kirimkan sebentar lagi ya kak.';
+
 // Sent instead of the PO form when an order item's size comes in two or more gramasi and none is chosen
 // (spec 5.6): a question for the customer, not a promise, so nothing is handed to the team. `options` are
 // that size's gramasi ('270 gsm', '300 gsm') -> "...: 270 atau 300 gsm?".

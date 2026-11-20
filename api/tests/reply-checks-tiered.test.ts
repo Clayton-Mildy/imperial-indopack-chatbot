@@ -331,6 +331,32 @@ describe('verifyFit - the strict price check in the pipeline', () => {
   });
 
   // Final review I4: hard checks, in the pipeline - with or without a catalog block.
+  // QA 2026-11-19 A3: staff offered 4,5 juta in the chat; the repair "corrected" it to a catalog total.
+  describe('a price staff named in the chat', () => {
+    it('lets the reply repeat it, on a total line too, with or without the tool', () => {
+      expect(verifyReplyTieredPrices('Siap kak, totalnya jadi Rp 4.500.000 ya', BLOCK, undefined, false, [4_500_000]).ok).toBe(true);
+      expect(verifyReplyTieredPrices('Rp 2.000/pcs, total Rp 4.500.000', BLOCK, TOOL, true, [4_500_000]).ok).toBe(true);
+    });
+    it('still fails any other figure', () => {
+      expect(verifyReplyTieredPrices('totalnya Rp 5.000.000 ya kak', BLOCK, undefined, false, [4_500_000]).ok).toBe(false);
+    });
+    it('reaches the check through verifyFit', async () => {
+      const agreed = draft('Siap kak, untuk 2.500 pcs totalnya Rp 4.500.000 sesuai info tim kami ya 🙏');
+      expect(await verifyFit(agreed, PROMPT, 'ya oke lah', { judge: okJudge().judge, regenerate: noRegenerate, staffFigures: [4_500_000] })).toBe(agreed);
+    });
+  });
+
+  // A4: a rejected agreement must still tell the team the customer said yes.
+  it('keeps the agreement flag when an agreement reply is handed off after two repairs', async () => {
+    const bad = { ...draft('Box Ivory 270 gsm: Rp 1.000.000/rim kak, saya kirim form PO-nya.'), sendPoForm: true as const };
+    const repairDroppedFlag = draft('Box Ivory 270 gsm: Rp 1.000.000/rim kak.');
+    const regenerate = vi.fn(async () => repairDroppedFlag);
+    const out = await verifyFit(bad, PROMPT, 'oke saya ambil', { judge: okJudge().judge, regenerate });
+    expect(out.confidence).toBe('low');
+    expect(out.message).toBe('');
+    expect(out.sendPoForm).toBe(true);
+  });
+
   describe('links and order-status claims', () => {
     const BARE = '## Identity\nKamu adalah CS Imperial Indopack.';
     for (const [label, prompt] of [['with a catalog block', PROMPT], ['with no catalog block', BARE]] as const) {

@@ -3569,4 +3569,128 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
       expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(1);
     });
   });
+
+  // ─── QA 2026-11-19: agreement and hand-off failure modes ─────────────────────
+  describe('agreement after a price staff named (A3)', () => {
+    const QUOTE = { role: 'assistant', body: 'Untuk 2.500 pcs harganya Rp 1.234/pcs, totalnya Rp 3.085.000 ya kak', senderName: null };
+    const STAFF = { role: 'assistant', body: 'buletin ke 3 juta', senderName: 'Tim CS' };
+
+    it('sends the fixed line instead of the reply or the form, and hands the deal to the team', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { CANNED_STAFF_PRICE_AGREED } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue(PO_URLS);
+      mockGetLastNMessages.mockResolvedValue([QUOTE, { role: 'user', body: 'bisa nego?' }, STAFF] as HistoryRow[]);
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Siap kak, totalnya Rp 5.000.000 ya', sendPoForm: true });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-SP1', 'ya oke lah'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual([CANNED_STAFF_PRICE_AGREED]);
+      expect(mockUpdateConversationStatus).toHaveBeenCalledWith('conv-uuid-1', 'escalated',
+        expect.stringContaining('Pelanggan setuju harga dari tim ("buletin ke 3 juta") - mohon kirimkan form PO'), undefined, 'lainnya');
+      expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: CANNED_STAFF_PRICE_AGREED, metadata: expect.objectContaining({ source: 'po_form' }) }));
+      expect(mockSaveConversationInsights).toHaveBeenCalled();
+      expect(mockEscalateConversation).not.toHaveBeenCalled();
+    });
+
+    it('also when the model handed the agreement off itself', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { CANNED_STAFF_PRICE_AGREED } = await import('../src/domain/constants.js');
+      mockGetLastNMessages.mockResolvedValue([QUOTE, STAFF] as HistoryRow[]);
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: 'harga dari tim', sendPoForm: true });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-SP2', 'oke deal'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual([CANNED_STAFF_PRICE_AGREED]);
+      expect(mockEscalateConversation).not.toHaveBeenCalled();
+    });
+
+    it('says the line once: a second "oke" before the team answers only gets an ack', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { CANNED_STAFF_PRICE_AGREED } = await import('../src/domain/constants.js');
+      mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'escalated' });
+      mockGetLastNMessages.mockResolvedValue([QUOTE, STAFF, { role: 'user', body: 'oke' },
+        { role: 'assistant', body: CANNED_STAFF_PRICE_AGREED, senderName: null }] as HistoryRow[]);
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, sendPoForm: true });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-SP3', 'oke kak jadi ya'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toHaveLength(1);
+      expect(sentTexts()[0]).not.toBe(CANNED_STAFF_PRICE_AGREED);
+      expect(mockUpdateConversationStatus).not.toHaveBeenCalled();
+      expect(mockNotifyStaff).toHaveBeenCalledWith(expect.objectContaining({ title: 'Pelanggan menunggu balasan' }));
+    });
+
+    it('a bot quote after the staff price is an ordinary agreement again', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { poFormMessage } = await import('../src/domain/constants.js');
+      mockGetPoFormUrls.mockResolvedValue(PO_URLS);
+      mockGetLastNMessages.mockResolvedValue([STAFF, { role: 'user', body: 'kalau 5000 pcs?' },
+        { role: 'assistant', body: 'Untuk 5.000 pcs Rp 1.100/pcs ya kak', senderName: null }] as HistoryRow[]);
+      mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: 'Siap kak 🙏', sendPoForm: true });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-SP4', 'oke ambil 5000'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['Siap kak 🙏', poFormMessage(PO_URL)]);
+    });
+  });
+
+  describe('staff take the chat over while the reply is being written (B1)', () => {
+    const takeOverDuringCall = (response: Record<string, unknown>) =>
+      mockBuildContextAndCallAI.mockImplementation(async () => {
+        mockFindConversationById.mockResolvedValue({ ...BASE_CONVERSATION, status: 'needs_human', assignedAgent: 'staff-1' });
+        return response;
+      });
+
+    it('sends nothing and writes no status, but keeps the facts', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      takeOverDuringCall({ ...BASE_AI_RESPONSE, message: 'Siap kak 🙏', sendPoForm: true });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-B1a', 'oke kak'));
+      await vi.runAllTimersAsync();
+
+      expect(mockSendTextMessage).not.toHaveBeenCalled();
+      expect(mockUpdateConversationStatus).not.toHaveBeenCalled();
+      expect(mockSaveConversationInsights).toHaveBeenCalled();
+    });
+
+    it('a low-confidence turn does not escalate over the staff hold', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      takeOverDuringCall({ ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: 'x' });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-B1b', 'bisa nego?'));
+      await vi.runAllTimersAsync();
+
+      expect(mockEscalateConversation).not.toHaveBeenCalled();
+      expect(mockUpdateConversationStatus).not.toHaveBeenCalled();
+      expect(mockSendTextMessage).not.toHaveBeenCalled();
+    });
+
+    it('a failed re-read still replies', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      mockBuildContextAndCallAI.mockImplementation(async () => {
+        mockFindConversationById.mockRejectedValue(new Error('db down'));
+        return { ...BASE_AI_RESPONSE };
+      });
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-B1c', 'halo kak'));
+      await vi.runAllTimersAsync();
+
+      expect(sentTexts()).toEqual(['AI reply']);
+    });
+  });
+
+  it('a hand-off on the agreement turn tells the team a sale is waiting (A4)', async () => {
+    const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+    mockBuildContextAndCallAI.mockResolvedValue({ ...BASE_AI_RESPONSE, message: '', confidence: 'low', escalationReason: 'Desain sudah ada tidak didukung data', sendPoForm: true });
+
+    await routeInboundBaileysMessage(makeTextPayload('wamid-A4', 'oke saya ambil'));
+    await vi.runAllTimersAsync();
+
+    expect(mockEscalateConversation).toHaveBeenCalledTimes(1);
+    expect(mockEscalateConversation.mock.calls[0]![1]).toBe('Pelanggan setuju membeli - mohon kirimkan form PO (balasan bot ditahan: Desain sudah ada tidak didukung data)');
+  });
 });

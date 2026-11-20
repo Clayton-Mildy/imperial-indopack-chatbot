@@ -25,6 +25,7 @@ import { getBotSettings, getDefaultPromptSections, getPoFormUrls } from '../repo
 import { listBrands } from '../repositories/products.js';
 import type { AIResponse, PromptSection } from '../domain/types.js';
 import { resolveLink } from './linkResolver.js';
+import { standingStaffPrice } from '../domain/staffPrice.js';
 import { PRICE_TOOL, PRICE_TOOL_DESC, PRICE_TOOL_NAME, PriceToolInput, runPriceTool, type PriceToolCall } from './priceTool.js';
 import { getClient, isDevMode, isFullCatalogEnabled, agentQuery, logUsageLine, CLAUDE_MODEL } from './claude.js';
 
@@ -429,6 +430,8 @@ ok=TETAP true dalam semua kasus berikut — ini aturan utama, bukan pengecualian
 - Kamu MENYIMPULKAN sendiri sebuah batasan dari angka/ukuran yang tidak dinyatakan sebagai batasan (mis. "hanya untuk kue kering" dari ukuran box, padahal Kegunaan-nya menyebut katering) — itu mengarang restriksi, bukan menemukan kontradiksi.
 - Balasan JUJUR atau memakai bahasa hedge ("sepertinya cocok, saya pastikan dulu ya") — selalu ok=true.
 - Balasan mengulang ukuran atau spesifikasi yang DIMINTA pelanggan untuk menyatakan barang itu belum ada atau untuk menanyakannya (mis. "untuk ukuran 32 x 32 harganya tim kami yang hitungkan ya kak") — angka itu milik permintaan pelanggan, bukan klaim tentang produk kami.
+- Balasan merangkum PESANAN pelanggan (nama, nama usaha, kota, desain/logo sudah ada atau belum, jumlah, total) — itu catatan dari percakapan sebelumnya yang tidak kamu lihat, BUKAN data produk. Jangan menolak karena hal itu tidak tertulis di SITUASI PELANGGAN; memeriksa rangkuman pesanan bukan tugasmu.
+- Harga yang di SITUASI PELANGGAN ditandai "Harga dari tim CS" adalah keputusan tim — balasan yang mengulang harga itu BUKAN fakta salah, walau angkanya tidak ada di baris tingkat harga.
 
 Balas HANYA dengan JSON valid: {"ok": true/false, "reason": "satu kalimat Bahasa Indonesia, sebut restriksi/fakta spesifik yang dilanggar — bukan 'datanya kurang lengkap'"}. Tanpa teks lain.`;
 
@@ -540,6 +543,8 @@ interface VerifyFitDeps {
   customerText?: string;
   /** The configured PO form links (cetak, plano) that are not the placeholder; read only for a draft with a link. */
   poFormUrls?: () => Promise<string[]>;
+  /** The price staff named after the bot's last quote (standingStaffPrice): the reply may repeat it. */
+  staffFigures?: number[];
 }
 
 // Two repairs, not one. In every double failure of a UAT round the rewrite broke a DIFFERENT rule
@@ -598,7 +603,7 @@ export async function verifyFit(
     // LLM judge. Exact figures only - the tool's this turn, else the catalog's printed tiers - so
     // the whole block is the scope: a real tier figure is never invented, whichever product it is
     // printed under (quoting it against the wrong product is the judge's to catch).
-    const prices = verifyReplyTieredPrices(r.message, catalogBlock, r.toolFigures, r.priceToolRan);
+    const prices = verifyReplyTieredPrices(r.message, catalogBlock, r.toolFigures, r.priceToolRan, deps.staffFigures);
     // Spec 4's anti-goals, hard and catalog-independent: no link the customer did not send, and no
     // order confirmed / paid / in production / shipped.
     const links = await linkCheck(r.message);
@@ -709,7 +714,11 @@ export async function verifyFit(
   // TEXT is contested - the turn's profile facts are still true, and dropping them left the answer
   // unsaved, so the hand-off re-asked the question the customer had just answered (UAT F-06).
   console.warn(`[aiLayer] judge rejected repair → escalating. ${objection.reason}`);
-  return { ...current, message: '', confidence: 'low', escalationReason: objection.reason };
+  // The customer's agreement survives the rejected text: messageRouter tells the team a sale is waiting
+  // instead of filing the hand-off under the check's reason alone (A4 - live, staff never learned the
+  // customer had said yes). A repair that dropped the flag does not undo what the customer said.
+  const agreed = Boolean(response.sendPoForm || current.sendPoForm);
+  return { ...current, message: '', confidence: 'low', escalationReason: objection.reason, ...(agreed && { sendPoForm: true }) };
 }
 
 // ─── System prompt assembly ──────────────────────────────────────────────────
@@ -1167,7 +1176,8 @@ async function configuredPoFormUrls(): Promise<string[]> {
 async function callClaude(
   systemPrompt: string,
   messages: ChatMessage[],
-  situation: string | (() => Promise<string>) = ''
+  situation: string | (() => Promise<string>) = '',
+  staffFigures: number[] = []
 ): Promise<AIResponse> {
   const generate = (msgs: ChatMessage[]): Promise<AIResponse> =>
     isDevMode() ? callViaAgentSDK(systemPrompt, msgs) : callViaAPI(systemPrompt, msgs);
@@ -1209,6 +1219,7 @@ async function callClaude(
     givenName: nameGivenIn(messages),
     customerText: customerTextOf(messages),
     poFormUrls: configuredPoFormUrls,
+    staffFigures,
   });
   return withCatalogPhotosOnly(verified, extractCatalogBlock(systemPrompt));
 }
@@ -1457,10 +1468,16 @@ export async function buildContextAndCallAI(
   // The photo verdict goes to the judge as well: a reply confirming "iya, ini produk kami" on the
   // strength of a matching catalog photo is not a claim the judge should reject from text alone.
   const withPhoto = (s: string): string => (turn?.photoNote ? `${s}\n[${turn.photoNote}]` : s);
+  // A price staff named after the bot's last quote is the team's decision: the price check lets the
+  // reply repeat it, and the judge is told where it came from (A3).
+  const staffPrice = standingStaffPrice(recentMessages);
+  const withStaffPrice = (s: string): string => (staffPrice
+    ? `${s}\n[Harga dari tim CS di percakapan ini - keputusan tim, boleh diulang: "${staffPrice.body.slice(0, 160)}"]`
+    : s);
   const situation = fullCatalog
-    ? (): Promise<string> => extraKeywordsP.then((kw) => withPhoto(buildJudgeSituation(userMessage, kw, judgeContext)))
-    : withPhoto(buildJudgeSituation(userMessage, resolvedKeywords, judgeContext));
-  return callClaude(systemPrompt, messages, situation);
+    ? (): Promise<string> => extraKeywordsP.then((kw) => withStaffPrice(withPhoto(buildJudgeSituation(userMessage, kw, judgeContext))))
+    : withStaffPrice(withPhoto(buildJudgeSituation(userMessage, resolvedKeywords, judgeContext)));
+  return callClaude(systemPrompt, messages, situation, staffPrice?.figures ?? []);
 }
 
 // Priority-ordered list — longer phrases first to prevent "box" matching before "box kue"
