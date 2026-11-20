@@ -117,6 +117,30 @@ export function verifyReplyOpener(message: string): { ok: boolean; reason: strin
   };
 }
 
+// "Halo, ini jualan apa ya?", "jual apa aja", "produknya apa aja", "imperial indopack itu apa", "ini usaha apa".
+const ASKS_WHAT_WE_SELL_RE = /\bjual(?:an|nya)?\s+apa\b|\bproduk(?:nya)?\s+apa\b|\bada\s+apa\s+(?:aja|saja)\b|\b(?:usaha|bisnis)(?:nya)?\s+apa\b|\bimperial\s+indopack\s+(?:itu\s+)?apa\b|\bapa\s+itu\s+imperial\b/i;
+const PAPER_LINE_RE = /\bkertas\b|\bgreaseproof\b|\bpaper\s*bag\b/i;
+const BOX_LINE_RE = /\bbox\b|\bkotak\b|\bkarton\b|\bdus\b|\blunch\s*box\b/i;
+
+/**
+ * Asked what we sell, the reply names both lines: boxes (Imperial Indopack) and printed paper (the
+ * Kertas Supreme line). Live 2026-11-20 the reply model answered paper only, chat after chat, with
+ * the Brands rule in its prompt. Soft: a reply that still names one line is sent after the repairs.
+ * A reply that names neither (a greeting, a question back) is left alone.
+ */
+export function verifyReplyBothLines(message: string, latestCustomerText: string): { ok: boolean; reason: string; soft?: boolean } {
+  if (!ASKS_WHAT_WE_SELL_RE.test(latestCustomerText)) return { ok: true, reason: '' };
+  const paper = PAPER_LINE_RE.test(message);
+  const box = BOX_LINE_RE.test(message);
+  if (paper === box) return { ok: true, reason: '' };
+  return {
+    ok: false,
+    soft: true,
+    reason: 'Pelanggan bertanya kami jual apa: sebutkan KEDUA lini produk dalam balasan ini - box karton cetak (nasi box, box katering, box kue) ' +
+      'DAN kertas bungkus cetak logo (nasi bungkus, burger, kebab, juga greaseproof dan paper bag) - jangan hanya salah satu, lalu tanyakan kebutuhannya.',
+  };
+}
+
 /**
  * The first reply to a greeting with no need stated asks what they need, and only that (client,
  * 2026-11-02). Replayed, the model sometimes asked both: "Ada yang bisa saya bantu kak? Sebelumnya,

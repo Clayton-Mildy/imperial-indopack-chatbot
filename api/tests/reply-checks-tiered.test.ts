@@ -346,6 +346,17 @@ describe('verifyFit - the strict price check in the pipeline', () => {
     });
   });
 
+  // Live 2026-11-20: "Halo, ini jualan apa ya?" answered with paper only.
+  it('asked what we sell, a paper-only draft is rewritten once to name both lines', async () => {
+    const paperOnly = draft('Halo kak 😊 Kami jual kertas bungkus cetak logo untuk nasi, kebab, dan burger.');
+    const both = draft('Halo kak 😊 Kami jual box karton cetak (nasi box, katering, box kue) dan kertas bungkus cetak logo untuk nasi, burger, kebab.');
+    const regenerate = vi.fn(async () => both);
+    const out = await verifyFit(paperOnly, PROMPT, 'Halo, ini jualan apa ya?', { judge: okJudge().judge, regenerate, latestCustomerText: 'Halo, ini jualan apa ya?' });
+    expect(regenerate).toHaveBeenCalledTimes(1);
+    expect(regenerate.mock.calls[0]![0]).toContain('KEDUA lini');
+    expect(out).toBe(both);
+  });
+
   // A4: a rejected agreement must still tell the team the customer said yes.
   it('keeps the agreement flag when an agreement reply is handed off after two repairs', async () => {
     const bad = { ...draft('Box Ivory 270 gsm: Rp 1.000.000/rim kak, saya kirim form PO-nya.'), sendPoForm: true as const };

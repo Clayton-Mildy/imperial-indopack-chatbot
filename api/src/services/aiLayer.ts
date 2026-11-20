@@ -12,7 +12,7 @@ import {
   isPoFormPlaceholder,
 } from '../domain/constants.js';
 import { buildCatalogContext, getFullCatalogBlock } from './ragQuery.js';
-import { withoutInventedTotals, verifyReplyTieredPrices, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, saysNotCarried, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, verifyReplyUrls, verifyReplyOrderStatus, urlsIn, nameGivenIn, ASKS_NAME_RE } from './replyChecks.js';
+import { withoutInventedTotals, verifyReplyTieredPrices, verifyReplyTone, verifyReplyNotCarried, verifyReplyPhotoClaim, saysNotCarried, verifyReplyMeta, verifyReplyCatalogClaim, verifyReplyOpener, verifyReplyFirstGreeting, verifyReplyNameRepeat, verifyReplyNotCarriedCloses, verifyReplyUrls, verifyReplyOrderStatus, verifyReplyBothLines, urlsIn, nameGivenIn, ASKS_NAME_RE } from './replyChecks.js';
 import {
   getLastNMessages,
   getConversationSummary,
@@ -545,6 +545,8 @@ interface VerifyFitDeps {
   poFormUrls?: () => Promise<string[]>;
   /** The price staff named after the bot's last quote (standingStaffPrice): the reply may repeat it. */
   staffFigures?: number[];
+  /** The customer's message this turn answers - what verifyReplyBothLines reads. */
+  latestCustomerText?: string;
 }
 
 // Two repairs, not one. In every double failure of a UAT round the rewrite broke a DIFFERENT rule
@@ -633,6 +635,7 @@ export async function verifyFit(
       // (replayed 2026-10-13: a name given after "belum ada" was answered with the funnel question 2/2).
       ...(deps.openingTurn && !deps.afterNotCarried ? [verifyReplyOpener(r.message)] : []),
       ...(deps.firstReply ? [verifyReplyFirstGreeting(r.message)] : []),
+      verifyReplyBothLines(r.message, deps.latestCustomerText ?? ''),
     ];
     const failed = results.filter((c) => !c.ok);
     // All reasons at once: a repair has to fix every problem, not the first found.
@@ -1218,6 +1221,7 @@ async function callClaude(
     afterNotCarried: typeof lastBot?.content === 'string' && saysNotCarried(lastBot.content),
     givenName: nameGivenIn(messages),
     customerText: customerTextOf(messages),
+    latestCustomerText: customerTextOf(messages.slice(-1)),
     poFormUrls: configuredPoFormUrls,
     staffFigures,
   });

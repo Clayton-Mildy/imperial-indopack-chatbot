@@ -382,3 +382,27 @@ describe('verifyReplyOrderStatus', () => {
     'Proses produksi sekitar 7-10 hari kerja kak.',
   ])('lets pass: %s', (msg) => expect(verifyReplyOrderStatus(msg).ok).toBe(true));
 });
+
+// Live 2026-11-20: "Halo, ini jualan apa ya?" got paper only, four chats in a row, with the prompt rule in place (Haiku).
+describe('verifyReplyBothLines', () => {
+  it.each(['Halo, ini jualan apa ya?', 'jual apa aja ya ini? untuk kegunaan apa', 'produknya apa aja kak', 'imperial indopack itu apa ya?', 'ada apa aja?', 'ini usaha apa ya'])(
+    'asks what we sell: %s', async (q) => {
+      const { verifyReplyBothLines } = await import('../src/services/replyChecks.js');
+      const paperOnly = verifyReplyBothLines('Kami jual kertas bungkus cetak logo untuk nasi, kebab, dan burger.', q);
+      expect(paperOnly.ok).toBe(false);
+      expect(paperOnly.soft).toBe(true);
+      expect(paperOnly.reason).toMatch(/box karton/);
+      expect(verifyReplyBothLines('Kami jual box karton cetak untuk nasi box dan katering kak.', q).ok).toBe(false);
+      expect(verifyReplyBothLines('Kami jual box karton cetak (nasi box, katering, box kue) dan kertas bungkus cetak logo untuk nasi, burger, kebab.', q).ok).toBe(true);
+    });
+
+  it.each(['berapa harga kertas nasi?', 'box 20x20 ada?', 'halo kak', 'gimana cara pesannya'])('ignores other questions: %s', async (q) => {
+    const { verifyReplyBothLines } = await import('../src/services/replyChecks.js');
+    expect(verifyReplyBothLines('Kami jual kertas bungkus cetak logo kak.', q).ok).toBe(true);
+  });
+
+  it('a reply that names no product line at all is not its business', async () => {
+    const { verifyReplyBothLines } = await import('../src/services/replyChecks.js');
+    expect(verifyReplyBothLines('Halo kak, ada yang bisa saya bantu?', 'jualan apa ya').ok).toBe(true);
+  });
+});
