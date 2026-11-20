@@ -47,12 +47,20 @@ describe('reseed-prompt-defaults.ts', () => {
 
 // Each rule below was broken live in an earlier UAT and kept for this bot.
 describe('rules that stay in the prompt', () => {
+  it('Brands: "jual apa" names both product lines (live 2026-11-20: paper only, four times)', () => {
+    expect(section('Brands')).toContain('sebutkan KEDUA lini dalam satu balasan');
+    expect(section('Brands')).toContain('Jangan hanya menyebut salah satu');
+  });
+
   it('Tone: English in, English out', () => {
     expect(section('Tone')).toContain('kalau pelanggan menulis dalam bahasa Inggris, jawab dalam bahasa Inggris');
   });
 
   it('Identity: one fixed disclosure line; Escalation: asking whether it is a bot is not asking for a person', () => {
-    expect(section('Identity')).toContain('"Aku asisten virtual Imperial Indopack & Kertas Supreme kak 😊 Kalau mau ngobrol langsung sama tim juga bisa ya."');
+    expect(section('Identity')).toContain('"Aku asisten virtual <merek> kak 😊 Kalau mau ngobrol langsung sama tim juga bisa ya."');
+    // The brand in it follows PENGATURAN BOT, never both brands hard-coded (live 2026-11-20).
+    expect(section('Identity')).toContain('<merek> diisi sesuai PENGATURAN BOT');
+    expect(section('Identity')).not.toContain('Imperial Indopack & Kertas Supreme');
     expect(section('Escalation')).toContain('Pertanyaan apakah kamu bot atau orang');
   });
 

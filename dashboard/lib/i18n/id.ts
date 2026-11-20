@@ -589,6 +589,7 @@ export const id = {
   "catalog.card.size": "Ukuran",
   "catalog.card.sizeBox": "Ukuran (p × l × t)",
   "catalog.card.from": "Mulai {qty} {unit}",
+  "catalog.card.fromBoth": "Mulai {qty} rim ({pcs} pcs)",
   "catalog.card.delivery": "Ongkir",
   "catalog.card.deliveryIncluded": "Sudah termasuk",
   "catalog.card.deliveryExcluded": "Belum termasuk",

@@ -96,6 +96,12 @@ describe('upgradeUneditedIdentity', () => {
     expect(r.sections[0]!.content).toBe(NEWID);
     expect(r.sections[1]).toEqual(live[1]);
   });
+  it('every previous default is replaced, including the one that named both brands in the disclosure line', () => {
+    expect(PREVIOUS_IDENTITY_DEFAULTS.some((t) => t.includes('Aku asisten virtual Imperial Indopack & Kertas Supreme'))).toBe(true);
+    for (const old of PREVIOUS_IDENTITY_DEFAULTS) {
+      expect(upgradeUneditedIdentity([{ name: 'Identity', content: old }], NEWID).sections[0]!.content).toBe(NEWID);
+    }
+  });
   it('keeps an Identity staff edited', () => {
     const live = [{ name: 'Identity', content: PREVIOUS_IDENTITY_DEFAULTS[0] + ' Nama: Sari.' }];
     const r = upgradeUneditedIdentity(live, NEWID);

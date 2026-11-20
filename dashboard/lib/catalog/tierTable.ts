@@ -6,30 +6,38 @@ import type { CatalogProduct, PriceTier, QtyUnit } from "@/types/api";
 export interface TierColumn {
   minQty: number;
   qtyUnit: QtyUnit;
+  /** Sizes wrote this threshold in both units ("5 rim" on one, "2.500 pcs" on another): the header shows both. */
+  mixed?: boolean;
 }
 
 type Size = CatalogProduct["sizes"][number];
 
-const toPcs = (c: TierColumn): number => (c.qtyUnit === "rim" ? c.minQty * PCS_PER_RIM : c.minQty);
-const sameColumn = (a: TierColumn, b: TierColumn): boolean => a.minQty === b.minQty && a.qtyUnit === b.qtyUnit;
+const toPcs = (c: Pick<TierColumn, "minQty" | "qtyUnit">): number => (c.qtyUnit === "rim" ? c.minQty * PCS_PER_RIM : c.minQty);
 
 /**
- * The distinct (minQty, qtyUnit) pairs over every size, ascending by pcs. "5 rim" and "2500 pcs" are
- * one threshold written two ways and stay two columns (rim first), so each cell shows what was typed.
+ * One column per quantity threshold over every size, ascending. "5 rim" and "2.500 pcs" are the same
+ * threshold (1 rim = 500 pcs), so they share a column (live 2026-11-20: side by side, each half empty).
+ * The header uses rim when any size wrote it in rim, and is marked `mixed` when both units were used.
  */
 export function tierColumns(sizes: Size[]): TierColumn[] {
-  const columns: TierColumn[] = [];
+  const byPcs = new Map<number, Set<QtyUnit>>();
   for (const size of sizes) {
     for (const t of size.tiers) {
-      if (!columns.some((c) => sameColumn(c, t))) columns.push({ minQty: t.minQty, qtyUnit: t.qtyUnit });
+      const pcs = toPcs(t);
+      byPcs.set(pcs, (byPcs.get(pcs) ?? new Set<QtyUnit>()).add(t.qtyUnit));
     }
   }
-  return columns.sort((a, b) => toPcs(a) - toPcs(b) || (a.qtyUnit === b.qtyUnit ? 0 : a.qtyUnit === "rim" ? -1 : 1));
+  return [...byPcs.entries()].sort(([a], [b]) => a - b).map(([pcs, units]) => {
+    const rim = units.has("rim");
+    const column: TierColumn = rim ? { minQty: pcs / PCS_PER_RIM, qtyUnit: "rim" } : { minQty: pcs, qtyUnit: "pcs" };
+    return units.size > 1 ? { ...column, mixed: true } : column;
+  });
 }
 
-/** The size's tier at exactly this column, or null (the table shows "—"). */
+/** The size's tier at this column's threshold, in whichever unit the size wrote it; or null (the table shows "—"). */
 export function cellFor(size: Size, col: TierColumn): PriceTier | null {
-  return size.tiers.find((t) => sameColumn(t, col)) ?? null;
+  const pcs = toPcs(col);
+  return size.tiers.find((t) => toPcs(t) === pcs) ?? null;
 }
 
 /** Whether the size's prices include delivery: every tier, none (or no tiers at all), or some. */

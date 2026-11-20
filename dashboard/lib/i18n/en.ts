@@ -588,6 +588,7 @@ export const en: Record<keyof typeof id, string> = {
   "catalog.card.size": "Size",
   "catalog.card.sizeBox": "Size (l × w × h)",
   "catalog.card.from": "From {qty} {unit}",
+  "catalog.card.fromBoth": "From {qty} rim ({pcs} pcs)",
   "catalog.card.delivery": "Delivery",
   "catalog.card.deliveryIncluded": "Included",
   "catalog.card.deliveryExcluded": "Not included",

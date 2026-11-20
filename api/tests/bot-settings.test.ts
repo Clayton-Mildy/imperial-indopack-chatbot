@@ -10,8 +10,15 @@ describe('bot settings', () => {
     expect(b).toContain('2.500 pcs / 5 rim');
     expect(b).toContain('merek yang sedang dibahas');
   });
-  it('signs as Imperial Indopack when set', () =>
-    expect(buildBotSettingsBlock({ ...DEFAULT_BOT_SETTINGS, signAs: 'imperial_indopack' })).toContain('selalu Imperial Indopack.'));
+  it('signs as Imperial Indopack when set, and keeps the paper brand name out of the chat', () => {
+    const b = buildBotSettingsBlock({ ...DEFAULT_BOT_SETTINGS, signAs: 'imperial_indopack' });
+    expect(b).toContain('selalu Imperial Indopack');
+    // Live 2026-11-20: set to Imperial Indopack, the bot still said "asisten virtual Imperial Indopack & Kertas Supreme".
+    expect(b).toContain('JANGAN menyebut nama "Kertas Supreme" ke pelanggan');
+    expect(b).toContain('hanya untuk pencatatan (field brands)');
+  });
+  it('the brand-discussed setting names no such ban', () =>
+    expect(buildBotSettingsBlock(DEFAULT_BOT_SETTINGS)).not.toContain('JANGAN menyebut nama "Kertas Supreme"'));
   it('formats the minimum', () => {
     expect(formatMinOrder(2500)).toBe('2.500 pcs / 5 rim');
     expect(formatMinOrder(1200)).toBe('1.200 pcs');

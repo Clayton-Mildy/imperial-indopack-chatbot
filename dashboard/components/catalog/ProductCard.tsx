@@ -5,6 +5,7 @@ import { BrandTags } from "@/components/BrandTag";
 import { BRAND_TAG } from "@/lib/brands";
 import { apiFileUrl } from "@/lib/format";
 import { gramasiSummary } from "@/lib/catalog/productForm";
+import { PCS_PER_RIM } from "@/lib/format";
 import { cellFor, deliveryLabel, distinctSizeCount, sizeRowLabel, tierColumns, type TierColumn } from "@/lib/catalog/tierTable";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
 import { formatNumber, formatRupiah, type TFn } from "@/lib/i18n/core";
@@ -114,7 +115,9 @@ export function ProductCard({ product: p, canEdit, onDelete }: Props) {
   }
 
   const columns = tierColumns(p.sizes);
-  const colLabel = (c: TierColumn) => t("catalog.card.from", { qty: formatNumber(c.minQty, lang), unit: c.qtyUnit });
+  const colLabel = (c: TierColumn) => c.mixed && c.qtyUnit === "rim"
+    ? t("catalog.card.fromBoth", { qty: formatNumber(c.minQty, lang), pcs: formatNumber(c.minQty * PCS_PER_RIM, lang) })
+    : t("catalog.card.from", { qty: formatNumber(c.minQty, lang), unit: c.qtyUnit });
   const spec = specLine(p, t);
 
   return (

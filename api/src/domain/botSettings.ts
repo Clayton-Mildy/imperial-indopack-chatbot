@@ -39,7 +39,12 @@ export function formatMinOrder(pcs: number): string {
 
 const SIGN_AS_LINE: Record<SignAs, string> = {
   brand_discussed: 'merek yang sedang dibahas (Kertas Supreme atau Imperial Indopack); bila belum jelas, Imperial Indopack.',
-  imperial_indopack: 'selalu Imperial Indopack.',
+  // Live 2026-11-20: set to Imperial Indopack, the bot still introduced itself as "Imperial Indopack & Kertas
+  // Supreme". The paper line is still sold and recorded (brands) - only its name stays out of the chat.
+  imperial_indopack: 'selalu Imperial Indopack: di perkenalan, di sapaan ({merek} = Imperial Indopack), dan di kalimat asisten virtual. ' +
+    'JANGAN menyebut nama "Kertas Supreme" ke pelanggan: produk kertas (kertas nasi/bungkus cetak logo, greaseproof, paper bag, paper sleeve, amplop) ' +
+    'kamu tawarkan sebagai produk Imperial Indopack juga. Baris "Merek: Kertas Supreme" di KATALOG PRODUK dan INFORMASI MEREK hanya untuk pencatatan (field brands), bukan untuk ditulis. ' +
+    'Kalau pelanggan sendiri menyebut Kertas Supreme (mis. dari teks iklan), iyakan bahwa produk itu juga dari kami.',
 };
 
 export function buildBotSettingsBlock(s: BotSettings): string {

@@ -42,9 +42,28 @@ describe("tier table", () => {
       { minQty: 10, qtyUnit: "rim" },
     ]);
     expect(cellFor(sizes[0]!, { minQty: 10, qtyUnit: "rim" })?.priceIdr).toBe(999);
-    // Same threshold in another unit is another column, never a match.
-    expect(cellFor(sizes[0]!, { minQty: 5, qtyUnit: "rim" })).toBeNull();
     expect(deliveryLabel(sizes[0]!)).toBe("excluded");
+  });
+
+  // Live 2026-11-20: "Mulai 5 rim" and "Mulai 2.500 pcs" sat side by side, each half empty.
+  it("one threshold written as rim on one size and pcs on another is one column", () => {
+    const sizes = [
+      S("16x16x6", [T(2500, "pcs", 1234, false), T(5000, "pcs", 1111, false)]),
+      S("20 x 20 x 7", [T(5, "rim", 1234, false), T(10, "rim", 1111, false)]),
+    ];
+    const cols = tierColumns(sizes);
+    expect(cols).toEqual([
+      { minQty: 5, qtyUnit: "rim", mixed: true },
+      { minQty: 10, qtyUnit: "rim", mixed: true },
+    ]);
+    expect(cellFor(sizes[0]!, cols[0]!)?.priceIdr).toBe(1234);
+    expect(cellFor(sizes[1]!, cols[0]!)?.priceIdr).toBe(1234);
+    expect(cellFor(sizes[0]!, cols[1]!)?.priceIdr).toBe(1111);
+  });
+
+  it("a threshold not a whole number of rim stays in pcs", () => {
+    const sizes = [S("a", [T(1200, "pcs", 900, false)]), S("b", [T(3, "rim", 800, false)])];
+    expect(tierColumns(sizes)).toEqual([{ minQty: 1200, qtyUnit: "pcs" }, { minQty: 3, qtyUnit: "rim" }]);
   });
 });
 
