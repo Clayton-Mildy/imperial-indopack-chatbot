@@ -7,6 +7,7 @@ import { resolveConversation, returnToAi, takeOverConversation } from "@/actions
 import { sendMessage } from "@/actions/sendActions";
 import { BASE_PATH } from "@/lib/basePath";
 import type { BrandSlug } from "@/lib/brands";
+import { staffPriceAfterBotQuote, quoteSnippet } from "@/lib/conversations/staffPrice";
 import { chatActions, chatStatus, phoneLocal, priceCallsOf, sourceLabel, stampTime, toolLine, type StatusTone } from "@/lib/conversations/labels";
 import { apiFileUrl } from "@/lib/format";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
@@ -231,6 +232,7 @@ export function ChatPane({
   const [pending, startTransition] = useTransition();
   const [sendingReply, setSendingReply] = useState(false);
   const [showResolveConfirm, setShowResolveConfirm] = useState(false);
+  const [staffPriceMsg, setStaffPriceMsg] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -472,7 +474,12 @@ export function ChatPane({
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8 }}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {actions.returnToAi && (
-                <button type="button" style={footerBtn} disabled={busy} onClick={() => runStatus(returnToAi)}>
+                <button type="button" style={footerBtn} disabled={busy} onClick={() => {
+                    const hit = staffPriceAfterBotQuote(messages);
+                    if (hit) setStaffPriceMsg(quoteSnippet(hit.body));
+                    else runStatus(returnToAi);
+                  }}
+                >
                   {t("conversations.footer.returnToAi")}
                 </button>
               )}
@@ -487,6 +494,31 @@ export function ChatPane({
                 {t("conversations.footer.resolve")}
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {staffPriceMsg !== null && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(31, 36, 33, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+          <div role="alertdialog" aria-modal="true" aria-labelledby="cv-staffprice-title" aria-describedby="cv-staffprice-body" style={{ background: "#ffffff", borderRadius: 12, padding: 24, width: "100%", maxWidth: 400, boxShadow: "0 12px 32px rgba(31, 36, 33, 0.18)", color: "#1F2421" }}>
+            <div id="cv-staffprice-title" style={{ fontSize: 15, fontWeight: 700 }}>{t("conversations.staffPrice.title")}</div>
+            <div id="cv-staffprice-body" style={{ fontSize: 13, color: "#3B4540", marginTop: 6, lineHeight: 1.5, overflowWrap: "anywhere" }}>{t("conversations.staffPrice.body", { text: staffPriceMsg })}</div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+              <button type="button" style={footerBtn} disabled={pending} onClick={() => setStaffPriceMsg(null)}>
+                {t("conversations.staffPrice.cancel")}
+              </button>
+              <button
+                type="button"
+                style={{ ...footerBtn, border: 0, background: "#586B34", color: "#ffffff" }}
+                disabled={pending}
+                onClick={() => {
+                  setStaffPriceMsg(null);
+                  runStatus(returnToAi);
+                }}
+              >
+                {t("conversations.staffPrice.confirm")}
+              </button>
+            </div>
           </div>
         </div>
       )}
