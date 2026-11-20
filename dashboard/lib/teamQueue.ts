@@ -33,3 +33,38 @@ export const CATEGORY_COPY: Record<HandoffCategory, { title: TKey; desc: TKey }>
   bukan_pembeli: { title: "handoff.bukan_pembeli", desc: "teamQueue.desc.bukan_pembeli" },
   lainnya: { title: "handoff.lainnya", desc: "teamQueue.desc.lainnya" },
 };
+
+/** "Semua" plus one tab per visible category. */
+export type QueueTabKey = "all" | HandoffCategory;
+
+export interface QueueTab {
+  key: QueueTabKey;
+  count: number;
+}
+
+/** Tabs in display order: "Semua" first (all waiting chats), then the visible groups with their counts. */
+export function queueTabs(q: TeamQueue): QueueTab[] {
+  const groups = visibleGroups(q);
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  return [{ key: "all", count: total }, ...groups.map((g) => ({ key: g.category, count: g.items.length }))];
+}
+
+/** The tab shown when none (or an unknown/vanished one) is chosen: always "Semua", also when nothing waits. */
+export function defaultTab(_q: TeamQueue): QueueTabKey {
+  return "all";
+}
+
+/** `requested` if it is one of the current tabs, otherwise the default. */
+export function resolveTab(q: TeamQueue, requested: string | null | undefined): QueueTabKey {
+  const hit = queueTabs(q).find((t) => t.key === requested);
+  return hit ? hit.key : defaultTab(q);
+}
+
+/** The chats a tab lists. "Semua" = every category, longest-waiting first, each tagged with its category. */
+export function tabItems(q: TeamQueue, key: QueueTabKey): { category: HandoffCategory; item: TeamQueueItem }[] {
+  const groups = visibleGroups(q);
+  const rows = groups
+    .filter((g) => key === "all" || g.category === key)
+    .flatMap((g) => g.items.map((item) => ({ category: g.category, item })));
+  return key === "all" ? rows.sort((a, b) => a.item.waitingSince.localeCompare(b.item.waitingSince)) : rows;
+}

@@ -5,10 +5,11 @@ import { sessionStaff } from "@/lib/session";
 import type { TeamQueue } from "@/types/api";
 import { TeamQueueClient } from "./TeamQueueClient";
 
-/** Perlu Tim: chats waiting on the team, by hand-off reason. `?mine=1` = "Ditangani saya" (the session's staff name). */
-export default async function TeamQueuePage({ searchParams }: { searchParams: Promise<{ mine?: string }> }) {
+/** Perlu Tim: chats waiting on the team, by hand-off reason. `?mine=1` = "Ditangani saya" (the session's staff name); `?tab=` = the selected category tab. */
+export default async function TeamQueuePage({ searchParams }: { searchParams: Promise<{ mine?: string; tab?: string }> }) {
   const t = await getT();
-  const mine = (await searchParams).mine === "1";
+  const sp = await searchParams;
+  const mine = sp.mine === "1";
   const { staffName } = await sessionStaff();
 
   // null = the fetch failed; the client keeps the queue it already shows.
@@ -22,7 +23,7 @@ export default async function TeamQueuePage({ searchParams }: { searchParams: Pr
   return (
     <>
       <Header title={t("nav.teamQueue")} />
-      <TeamQueueClient queue={queue} mine={mine} />
+      <TeamQueueClient queue={queue} mine={mine} initialTab={sp.tab ?? null} />
     </>
   );
 }

@@ -373,6 +373,8 @@ export const id = {
   "teamQueue.desc.lainnya": "Alasan lain atau belum tercatat. Tim memeriksa percakapannya.",
   "teamQueue.tab.all": "Semua tim",
   "teamQueue.tab.mine": "Ditangani saya",
+  "teamQueue.cat.all": "Semua",
+  "teamQueue.cat.tabs": "Kategori",
   "teamQueue.tabs": "Penanggung jawab",
   "teamQueue.waiting": "{n} menunggu tim",
   "teamQueue.oldest": "Terlama {wait}",

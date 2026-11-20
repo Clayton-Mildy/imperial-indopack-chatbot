@@ -372,6 +372,8 @@ export const en: Record<keyof typeof id, string> = {
   "teamQueue.desc.lainnya": "Another reason or none recorded. The team reviews the chat.",
   "teamQueue.tab.all": "All team",
   "teamQueue.tab.mine": "Handled by me",
+  "teamQueue.cat.all": "All",
+  "teamQueue.cat.tabs": "Category",
   "teamQueue.tabs": "Assignee",
   "teamQueue.waiting": "{n} waiting for the team",
   "teamQueue.oldest": "Oldest {wait}",
