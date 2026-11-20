@@ -22,6 +22,8 @@ export function leadsQueryForTab(
   if (f.search) q.search = f.search;
   if (tab === "kertas_supreme" || tab === "imperial_indopack") q.brand = tab as BrandSlug;
   if (tab === "followup") q.followUpStatus = "needs_followup";
+  // Newest chat first everywhere, except Belum Dibalas, where whoever has waited longest comes first.
   if (tab === "unreplied") q.unreplied = true;
+  else q.sort = "last_chat";
   return q;
 }
