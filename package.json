@@ -1,0 +1,9 @@
+{
+  "name": "imperial-indopack-chatbot",
+  "private": true,
+  "description": "Runs the API and the dashboard together; each keeps its own package.json in api/ and dashboard/.",
+  "scripts": {
+    "start": "./start.sh",
+    "dev": "./start.sh"
+  }
+}
