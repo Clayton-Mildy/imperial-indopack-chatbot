@@ -360,4 +360,25 @@ describe('verifyReplyOrderStatus', () => {
     'Pembayaran lunas sebelum barang dikirim ya kak.',
     'Kertas kami sudah diproduksi dengan bahan food grade kak.',
   ])('lets pass: %s', (msg) => expect(verifyReplyOrderStatus(msg).ok).toBe(true));
+
+  // QA 2026-11-19 A8: promises in agreement recaps that passed the check.
+  it.each([
+    'Pesanannya udah fix ya kak 🙏',
+    'Oke kak, order kakak sudah fix untuk 2.500 pcs.',
+    'Logonya nanti langsung kami teruskan ke tim produksi ya kak',
+    'Setelah form diisi, desainnya kami teruskan ke bagian produksi.',
+    'Form PO-nya tinggal diisi dan dikirim balik ya kak',
+    'Formnya diisi lalu dikirimkan kembali ke kami ya kak',
+  ])('rejects the promise: %s', (msg) => {
+    const v = verifyReplyOrderStatus(msg);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toMatch(/send_po_form/);
+  });
+
+  it.each([
+    'Kalau pesanannya sudah fix, tim kami yang hubungi ya kak.',
+    'Ukurannya sudah fix 20 x 20 ya kak?',
+    'Boleh kirim kembali fotonya kak, tadi tidak terbuka.',
+    'Proses produksi sekitar 7-10 hari kerja kak.',
+  ])('lets pass: %s', (msg) => expect(verifyReplyOrderStatus(msg).ok).toBe(true));
 });

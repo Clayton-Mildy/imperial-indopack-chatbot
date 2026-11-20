@@ -265,9 +265,36 @@ function orderStatusClaim(sentence: string): string | null {
   return null;
 }
 
+// Promises about the order the bot cannot keep, all three in the QA recaps of 2026-11-19 (A8). "Udah fix"
+// unless it is a condition ("kalau pesanannya sudah fix ..."); the other two whatever the condition:
+// the bot hands nothing to production, and a PO form is filled in through its link, not sent back.
+const ORDER_FIXED_RE = new RegExp(String.raw`\b(?:pesanan|order|orderan|po)(?:nya)?\b[^.!?\n]{0,25}\b${DONE}\s+fix\b`, 'i');
+const TO_PRODUCTION_RE = /\b(?:di)?(?:teruskan|terusin|lanjutkan|kirim(?:kan)?|serahkan|oper)\b[^.!?\n]{0,30}\bke\s+(?:tim\s+|bagian\s+)?produksi\b/i;
+const SENT_BACK_RE = /\b(?:di)?kirim(?:kan)?\s+(?:balik|kembali)\b/i;
+const FORM_WORD_RE = /\b(?:form|formulir|po)(?:nya)?\b/i;
+
+function orderPromise(sentence: string): string | null {
+  const fixed = ORDER_FIXED_RE.exec(sentence);
+  if (fixed && !HYPOTHETICAL_RE.test(sentence.slice(0, fixed.index + fixed[0].length))) return fixed[0];
+  const production = TO_PRODUCTION_RE.exec(sentence);
+  if (production) return production[0];
+  const back = SENT_BACK_RE.exec(sentence);
+  if (back && FORM_WORD_RE.test(sentence)) return back[0];
+  return null;
+}
+
 export function verifyReplyOrderStatus(message: string): { ok: boolean; reason: string } {
-  const hit = message.split(SEGMENT_RE).filter((s) => !s.includes('?')).map(orderStatusClaim).find(Boolean);
-  if (!hit) return { ok: true, reason: '' };
+  const statements = message.split(SEGMENT_RE).filter((s) => !s.includes('?'));
+  const hit = statements.map(orderStatusClaim).find(Boolean);
+  if (!hit) {
+    const promise = statements.map(orderPromise).find(Boolean);
+    if (!promise) return { ok: true, reason: '' };
+    return {
+      ok: false,
+      reason: `Jangan menjanjikan langkah pesanan ("${promise}"): pesanan belum fix sampai tim kami mengonfirmasi, desain/logo tidak diteruskan ke produksi oleh kamu, ` +
+        'dan form PO cukup diisi lewat link-nya (tidak dikirim balik). Tulis ulang tanpa janji itu; form PO dikirim sistem lewat send_po_form.',
+    };
+  }
   return {
     ok: false,
     reason: `Jangan menyatakan status pesanan ("${hit}"): bahwa pesanan sudah dikonfirmasi, sudah dibayar, sedang diproduksi, atau sudah dikirim hanya tim kami yang bisa menyampaikan. ` +

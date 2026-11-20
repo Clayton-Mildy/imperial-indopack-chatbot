@@ -129,6 +129,7 @@ vi.mock('../src/services/escalationHandler.js', async () => {
     pickProfileGapQuestion: actual.pickProfileGapQuestion,
     unansweredSizeQuestion: actual.unansweredSizeQuestion,
     replyPromisesTeamCheck: actual.replyPromisesTeamCheck,
+    asksHowToOrder: actual.asksHowToOrder,
   };
 });
 vi.mock('../src/services/intentClassifier.js', () => ({
@@ -3692,5 +3693,40 @@ describe('messageRouter — typing debounce (AC-1 through AC-6)', () => {
 
     expect(mockEscalateConversation).toHaveBeenCalledTimes(1);
     expect(mockEscalateConversation.mock.calls[0]![1]).toBe('Pelanggan setuju membeli - mohon kirimkan form PO (balasan bot ditahan: Desain sudah ada tidak didukung data)');
+  });
+
+  describe('"ordernya gimana?" right after the PO form (A7)', () => {
+    const FORM_ROW = { role: 'assistant', body: 'Untuk pemesanannya, silakan isi form PO berikut ya kak 🙏\nhttps://forms.gle/imperial-po', senderName: null, status: 'sent', metadata: { source: 'po_form' } };
+
+    it('points to the form, with no AI call and no hand-off', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const { CANNED_FILL_PO_FORM } = await import('../src/domain/constants.js');
+      mockGetLastNMessages.mockResolvedValue([{ role: 'user', body: 'oke ambil' }, { role: 'assistant', body: 'Siap kak 🙏' }, FORM_ROW] as HistoryRow[]);
+
+      await routeInboundBaileysMessage(makeTextPayload('wamid-A7a', 'ini ordernya gmn brrti ya?'));
+      await vi.runAllTimersAsync();
+
+      expect(mockSendTextMessage.mock.calls.map((c) => c[2])).toEqual([CANNED_FILL_PO_FORM]);
+      expect(mockBuildContextAndCallAI).not.toHaveBeenCalled();
+      expect(mockEscalateConversation).not.toHaveBeenCalled();
+      expect(mockInsertMessage).toHaveBeenCalledWith(expect.objectContaining({ body: CANNED_FILL_PO_FORM, metadata: expect.objectContaining({ source: 'po_form_reminder' }) }));
+    });
+
+    it('goes to the bot when the form was only promised, staff wrote since, or the message says more', async () => {
+      const { routeInboundBaileysMessage } = await import('../src/services/messageRouter.js');
+      const promise = { ...FORM_ROW, body: 'Untuk form PO-nya, tim kami kirimkan sebentar lagi ya kak 🙏' };
+      const cases: [HistoryRow[], string][] = [
+        [[promise] as HistoryRow[], 'ordernya gimana ya kak?'],
+        [[FORM_ROW, { role: 'assistant', body: 'sudah kami cek ya', senderName: 'Tim CS' }] as HistoryRow[], 'ordernya gimana ya kak?'],
+        [[FORM_ROW] as HistoryRow[], 'ordernya gimana, mau tambah 500 pcs'],
+      ];
+      for (const [i, [history, text]] of cases.entries()) {
+        mockBuildContextAndCallAI.mockClear();
+        mockGetLastNMessages.mockResolvedValue(history);
+        await routeInboundBaileysMessage(makeTextPayload(`wamid-A7b${i}`, text));
+        await vi.runAllTimersAsync();
+        expect(mockBuildContextAndCallAI).toHaveBeenCalledTimes(1);
+      }
+    });
   });
 });

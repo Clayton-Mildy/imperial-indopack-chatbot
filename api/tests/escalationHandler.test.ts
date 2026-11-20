@@ -720,3 +720,17 @@ describe('the design rung', () => {
     'logonya dicetak berapa warna?',
   ])('does not read a design answer in: %s', (m) => expect(mentionsDesign(m)).toBe(false));
 });
+
+// QA 2026-11-19 A7: the question alone, right after the PO form, is answered with the form.
+describe('asksHowToOrder', () => {
+  it.each(['ini ordernya gmn brrti ya?', 'ini ordernya gimana ya?', 'caranya order gimana kak', 'terus gimana kak?', 'Pemesanannya bagaimana ya kak'])(
+    'is the question alone: %s', async (msg) => {
+      const { asksHowToOrder } = await import('../src/services/escalationHandler.js');
+      expect(asksHowToOrder(msg)).toBe(true);
+    });
+  it.each(['ordernya gimana, mau tambah 500 pcs', 'pesanan saya belum sampai gimana ya', 'halo kak', 'harga box 20x20 gimana kak'])(
+    'is not: %s', async (msg) => {
+      const { asksHowToOrder } = await import('../src/services/escalationHandler.js');
+      expect(asksHowToOrder(msg)).toBe(false);
+    });
+});

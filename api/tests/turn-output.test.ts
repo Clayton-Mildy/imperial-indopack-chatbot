@@ -76,7 +76,9 @@ describe('the respond tool contract', () => {
   });
 
   it('describes the new fields in the plan\'s words', () => {
-    expect(RESPOND_FIELD_DESC.send_po_form).toBe('true only on the turn the customer clearly agrees to buy at the quoted price');
+    expect(RESPOND_FIELD_DESC.send_po_form.startsWith('true only on the turn the customer clearly agrees to buy at the quoted price')).toBe(true);
+    // QA 2026-11-19 A6: "oke deal kak" with no design on record got a design question and no form.
+    expect(RESPOND_FIELD_DESC.send_po_form).toContain('also when the design is still unknown');
     expect(RESPOND_FIELD_DESC.image_urls).toBe('reference photo urls of the product you recommend, copied exactly from the product\'s [FOTO REFERENSI TERSEDIA] line, at most 3');
     expect(RESPOND_FIELD_DESC.examples_for_team).toBe('true when the customer has no design and the product has no reference photos, so the team sends examples');
   });

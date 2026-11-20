@@ -7,12 +7,12 @@ import { resetLeadsForContact, tagNonSalesLead } from '../repositories/leads.js'
 import { kindFromNonSalesReason } from '../domain/leadStages.js';
 import { getFirstPhoneNumber, findPhoneNumberByProviderId } from '../repositories/phoneNumbers.js';
 import { getAiEnabledDefault, getPoFormUrls } from '../repositories/appSettings.js';
-import { CANNED_STAFF_PRICE_AGREED, CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormsMessage, isPoFormPlaceholder, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM, gramasiBeforePoLine } from '../domain/constants.js';
+import { CANNED_STAFF_PRICE_AGREED, CANNED_FILL_PO_FORM, CANNED_COMPLAINT_REPLY, CANNED_NON_SALES_REPLY, CANNED_TOTAL_FOR_TEAM, CANNED_SIZE_FOR_TEAM, PHOTO_UNSURE_REASON, CANNED_PHOTO_CHECK_REPLY, CANNED_IMAGE_UNREADABLE_REPLY, CANNED_STILL_CHECKING_REPLY, CANNED_UNSUPPORTED_MEDIA_REPLY, CANNED_UNSUPPORTED_OTHER_REPLY, ESCALATION_FOLLOWUP_ACKS, MAX_CONTEXT_MESSAGES, poFormsMessage, isPoFormPlaceholder, CANNED_PO_FORM_FROM_TEAM, CANNED_DESIGN_EXAMPLES_FROM_TEAM, gramasiBeforePoLine } from '../domain/constants.js';
 import { buildContextAndCallAI } from './aiLayer.js';
 import { resolveCatalogDelivery, isPriceRequest, asksForPriceList, forgetSentPriceLists, CATALOG_NOT_SENT_NOTE, type CatalogDelivery } from './catalogDelivery.js';
 import { extractCatalogKeywordsFromImage, visionExtractToKeywords, type VisionExtract } from './visionKeywords.js';
 import { matchCustomerPhoto, photoBatchNote, photoHistoryNote, photoLine, captionOf, type PhotoMatch } from './photoMatch.js';
-import { escalateConversation, detectComplaint, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, isNonSalesHandoff, isNonSalesReason, pickProfileGapQuestion, unansweredSizeQuestion, replyPromisesTeamCheck } from './escalationHandler.js';
+import { asksHowToOrder, escalateConversation, detectComplaint, detectNonSalesTopic, detectHumanRequest, detectPpnQuestion, isNonSalesHandoff, isNonSalesReason, pickProfileGapQuestion, unansweredSizeQuestion, replyPromisesTeamCheck } from './escalationHandler.js';
 import { sendTextMessage, sendDocumentMessage, sendImageMessage } from './whatsappSender.js';
 import { recordOutboundMedia } from './outboundMedia.js';
 import { getCatalogProducts } from './ragQuery.js';
@@ -356,6 +356,21 @@ function withExamplesAsked(reason: string, r: AIResponse): string {
   return r.examplesForTeam ? `${reason}; ${DESIGN_EXAMPLES_REASON}` : reason;
 }
 
+/**
+ * The PO form link went out a moment ago and staff have not written since: among the last few rows, a
+ * sent po_form row with a link (the team's promise lines carry none) before any staff message.
+ */
+async function poFormJustSent(conversationId: string): Promise<boolean> {
+  const recent = await getLastNMessages(conversationId, 6).catch(() => []);
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const m = recent[i]!;
+    if (m.role !== 'assistant') continue;
+    if (m.senderName) return false;
+    if (m.metadata?.source === MESSAGE_SOURCE.poForm) return m.status === 'sent' && /https?:\/\//i.test(m.body);
+  }
+  return false;
+}
+
 const AGREED_REASON = 'Pelanggan setuju membeli - mohon kirimkan form PO';
 
 /**
@@ -638,6 +653,14 @@ async function fireTextDebounce(conversationId: string): Promise<void> {
     // no AI call, no sales question, and no price list: a courier's "berapa ongkirnya" is not a price
     // question. See detectNonSalesTopic.
     const nonSales = detectNonSalesTopic(combinedText, await earlierCustomerText(conversationId));
+
+    // "ini ordernya gimana ya?" right after the PO form: the form is the answer (A7). Live, the model
+    // handed it to the team as an order-status question while the form sat unfilled above.
+    if (!nonSales && asksHowToOrder(combinedText) && !detectHumanRequest(combinedText) && await poFormJustSent(conversationId)) {
+      const sent = await sendFixedLine(CANNED_FILL_PO_FORM, MESSAGE_SOURCE.poFormReminder, (text) => entry.sendReply(text));
+      await recordAfterReply(conversationId, [], [sent]);
+      return;
+    }
 
     // The brand price lists are keyword-triggered and independent of the AI. A request for the list
     // itself goes now, before the reply (fire-and-forget sends), which is what lets the reply and the

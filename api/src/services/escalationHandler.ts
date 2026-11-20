@@ -366,6 +366,21 @@ export function detectNonSalesTopic(message: string, earlier = ''): string | nul
   return null;
 }
 
+// "ini ordernya gimana ya?", "caranya order gmn kak", "terus gimana?" - and nothing else in the message.
+const HOW_TO_ORDER_RE = /\b(?:order|pesan|pesanan|pemesanan)(?:an)?(?:nya)?\s+(?:gimana|gmn|gmna|bagaimana)\b|\bcara(?:nya)?\s+(?:order|pesan)(?:nya)?\b|\b(?:terus|trus|lalu|selanjutnya|habis\s+itu|abis\s+itu)\s+(?:gimana|gmn|gmna|bagaimana)\b/gi;
+const HOW_TO_ORDER_FILLER_RE = /\b(?:ini|itu|ya|yaa|kak|ka|kakak|min|gan|sis|nih|sih|dong|deh|jadi|jd|brrti|berarti|brarti|kalau|kalo|klo|terus|trus|lalu|selanjutnya|untuk|utk|buat|gimana|gmn|gmna|bagaimana|caranya|cara)\b/gi;
+
+/**
+ * The customer asks how to go on with the order, in a message that says nothing else. Right after the
+ * PO form went out that is "fill in the form" (messageRouter), not an order-status hand-off (A7). Anything
+ * more in the message ("ordernya gimana, mau tambah 500 pcs") goes to the bot as usual.
+ */
+export function asksHowToOrder(message: string): boolean {
+  if (!new RegExp(HOW_TO_ORDER_RE.source, 'i').test(message)) return false;
+  const rest = message.replace(HOW_TO_ORDER_RE, ' ').replace(HOW_TO_ORDER_FILLER_RE, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  return rest === '';
+}
+
 export function isNonSalesHandoff(message: string): boolean {
   return detectComplaint(message) || detectNonSalesTopic(message) !== null;
 }
