@@ -75,6 +75,11 @@ const imageCache = new Map<string, string>();
 const HAS_PHOTOS_TTL_MS = 5 * 60_000;
 let photosKnown: { has: boolean; at: number } | null = null;
 
+/** A product photo was uploaded or removed (routes/dashboard/catalog.ts): look again on the next photo turn. */
+export function forgetCatalogPhotoPresence(): void {
+  photosKnown = null;
+}
+
 async function catalogHasPhotos(): Promise<boolean> {
   if (photosKnown && Date.now() - photosKnown.at < HAS_PHOTOS_TTL_MS) return photosKnown.has;
   const { rows } = await getDb().execute<{ has: boolean }>(sql`

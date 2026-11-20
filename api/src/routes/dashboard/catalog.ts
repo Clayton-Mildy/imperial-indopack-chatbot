@@ -28,6 +28,7 @@ import { refreshEmbeddingAsync } from '../../services/embeddings.js';
 import { buildCatalogWorkbook, buildTemplateWorkbook } from '../../services/catalogExport.js';
 import { importCatalogFromXlsx, previewCatalogImport, InvalidXlsxError } from '../../services/catalogImport.js';
 import { storeUploadedImage } from '../../services/imageStorage.js';
+import { forgetCatalogPhotoPresence } from '../../services/photoMatch.js';
 import {
   MAX_REFERENCE_IMAGES_PER_PRODUCT,
   addReferenceImage,
@@ -201,6 +202,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     }
     await updateProduct(id, { imageUrl });
     invalidateCatalogCache();
+    forgetCatalogPhotoPresence();
     return reply.send({ data: { imageUrl }, error: null });
   });
 
@@ -212,6 +214,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     }
     await updateProduct(id, { imageUrl: null });
     invalidateCatalogCache();
+    forgetCatalogPhotoPresence();
     return reply.code(204).send();
   });
 
