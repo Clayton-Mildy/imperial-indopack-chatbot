@@ -102,3 +102,28 @@ off when a customer asks about a staff price (constants.ts:340).
    `npm run build && npm start` (no watch) so an edit cannot restart it mid-chat.
 6. **B2:** your call whether a phone reply should pause the bot like a dashboard reply.
 7. The rest (B4-B7, C3-C7, C9, C11, D) after the client test.
+
+## Status (2026-11-20, branch fix/handoff-agreement)
+
+Fixed, with tests (API 1839 pass, dashboard 293 pass):
+
+- **A3:** an agreement after staff named a price (after the bot's last quote) sends
+  "Siap kak, terima kasih 🙏 Untuk form PO-nya, tim kami kirimkan sebentar lagi ya kak." and hands the deal
+  to the team ("Pelanggan setuju harga dari tim (...) - mohon kirimkan form PO ..."). The bot's reply and
+  the link are not sent. The price check accepts staff's figure, and the judge is told it is the team's.
+- **B3:** "Kembalikan ke AI" asks first when the newest price in the chat came from staff.
+- **B1:** status is re-read after the AI call (text and photo turns). If staff hold the chat, nothing is
+  sent and no status is written.
+- **A4:** a hand-off on the agreement turn opens with "Pelanggan setuju membeli - mohon kirimkan form PO".
+- **A5:** the judge is told order recaps are not its job.
+- **A6:** the PO Form rule and the tool field say to send both forms when the design is unknown.
+  Needs `reseed-prompt-defaults` on the live database.
+- **A7:** "ordernya gimana?" on its own, right after the form link, gets "silakan diisi form PO yang
+  barusan kami kirim".
+- **A8:** "udah fix", "teruskan ke tim produksi" and "dikirim balik" are blocked.
+
+Still open:
+- **B2:** your call whether a phone reply should pause the bot.
+- **C2 + C8:** config for the client test (`TYPING_DEBOUNCE_MS=15000`, run without watch).
+- **A9:** the real PO link has no once-only guard.
+- B4-B7, C3-C7, C9, C11 and D, as listed above.
