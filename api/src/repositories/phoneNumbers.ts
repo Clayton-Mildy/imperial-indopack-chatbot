@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { count, eq } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
-import { phoneNumbers } from '../db/schema.js';
+import { conversations, phoneNumbers } from '../db/schema.js';
 import type { PhoneNumber, PromptSections } from '../domain/types.js';
 
 export async function listPhoneNumbers(): Promise<PhoneNumber[]> {
@@ -62,6 +62,12 @@ export async function updatePhoneNumber(
     .where(eq(phoneNumbers.id, id))
     .returning();
   return row ? mapPhoneNumber(row) : null;
+}
+
+/** How many conversations run on this number: a number with any cannot be deleted (conversations reference it). */
+export async function countConversationsForPhoneNumber(id: string): Promise<number> {
+  const [row] = await getDb().select({ n: count() }).from(conversations).where(eq(conversations.phoneNumberId, id));
+  return Number(row?.n ?? 0);
 }
 
 export async function deletePhoneNumber(id: string): Promise<boolean> {

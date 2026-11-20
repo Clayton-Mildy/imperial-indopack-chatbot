@@ -74,7 +74,11 @@ export async function apiFetch<T>(
   // an envelope (the catalog's { sizes, tiers }) has it returned.
   if (method === "DELETE" || res.status === 204) {
     if (!res.ok) {
-      throw new ApiError(res.status, "API_ERROR", `HTTP ${res.status}`);
+      // The API's own error code and details, when it sent them (a number that still has chats answers
+      // 409 NUMBER_HAS_CONVERSATIONS with the count). The message stays "HTTP <status>".
+      const body = (await res.json().catch(() => null)) as { error?: unknown; details?: unknown } | null;
+      const code = typeof body?.error === "string" ? body.error : "API_ERROR";
+      throw new ApiError(res.status, code, `HTTP ${res.status}`, body?.details);
     }
     const text = res.status === 204 ? "" : await res.text();
     if (!text) return { data: null as T, error: null };

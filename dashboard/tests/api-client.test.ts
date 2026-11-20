@@ -31,4 +31,16 @@ describe("apiFetch DELETE", () => {
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status: 404 });
   });
+
+  it("an error carries the API's code and details (a number that still has chats)", async () => {
+    reply(JSON.stringify({ data: null, error: "NUMBER_HAS_CONVERSATIONS", details: { conversations: 3 } }), 409);
+    const err = await apiFetch("/numbers/1", { method: "DELETE" }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 409, code: "NUMBER_HAS_CONVERSATIONS", message: "HTTP 409", details: { conversations: 3 } });
+  });
+
+  it("an error with no JSON body is still API_ERROR", async () => {
+    reply("Internal Server Error", 500);
+    const err = await apiFetch("/numbers/1", { method: "DELETE" }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 500, code: "API_ERROR" });
+  });
 });

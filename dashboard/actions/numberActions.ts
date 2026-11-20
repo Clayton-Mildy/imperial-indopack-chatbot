@@ -8,6 +8,8 @@ import {
   deleteNumber,
 } from "@/lib/api/numbers";
 import { createLog } from "@/lib/api/activityLogs";
+import { ApiError } from "@/lib/api/client";
+import { getT } from "@/lib/i18n";
 
 async function requireAdmin(): Promise<boolean> {
   const session = await auth();
@@ -59,12 +61,26 @@ export async function updatePhoneNumber(
   return num;
 }
 
-export async function removeNumber(id: string) {
-  if (!(await requireAdmin())) throw new Error("FORBIDDEN");
+/**
+ * Deletes a number. One that still has chats is refused by the API (409): its message says how many,
+ * instead of the error the page used to swallow (live 2026-11-20).
+ */
+export async function removeNumber(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const t = await getT();
+  if (!(await requireAdmin())) return { ok: false, error: t("common.err.generic") };
   const session = await auth();
   const adminName = session?.user?.name ?? "Admin";
 
-  await deleteNumber(id);
+  try {
+    await deleteNumber(id);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409 && err.code === "NUMBER_HAS_CONVERSATIONS") {
+      const n = Number((err.details as { conversations?: unknown } | undefined)?.conversations) || 0;
+      return { ok: false, error: t("numbers.err.hasChats", { n: String(n) }) };
+    }
+    if (err instanceof ApiError && err.status === 404) return { ok: false, error: t("common.err.notFound") };
+    return { ok: false, error: t("numbers.err.deleteFailed") };
+  }
   revalidatePath("/numbers");
 
   createLog({
@@ -73,4 +89,5 @@ export async function removeNumber(id: string) {
     entityType: "phoneNumber",
     entityId: id,
   }).catch(() => {});
+  return { ok: true };
 }

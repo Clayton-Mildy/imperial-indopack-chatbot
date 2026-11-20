@@ -388,6 +388,7 @@ export function NumbersClient({ initialNumbers }: { initialNumbers: PhoneNumber[
   const [editingNumber, setEditingNumber] = useState<PhoneNumber | null>(null);
   const [deletingNumber, setDeletingNumber] = useState<PhoneNumber | null>(null);
   const [pendingDelete, startDelete] = useTransition();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Sync local state when server re-validates and passes fresh props
   useEffect(() => { setNumbers(initialNumbers); }, [initialNumbers]);
@@ -400,12 +401,15 @@ export function NumbersClient({ initialNumbers }: { initialNumbers: PhoneNumber[
     if (!deletingNumber) return;
     const id = deletingNumber.id;
     setDeletingNumber(null);
+    setDeleteError(null);
     startDelete(async () => {
       try {
-        await removeNumber(id);
+        const res = await removeNumber(id);
+        if (!res.ok) { setDeleteError(res.error); return; }
         router.refresh();
       } catch (err) {
         console.error("[numbers] Delete failed:", err);
+        setDeleteError(t("numbers.err.deleteFailed"));
       }
     });
   }
@@ -432,6 +436,12 @@ export function NumbersClient({ initialNumbers }: { initialNumbers: PhoneNumber[
           onCancel={() => setDeletingNumber(null)}
           pending={pendingDelete}
         />
+      )}
+      {deleteError && (
+        <div role="alert" style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 6, background: "#FDECEC", border: "1px solid #F5C2C2", color: "#8A1C1C", fontSize: 13, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+          <span>{deleteError}</span>
+          <button type="button" onClick={() => setDeleteError(null)} aria-label={t("numbers.err.dismiss")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>×</button>
+        </div>
       )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#0A0A0A" }}>{t("numbers.title")}</h1>

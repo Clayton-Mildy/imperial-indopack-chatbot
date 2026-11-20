@@ -6,6 +6,7 @@ import {
   createPhoneNumber,
   updatePhoneNumber,
   deletePhoneNumber,
+  countConversationsForPhoneNumber,
 } from '../../repositories/phoneNumbers.js';
 import {
   CreatePhoneNumberBodySchema,
@@ -77,7 +78,22 @@ export async function numberRoutes(app: FastifyInstance): Promise<void> {
       if (!existing) {
         return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
       }
-      await deletePhoneNumber(id);
+      // Its conversations reference it, so the database refuses the delete. Say so, with the count, rather
+      // than let that refusal surface as a bare 500 (live 2026-11-20). Chats are never deleted from here.
+      const hasChats = (conversations: number) =>
+        reply.code(409).send({ data: null, error: 'NUMBER_HAS_CONVERSATIONS', details: { conversations } });
+      const chats = await countConversationsForPhoneNumber(id);
+      if (chats > 0) return hasChats(chats);
+      try {
+        await deletePhoneNumber(id);
+      } catch (err) {
+        // A chat started on this number between the count and the delete.
+        if ((err as { code?: string; cause?: { code?: string } }).code === '23503'
+          || (err as { cause?: { code?: string } }).cause?.code === '23503') {
+          return hasChats(await countConversationsForPhoneNumber(id));
+        }
+        throw err;
+      }
       return reply.code(204).send();
     }
   );
