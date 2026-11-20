@@ -10,7 +10,7 @@
 import { z } from 'zod';
 import { and, asc, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
 import { getDb, type DbOrTx } from '../db/client.js';
-import { brands, leads, messages, productReferenceImages, productVariants, products } from '../db/schema.js';
+import { brands, leads, messages, productPhotos, productReferenceImages, productVariants, products } from '../db/schema.js';
 import { BRAND_NAME, brandSlugOfName } from '../domain/brands.js';
 import { compareGsm, normalizeGsm, sameGsm } from '../domain/gramasi.js';
 import { normalizeSize, type BrandSlug } from '../domain/orderProfile.js';
@@ -405,6 +405,8 @@ export interface CatalogProduct extends Omit<ProductInput, 'sizes'> {
   sizes: { id: string; size: string; gsm: string | null; tiers: PriceTier[] }[];
   /** The product photo (products.image_url): the item itself, what customers' photos are compared with. */
   imageUrl: string | null;
+  /** Up to 3 photos of the product (assembled, flat, ...), first first; imageUrl is the first. */
+  productPhotos: { id: string; imageUrl: string; sort: number }[];
   referenceImages: { id: string; imageUrl: string; sort: number }[];
   updatedAt: string;
 }
@@ -439,13 +441,18 @@ async function loadCatalogProducts(db: DbOrTx, where?: SQL): Promise<CatalogProd
   });
   if (known.length === 0) return [];
   const ids = known.map((r) => r.p.id);
-  const [variantRows, imageRows] = await Promise.all([
+  const [variantRows, imageRows, photoRows] = await Promise.all([
     db.select().from(productVariants).where(inArray(productVariants.productId, ids)),
     db
       .select()
       .from(productReferenceImages)
       .where(inArray(productReferenceImages.productId, ids))
       .orderBy(asc(productReferenceImages.sort), asc(productReferenceImages.createdAt)),
+    db
+      .select()
+      .from(productPhotos)
+      .where(inArray(productPhotos.productId, ids))
+      .orderBy(asc(productPhotos.sort), asc(productPhotos.createdAt)),
   ]);
   variantRows.sort(
     (a, b) => compareGsm(a.gsm, b.gsm) || a.createdAt.getTime() - b.createdAt.getTime() || a.name.localeCompare(b.name, 'id', { numeric: true })
@@ -464,6 +471,7 @@ async function loadCatalogProducts(db: DbOrTx, where?: SQL): Promise<CatalogProd
       isActive: p.isActive,
       sizes: variantRows.filter((v) => v.productId === p.id).map((v) => ({ id: v.id, size: v.name, gsm: v.gsm, tiers: tierMap.get(v.id) ?? [] })),
       imageUrl: p.imageUrl,
+      productPhotos: photoRows.filter((i) => i.productId === p.id).map((i) => ({ id: i.id, imageUrl: i.imageUrl, sort: i.sort })),
       referenceImages: imageRows.filter((i) => i.productId === p.id).map((i) => ({ id: i.id, imageUrl: i.imageUrl, sort: i.sort })),
       updatedAt: p.updatedAt.toISOString(),
     };

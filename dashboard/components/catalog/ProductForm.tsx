@@ -16,6 +16,7 @@ import { BASE_PATH } from "@/lib/basePath";
 import { BRAND_SLUGS, BRAND_TAG, type BrandSlug } from "@/lib/brands";
 import {
   FINISHING_OPTIONS,
+  MAX_PRODUCT_PHOTOS,
   MAX_REFERENCE_PHOTOS,
   MAX_TEXT_LENGTH,
   MAX_USE_LENGTH,
@@ -173,6 +174,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
   const lang = useLang();
   const router = useRouter();
   const stored = detail?.product ?? null;
+  const productPhotoCount = stored?.productPhotos.length ?? 0;
   const productId = stored?.id ?? null;
   const editing = stored !== null;
 
@@ -343,6 +345,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
   // ─── Save ────────────────────────────────────────────────────────────────────
 
   function photoErrorText(status: number, code: unknown): string {
+    if (code === "PRODUCT_PHOTO_LIMIT") return t("catalog.form.productPhotoErr.limit");
     if (status === 409 || code === "REFERENCE_IMAGE_LIMIT") return t("catalog.form.photoErr.limit");
     if (status === 413 || code === "FILE_TOO_LARGE") return t("catalog.form.photoErr.size");
     if (code === "UNSUPPORTED_MIME_TYPE") return t("catalog.form.photoErr.type");
@@ -427,6 +430,7 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
     setMainError(null);
     if (!isJpgOrPng(file)) return setMainError(t("catalog.form.photoErr.type"));
     if (file.size > IMAGE_MAX_BYTES) return setMainError(t("catalog.form.photoErr.size"));
+    if (productPhotoCount >= MAX_PRODUCT_PHOTOS) return setMainError(t("catalog.form.productPhotoErr.limit"));
     setMainBusy(true);
     try {
       const body = new FormData();
@@ -441,12 +445,12 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
     setMainBusy(false);
   }
 
-  async function removeProductPhoto() {
+  async function removeProductPhoto(photoId: string) {
     if (!productId) return;
     setMainBusy(true);
     setMainError(null);
     try {
-      const res = await fetch(`${BASE_PATH}/api/product-image/${encodeURIComponent(productId)}`, { method: "DELETE" });
+      const res = await fetch(`${BASE_PATH}/api/product-photos/${encodeURIComponent(photoId)}`, { method: "DELETE" });
       if (res.ok) router.refresh();
       else setMainError(t("catalog.form.productPhotoErr.removeFailed"));
     } catch {
@@ -1216,52 +1220,62 @@ export function ProductForm({ detail, photosFailed = 0 }: { detail?: CatalogProd
                 </div>
                 {stored ? (
                   <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 12 }}>
-                    {stored.imageUrl ? (
-                      <img
-                        src={apiFileUrl(stored.imageUrl)}
-                        alt={t("catalog.form.productPhotoAlt")}
-                        style={{ width: 140, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid #DDE5D6", display: "block" }}
-                      />
-                    ) : (
+                    {stored.productPhotos.map((ph, i) => (
+                      <div key={ph.id} style={{ width: 140, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <img
+                          src={apiFileUrl(ph.imageUrl)}
+                          alt={t("catalog.form.productPhotoAlt", { n: i + 1 })}
+                          style={{ width: 140, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid #DDE5D6", display: "block" }}
+                        />
+                        <span style={hint}>
+                          {i + 1} ·{" "}
+                          <button
+                            type="button"
+                            aria-label={t("catalog.form.productPhotoRemoveAria", { n: i + 1 })}
+                            disabled={mainBusy}
+                            onClick={() => removeProductPhoto(ph.id)}
+                            style={{ ...linkBtn, fontSize: 11.5 }}
+                          >
+                            {t("catalog.form.productPhotoRemove")}
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                    {productPhotoCount === 0 && (
                       <span style={{ flex: "1 1 260px", fontSize: 12.5, color: "#6E531E", lineHeight: 1.5 }}>{t("catalog.form.productPhotoNone")}</span>
                     )}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
-                      <label
-                        htmlFor="pf-main-photo"
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          height: 36,
-                          padding: "0 14px",
-                          borderRadius: 6,
-                          background: "#8A6A2A",
-                          color: "#ffffff",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          cursor: mainBusy ? "wait" : "pointer",
-                        }}
-                      >
-                        {mainBusy ? t("catalog.form.photoUploading") : t("catalog.form.productPhotoReplace")}
-                      </label>
-                      <input
-                        id="pf-main-photo"
-                        type="file"
-                        accept="image/jpeg,image/png,.jpg,.jpeg,.png"
-                        disabled={mainBusy}
-                        onChange={pickProductPhoto}
-                        style={srOnly}
-                      />
-                      <span style={hint}>{t("catalog.form.photoHint")}</span>
-                      {stored.imageUrl && (
-                        <button
-                          type="button"
-                          aria-label={t("catalog.form.productPhotoRemoveAria")}
-                          disabled={mainBusy}
-                          onClick={removeProductPhoto}
-                          style={{ ...linkBtn, fontSize: 12.5 }}
-                        >
-                          {t("catalog.form.productPhotoRemove")}
-                        </button>
+                      {productPhotoCount < MAX_PRODUCT_PHOTOS ? (
+                        <>
+                          <label
+                            htmlFor="pf-main-photo"
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 600,
+                              height: 36,
+                              padding: "0 14px",
+                              borderRadius: 6,
+                              background: "#8A6A2A",
+                              color: "#ffffff",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              cursor: mainBusy ? "wait" : "pointer",
+                            }}
+                          >
+                            {mainBusy ? t("catalog.form.photoUploading") : t("catalog.form.productPhotoAdd")}
+                          </label>
+                          <input
+                            id="pf-main-photo"
+                            type="file"
+                            accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                            disabled={mainBusy}
+                            onChange={pickProductPhoto}
+                            style={srOnly}
+                          />
+                          <span style={hint}>{t("catalog.form.photoHint")}</span>
+                        </>
+                      ) : (
+                        <span style={hint}>{t("catalog.form.productPhotoErr.limit")}</span>
                       )}
                     </div>
                   </div>

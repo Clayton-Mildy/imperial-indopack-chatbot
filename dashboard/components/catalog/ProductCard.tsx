@@ -4,7 +4,7 @@ import Link from "next/link";
 import { BrandTags } from "@/components/BrandTag";
 import { BRAND_TAG } from "@/lib/brands";
 import { apiFileUrl } from "@/lib/format";
-import { designExampleThumbs, gramasiSummary } from "@/lib/catalog/productForm";
+import { designExampleThumbs, gramasiSummary, productPhotoThumb } from "@/lib/catalog/productForm";
 import { PCS_PER_RIM } from "@/lib/format";
 import { cellFor, deliveryLabel, distinctSizeCount, sizeRowLabel, tierColumns, type TierColumn } from "@/lib/catalog/tierTable";
 import { useLang, useT } from "@/lib/i18n/LangProvider";
@@ -63,6 +63,33 @@ function Thumb({ url, alt, size }: { url: string; alt: string; size: number }) {
   );
 }
 
+/** The product's first photo; a small "+N" in the corner when it has more. */
+function ProductThumb({ url, more, alt, size }: { url: string; more: number; alt: string; size: number }) {
+  return (
+    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+      <Thumb url={url} alt={alt} size={size} />
+      {more > 0 && (
+        <span
+          style={{
+            position: "absolute",
+            right: 2,
+            bottom: 2,
+            fontSize: 10.5,
+            fontWeight: 700,
+            lineHeight: 1,
+            padding: "2px 4px",
+            borderRadius: 4,
+            background: "rgba(31,41,24,0.78)",
+            color: "#ffffff",
+          }}
+        >
+          +{more}
+        </span>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   product: CatalogProduct;
   /** Ubah / Hapus are admin-only, like every catalog write. */
@@ -74,6 +101,7 @@ interface Props {
 export function ProductCard({ product: p, canEdit, onDelete }: Props) {
   const t = useT();
   const lang = useLang();
+  const { first: photo, more: morePhotos } = productPhotoThumb(p.productPhotos);
   const examples = designExampleThumbs(p.referenceImages, MAX_THUMBS);
   const editHref = `/catalog/${p.id}`;
 
@@ -93,8 +121,8 @@ export function ProductCard({ product: p, canEdit, onDelete }: Props) {
           color: "#3B4540",
         }}
       >
-        {p.imageUrl ? (
-          <Thumb url={p.imageUrl} alt={t("catalog.card.productPhotoAlt", { name: p.name })} size={40} />
+        {photo ? (
+          <ProductThumb url={photo.imageUrl} more={morePhotos} alt={t("catalog.card.productPhotoAlt", { name: p.name })} size={40} />
         ) : (
           <div style={{ width: 40, height: 40, borderRadius: 6, background: "#F8FAF6", border: "1px solid #DDE5D6" }} />
         )}
@@ -132,8 +160,8 @@ export function ProductCard({ product: p, canEdit, onDelete }: Props) {
           borderBottom: "1px solid #EEF2EA",
         }}
       >
-        {p.imageUrl ? (
-          <Thumb url={p.imageUrl} alt={t("catalog.card.productPhotoAlt", { name: p.name })} size={56} />
+        {photo ? (
+          <ProductThumb url={photo.imageUrl} more={morePhotos} alt={t("catalog.card.productPhotoAlt", { name: p.name })} size={56} />
         ) : (
           <div
             style={{

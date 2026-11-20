@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { storeUploadedImage } from './imageStorage.js';
+import { setFirstProductPhoto } from '../repositories/productPhotos.js';
 import { getDb } from '../db/client.js';
 import { products, productVariants } from '../db/schema.js';
 
@@ -98,7 +99,7 @@ export async function importCatalogImages(files: { filename: string; buffer: Buf
     }
     const { kind, id } = match.target;
     if (kind === 'product') {
-      await db.update(products).set({ imageUrl: url, updatedAt: sql`now()` }).where(eq(products.id, id));
+      await setFirstProductPhoto(id, url);
     } else {
       await db.update(productVariants).set({ imageUrl: url, updatedAt: sql`now()` }).where(eq(productVariants.id, id));
     }

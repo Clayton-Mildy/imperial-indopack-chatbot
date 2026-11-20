@@ -156,6 +156,8 @@ export interface CatalogProduct {
   sizes: { id: string; size: string; gsm: string | null; tiers: PriceTier[] }[];
   /** The product photo (products.image_url): the item itself, what the bot compares customers' photos with. */
   imageUrl: string | null;
+  /** Up to 3 photos of the product (assembled, flat, ...), first first; imageUrl is the first. */
+  productPhotos: { id: string; imageUrl: string; sort: number }[];
   /** Design examples the bot sends to customers who have no design. Not the product photo. */
   referenceImages: { id: string; imageUrl: string; sort: number }[];
   updatedAt: string;

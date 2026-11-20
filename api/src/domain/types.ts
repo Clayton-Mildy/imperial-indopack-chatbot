@@ -99,6 +99,8 @@ export type Product = {
   category?: Category | null;
   variants?: ProductVariant[];
   referenceImageUrls?: string[];
+  /** The product's own photos (up to 3), first photo first - what customers' photos are compared with. */
+  productPhotoUrls?: string[];
 };
 
 export type PromptSection = { name: string; content: string };

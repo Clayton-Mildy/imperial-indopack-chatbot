@@ -502,6 +502,15 @@ export function isJpgOrPng(file: { type: string; name: string }): boolean {
   return /\.(jpe?g|png)$/i.test(file.name);
 }
 
+/** api/src/repositories/productPhotos.ts */
+export const MAX_PRODUCT_PHOTOS = 3;
+
+/** A card's product thumbnail: the first photo (lowest sort), and how many more there are for the "+N". */
+export function productPhotoThumb<T extends { sort: number; imageUrl: string }>(photos: readonly T[]): { first: T | null; more: number } {
+  const sorted = [...photos].sort((a, b) => a.sort - b.sort);
+  return { first: sorted[0] ?? null, more: Math.max(0, sorted.length - 1) };
+}
+
 /** The design examples a card shows beside the product photo: in sending order, at most `max`. */
 export function designExampleThumbs<T extends { sort: number }>(refs: readonly T[], max: number): T[] {
   return [...refs].sort((a, b) => a.sort - b.sort).slice(0, max);

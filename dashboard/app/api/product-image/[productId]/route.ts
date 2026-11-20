@@ -16,9 +16,9 @@ type Ctx = { params: Promise<{ productId: string }> };
 const refuse = (status: number, error: string) => NextResponse.json({ data: null, error }, { status });
 
 /**
- * POST /api/product-image/:productId - multipart, one JPG/PNG of at most 5 MB: THE product photo
- * (products.image_url), which replaces the old one. The bot compares customers' photos with it.
- * Admin-only like every catalog write.
+ * POST /api/product-image/:productId - multipart, one JPG/PNG of at most 5 MB: ADDS a product photo
+ * (up to 3 per product; 409 PRODUCT_PHOTO_LIMIT after that). The bot compares customers' photos with them.
+ * Removing one is DELETE /api/product-photos/:photoId. Admin-only like every catalog write.
  */
 export async function POST(request: NextRequest, { params }: Ctx) {
   const { productId } = await params;
@@ -44,20 +44,6 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     headers: { Authorization: `Bearer ${API_KEY}` },
     body: form,
   });
-  const body = await res.json().catch(() => ({ data: null, error: `HTTP_${res.status}` }));
-  return NextResponse.json(body, { status: res.status });
-}
-
-/** DELETE /api/product-image/:productId - clears the product photo. Admin-only. */
-export async function DELETE(_request: NextRequest, { params }: Ctx) {
-  const { productId } = await params;
-  if ((await sessionRole()) !== 'admin') return refuse(403, 'FORBIDDEN');
-  if (!isUuid(productId)) return refuse(404, 'NOT_FOUND');
-  const res = await fetch(`${API_URL}/api/v1/products/${encodeURIComponent(productId)}/image`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${API_KEY}` },
-  });
-  if (res.status === 204) return new NextResponse(null, { status: 204 });
   const body = await res.json().catch(() => ({ data: null, error: `HTTP_${res.status}` }));
   return NextResponse.json(body, { status: res.status });
 }

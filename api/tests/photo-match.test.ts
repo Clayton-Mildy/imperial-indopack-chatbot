@@ -62,6 +62,48 @@ describe('which photo a product is compared by', () => {
   });
 });
 
+describe('which photos get a letter', () => {
+  const withPhotos = (name: string, urls: string[]) => ({ ...(product(name, urls[0] ?? null) as object), productPhotoUrls: urls }) as never;
+  const names = (sel: { product: { name: string }; url: string }[]) => sel.map((s) => `${s.product.name}:${s.url}`);
+
+  it('every candidate\'s first photo in rank order, then the 2nd and 3rd of the highest-ranked', async () => {
+    const { selectComparePhotos } = await load();
+    const sel = selectComparePhotos([withPhotos('A', ['a1', 'a2', 'a3']), withPhotos('B', ['b1']), withPhotos('C', ['c1', 'c2'])]);
+    expect(names(sel)).toEqual(['A:a1', 'B:b1', 'C:c1', 'A:a2', 'A:a3', 'C:c2']);
+  });
+
+  it('falls back to the reference photo (product, else variant) when there are no photo rows', async () => {
+    const { selectComparePhotos } = await load();
+    const sel = selectComparePhotos([product('A', '/p.jpg'), product('B', null, ['/v.jpg']), product('C', null, [null])]);
+    expect(names(sel)).toEqual(['A:/p.jpg', 'B:/v.jpg']);
+  });
+
+  it('stops at 26 images (A-Z), keeping every first photo before any extra', async () => {
+    const { selectComparePhotos } = await load();
+    const cands = Array.from({ length: 20 }, (_, i) => withPhotos(`P${i}`, [`p${i}a`, `p${i}b`, `p${i}c`]));
+    const sel = selectComparePhotos(cands);
+    expect(sel).toHaveLength(26);
+    expect(sel.slice(0, 20).map((s) => s.url)).toEqual(cands.map((_, i) => `p${i}a`));
+    // 6 left: P0 and P1 and P2 get both extras.
+    expect(sel.slice(20).map((s) => s.url)).toEqual(['p0b', 'p0c', 'p1b', 'p1c', 'p2b', 'p2c']);
+  });
+
+  it('sends every photo lettered, maps a pick of a later photo to its product, and lists names once', async () => {
+    const { matchCustomerPhoto } = await load();
+    mockSearch.mockResolvedValue([
+      withPhotos('BOX RAKIT', [`${DIR}/a.png`, `${DIR}/b.png`]),
+      withPhotos('BOX LAIN', [`${DIR}/b.png`]),
+    ]);
+    verdict({ match: 'C', certainty: 'same', reason: 'versi datar' }); // A=rakit#1, B=lain#1, C=rakit#2
+    const m = await matchCustomerPhoto(customer, ['box'], 'ini kak');
+    const content = mockCreate.mock.calls[0]![0].messages[0].content as { text?: string }[];
+    expect(content.filter((c) => c.text?.startsWith('FOTO KATALOG')).map((c) => c.text)).toEqual(['FOTO KATALOG A:', 'FOTO KATALOG B:', 'FOTO KATALOG C:']);
+    expect(mockCreate.mock.calls[0]![0].system).toContain('beberapa foto katalog');
+    expect(m).toMatchObject({ certainty: 'same', product: { name: 'BOX RAKIT' } });
+    expect(m!.compared).toEqual(['BOX RAKIT', 'BOX LAIN']);
+  });
+});
+
 describe('comparing', () => {
   it('compares only products that have a photo, product photo first, and returns the verdict', async () => {
     const { matchCustomerPhoto } = await load();

@@ -277,6 +277,20 @@ export const productReferenceImages = pgTable(
   (table) => [index('idx_product_reference_images_product').on(table.productId, table.sort)]
 );
 
+export const productPhotos = pgTable(
+  'product_photos',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    imageUrl: text('image_url').notNull(),
+    sort: integer('sort').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_product_photos_product').on(table.productId, table.sort)]
+);
+
 // ─── staff_profiles ────────────────────────────────────────────────────────
 
 export const staffProfiles = pgTable('staff_profiles', {

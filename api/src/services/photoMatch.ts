@@ -26,6 +26,8 @@ import type { ProductBox } from './visionKeywords.js';
 // filter, and ten candidates can all be the wrong look-alikes while the right product sits 11th.
 // Sonnet holds 20 photos apart; see PHOTO_MATCH_MODEL.
 const MAX_CANDIDATES = 20;
+// One product can contribute up to 3 photos (assembled, flat, ...), and the letters stop at Z.
+const MAX_COMPARE_PHOTOS = 26;
 // Tokens per image scale with pixels; 512px keeps a twenty-photo comparison small and is plenty to
 // see shape, finish and markings.
 const REFERENCE_SIDE = 512;
@@ -65,6 +67,31 @@ export const NO_CATALOG_PHOTOS: PhotoMatch = Object.freeze({
 /** The photo a product is compared by: its own, else its first variant's that has one. */
 export function referenceImageUrl(p: Product): string | null {
   return p.imageUrl || p.variants?.find((v) => v.imageUrl)?.imageUrl || null;
+}
+
+/** A product's photos for the comparison: its product photos, first first; else the one referenceImageUrl gives. */
+export function comparisonPhotoUrls(p: Product): string[] {
+  const own = [...new Set((p.productPhotoUrls ?? []).filter(Boolean))];
+  if (own.length > 0) return own;
+  const one = referenceImageUrl(p);
+  return one ? [one] : [];
+}
+
+/**
+ * The photos that get letters A, B, C...: the first photo of every candidate in rank order, then the
+ * 2nd and 3rd photos of the highest-ranked candidates, up to `max` in all. Each keeps its product, so a
+ * pick of any photo picks that product.
+ */
+export function selectComparePhotos(candidates: Product[], max = MAX_COMPARE_PHOTOS): { product: Product; url: string }[] {
+  const urls = candidates.map(comparisonPhotoUrls);
+  const out: { product: Product; url: string }[] = [];
+  candidates.forEach((product, i) => {
+    if (urls[i]![0] && out.length < max) out.push({ product, url: urls[i]![0]! });
+  });
+  candidates.forEach((product, i) => {
+    for (const url of urls[i]!.slice(1)) if (out.length < max) out.push({ product, url });
+  });
+  return out;
 }
 
 const imageCache = new Map<string, string>();
@@ -196,6 +223,8 @@ Tentukan apakah barang di foto pelanggan adalah produk yang SAMA dengan salah sa
 Jenis barang yang sama BELUM berarti produk yang sama: dua box berbeda model tetap "similar" atau "none", bukan "same".
 Jenis barang yang BERBEDA tidak pernah "similar": kalau barang di foto pelanggan kertas bungkus dan foto katalog yang paling mirip paper bag (atau box kue lawan lunch box, dst.), jawab "none" - semirip apa pun bentuknya.
 
+Satu produk bisa muncul di beberapa foto katalog (misalnya sudah dirakit dan masih terlipat/datar); salah satunya yang cocok sudah cukup.
+
 Nilai dari GAMBARNYA saja - foto katalog sengaja tidak diberi nama produk.
 
 Balas HANYA JSON: {"match": "<huruf FOTO KATALOG yang cocok, atau null>", "certainty": "same" | "similar" | "none", "reason": "<satu kalimat singkat>"}`;
@@ -302,8 +331,8 @@ export async function matchCustomerPhoto(
     if (!(await catalogHasPhotos())) return NO_CATALOG_PHOTOS;
     const kw = await keywords;
     const candidates = await pickCandidates(kw, caption);
-    const refs = (await Promise.all(candidates.map(async (product) => {
-      const b64 = await loadReference(referenceImageUrl(product)!);
+    const refs = (await Promise.all(selectComparePhotos(candidates).map(async ({ product, url }) => {
+      const b64 = await loadReference(url);
       return b64 ? { product, b64 } : null;
     }))).filter((r): r is { product: Product; b64: string } => r !== null);
     if (refs.length === 0) return null;
@@ -316,7 +345,7 @@ export async function matchCustomerPhoto(
     return {
       certainty: chosen ? verdict.certainty : 'none',
       product: chosen ? { name: chosen.name, brand: chosen.brand?.name ?? null, imageUrl: referenceImageUrl(chosen)! } : null,
-      compared: refs.map((r) => r.product.name),
+      compared: [...new Set(refs.map((r) => r.product.name))],
       // Logged: a "none" the code imposed must not read as the model's own.
       reason: picked && !chosen
         ? `${verdict.reason} [${verdict.certainty} ${picked.name} dibatalkan: "${s!.category}" tidak ada di nama/kategori/kata kunci produk itu]`

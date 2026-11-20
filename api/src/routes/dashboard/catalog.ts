@@ -36,6 +36,7 @@ import {
   deleteReferenceImageIfExists,
   productExists,
 } from '../../repositories/referenceImages.js';
+import { MAX_PRODUCT_PHOTOS_PER_PRODUCT, addProductPhoto, countProductPhotos, deleteProductPhoto } from '../../repositories/productPhotos.js';
 import { importCatalogImages, type ImageFileResult } from '../../services/catalogImages.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -175,8 +176,8 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ data: { results }, error: null });
   });
 
-  // POST /api/v1/products/:id/image - THE product photo (products.image_url): the item itself, which the
-  // bot compares customers' photos against. One per product; a new upload replaces the old one.
+  // POST /api/v1/products/:id/image - ADDS a product photo (max 3 per product): the item itself, assembled or
+  // flat, which the bot compares customers' photos against. products.image_url follows the first photo.
   app.post<{ Params: { id: string } }>('/api/v1/products/:id/image', { preHandler: [apiKeyAuth] }, async (request, reply) => {
     const { id } = request.params;
     const part = await request.file();
@@ -194,25 +195,27 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     if (!UUID_RE.test(id) || !(await productExists(id))) {
       return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
     }
+    if ((await countProductPhotos(id)) >= MAX_PRODUCT_PHOTOS_PER_PRODUCT) {
+      return reply.code(409).send({ data: null, error: 'PRODUCT_PHOTO_LIMIT' });
+    }
     let imageUrl: string;
     try {
       imageUrl = await storeUploadedImage(buffer);
     } catch {
       return reply.code(400).send({ data: null, error: 'INVALID_IMAGE' });
     }
-    await updateProduct(id, { imageUrl });
+    const { id: photoId } = await addProductPhoto(id, imageUrl);
     invalidateCatalogCache();
     forgetCatalogPhotoPresence();
-    return reply.send({ data: { imageUrl }, error: null });
+    return reply.code(201).send({ data: { id: photoId, imageUrl }, error: null });
   });
 
-  // DELETE /api/v1/products/:id/image - clears the product photo
-  app.delete<{ Params: { id: string } }>('/api/v1/products/:id/image', { preHandler: [apiKeyAuth] }, async (request, reply) => {
+  // DELETE /api/v1/product-photos/:id - removes one product photo; image_url moves to the next one (or clears)
+  app.delete<{ Params: { id: string } }>('/api/v1/product-photos/:id', { preHandler: [apiKeyAuth] }, async (request, reply) => {
     const { id } = request.params;
-    if (!UUID_RE.test(id) || !(await productExists(id))) {
+    if (!UUID_RE.test(id) || !(await deleteProductPhoto(id))) {
       return reply.code(404).send({ data: null, error: 'NOT_FOUND' });
     }
-    await updateProduct(id, { imageUrl: null });
     invalidateCatalogCache();
     forgetCatalogPhotoPresence();
     return reply.code(204).send();

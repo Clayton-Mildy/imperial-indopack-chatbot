@@ -17,7 +17,7 @@ import { join } from 'path';
 import sharp from 'sharp';
 import { eq, inArray, like } from 'drizzle-orm';
 import { getDb } from '../src/db/client.js';
-import { brands, products, productVariants } from '../src/db/schema.js';
+import { brands, productPhotos, products, productVariants } from '../src/db/schema.js';
 import { buildImageIndex, imageKey, importCatalogImages, matchImageFile } from '../src/services/catalogImages.js';
 
 describe('matching a file name to a product or variant', () => {
@@ -124,5 +124,35 @@ describe('importing the files', () => {
       expect(meta.format).toBe('jpeg');
       expect(Math.max(meta.width!, meta.height!)).toBe(1200);
     }
+  });
+
+  it('a product file becomes its FIRST photo: replaces the sort-0 row, keeps the others, image_url in sync', async () => {
+    const db = getDb();
+    // Start from a product with two photos: [sort 0 old, sort 1 other].
+    await db.delete(productPhotos).where(eq(productPhotos.productId, productId));
+    await db.insert(productPhotos).values([
+      { productId, imageUrl: '/uploads/images/__old0__.jpg', sort: 0 },
+      { productId, imageUrl: '/uploads/images/__old1__.jpg', sort: 1 },
+    ]);
+    await importCatalogImages([{ filename: `${P}BOX TEST.png`, buffer: await png() }]);
+    const rows = (await db.select().from(productPhotos).where(eq(productPhotos.productId, productId))).sort((a, b) => a.sort - b.sort);
+    const [p] = await db.select().from(products).where(eq(products.id, productId));
+    written.push(rows[0]!.imageUrl);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.imageUrl).toMatch(/^\/uploads\/images\/[0-9a-f-]+\.jpg$/);
+    expect(rows[1]!.imageUrl).toBe('/uploads/images/__old1__.jpg');
+    expect(p!.imageUrl).toBe(rows[0]!.imageUrl);
+  });
+
+  it('inserts a first photo when the product has none, and a variant file touches no product photo', async () => {
+    const db = getDb();
+    await db.delete(productPhotos).where(eq(productPhotos.productId, productId));
+    await importCatalogImages([{ filename: `${P}BOX TEST.png`, buffer: await png() }]);
+    const rows = await db.select().from(productPhotos).where(eq(productPhotos.productId, productId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.sort).toBe(0);
+    written.push(rows[0]!.imageUrl);
+    await importCatalogImages([{ filename: `${P}ZZ9040 L.png`, buffer: await png() }]);
+    expect(await db.select().from(productPhotos).where(eq(productPhotos.productId, productId))).toHaveLength(1);
   });
 });

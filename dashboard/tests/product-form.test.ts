@@ -11,6 +11,8 @@ import {
   gramasiSummary,
   gramasiGroups,
   designExampleThumbs,
+  productPhotoThumb,
+  MAX_PRODUCT_PHOTOS,
   isJpgOrPng,
   nextTierRow,
   parseQty,
@@ -71,6 +73,7 @@ const PRODUCT: CatalogProduct = {
   use: "box kue",
   isActive: true,
   imageUrl: null,
+  productPhotos: [],
   sizes: [
     {
       id: "22222222-2222-4222-8222-222222222222",
@@ -411,6 +414,23 @@ describe("helpers", () => {
     [{ type: "image/webp", name: "a.webp" }, false],
     [{ type: "image/gif", name: "a.png" }, false],
   ])("isJpgOrPng(%o)", (file, ok) => expect(isJpgOrPng(file)).toBe(ok));
+});
+
+describe("productPhotoThumb", () => {
+  const photos = [
+    { id: "c", sort: 2, imageUrl: "/c.jpg" },
+    { id: "a", sort: 0, imageUrl: "/a.jpg" },
+    { id: "b", sort: 1, imageUrl: "/b.jpg" },
+  ];
+  it("shows the first photo and how many more there are, without touching the input", () => {
+    expect(productPhotoThumb(photos)).toEqual({ first: photos[1], more: 2 });
+    expect(photos.map((p) => p.id)).toEqual(["c", "a", "b"]);
+  });
+  it("has no +N for one photo, and nothing for none", () => {
+    expect(productPhotoThumb([photos[0]!])).toEqual({ first: photos[0], more: 0 });
+    expect(productPhotoThumb([])).toEqual({ first: null, more: 0 });
+  });
+  it("matches the API limit", () => expect(MAX_PRODUCT_PHOTOS).toBe(3));
 });
 
 describe("designExampleThumbs", () => {
